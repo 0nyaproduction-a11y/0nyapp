@@ -1,6 +1,7 @@
 export type ContentFormat = "Series" | "Mini" | "Short";
 
 export type Episode = {
+  id?: string;
   number: number;
   title: string;
   description: string;

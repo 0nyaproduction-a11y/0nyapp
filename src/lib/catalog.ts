@@ -36,6 +36,7 @@ function getFallbackAccent(slug: string) {
 
 function mapEpisode(row: EpisodeRow): Episode {
   return {
+    id: row.id,
     number: row.episode_number,
     title: row.title ?? `Episode ${row.episode_number}`,
     description: row.synopsis ?? "",

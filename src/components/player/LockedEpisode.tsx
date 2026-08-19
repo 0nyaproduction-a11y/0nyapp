@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ContentItem, Episode } from "@/data/content";
 import { BrandName } from "@/components/brand/BrandName";
-import { ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 
 type LockedEpisodeProps = {
@@ -60,6 +60,15 @@ export function LockedEpisode({
                   >
                     View plans
                   </ButtonLink>
+                  {/* Rewarded-ad entitlements must be granted only after trusted server-side ad verification. */}
+                  <Button
+                    aria-label="Rewarded ad unlock coming soon"
+                    className="sm:col-span-2"
+                    disabled
+                    variant="secondary"
+                  >
+                    Watch ad to unlock
+                  </Button>
                 </>
               ) : (
                 <>
@@ -73,6 +82,14 @@ export function LockedEpisode({
                   >
                     View plans
                   </ButtonLink>
+                  <Button
+                    aria-label="Rewarded ad unlock coming soon"
+                    className="sm:col-span-2"
+                    disabled
+                    variant="secondary"
+                  >
+                    Watch ad to unlock
+                  </Button>
                 </>
               )}
             </div>

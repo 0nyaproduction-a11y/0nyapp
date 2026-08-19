@@ -7,6 +7,7 @@ import {
 import { LockedEpisode } from "@/components/player/LockedEpisode";
 import { VerticalPlayer } from "@/components/player/VerticalPlayer";
 import { getEpisodeBySeriesSlugAndNumber } from "@/lib/catalog";
+import { canUserWatchEpisode } from "@/lib/entitlements";
 import { createClient } from "@/lib/supabase/server";
 import {
   getEpisodeProgress,
@@ -50,9 +51,12 @@ export default async function WatchPage({ params }: WatchPageProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLocked = !episode.isFree;
+  const canWatch = await canUserWatchEpisode({
+    userId: user?.id ?? null,
+    episode,
+  });
 
-  if (isLocked) {
+  if (!canWatch) {
     return (
       <LockedEpisode
         episode={episode}
