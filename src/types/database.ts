@@ -113,28 +113,31 @@ export type Database = {
       coin_transactions: {
         Row: {
           id: string;
-          user_id: string;
+          user_id: string | null;
           amount: number;
           transaction_type: "credit" | "episode_purchase" | "refund" | "promo";
           episode_id: string | null;
+          payment_order_id: string | null;
           reference: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
-          user_id: string;
+          user_id?: string | null;
           amount: number;
           transaction_type: "credit" | "episode_purchase" | "refund" | "promo";
           episode_id?: string | null;
+          payment_order_id?: string | null;
           reference?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
-          user_id?: string;
+          user_id?: string | null;
           amount?: number;
           transaction_type?: "credit" | "episode_purchase" | "refund" | "promo";
           episode_id?: string | null;
+          payment_order_id?: string | null;
           reference?: string | null;
           created_at?: string;
         };
@@ -147,7 +150,113 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "coin_transactions_payment_order_id_fkey";
+            columns: ["payment_order_id"];
+            isOneToOne: false;
+            referencedRelation: "payment_orders";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "coin_transactions_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      coin_products: {
+        Row: {
+          code: string;
+          coin_amount: number;
+          display_name: string;
+          active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          code: string;
+          coin_amount: number;
+          display_name: string;
+          active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          code?: string;
+          coin_amount?: number;
+          display_name?: string;
+          active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payment_orders: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          provider: "google_play" | "apple_store" | "web" | "admin_test";
+          provider_order_id: string | null;
+          provider_transaction_id: string | null;
+          product_code: string;
+          coin_amount: number;
+          amount_minor: number | null;
+          currency: string | null;
+          status: "pending" | "completed" | "failed" | "refunded" | "cancelled";
+          verification_status: "unverified" | "verified" | "rejected";
+          verified_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          provider: "google_play" | "apple_store" | "web" | "admin_test";
+          provider_order_id?: string | null;
+          provider_transaction_id?: string | null;
+          product_code: string;
+          coin_amount: number;
+          amount_minor?: number | null;
+          currency?: string | null;
+          status?: "pending" | "completed" | "failed" | "refunded" | "cancelled";
+          verification_status?: "unverified" | "verified" | "rejected";
+          verified_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          provider?: "google_play" | "apple_store" | "web" | "admin_test";
+          provider_order_id?: string | null;
+          provider_transaction_id?: string | null;
+          product_code?: string;
+          coin_amount?: number;
+          amount_minor?: number | null;
+          currency?: string | null;
+          status?: "pending" | "completed" | "failed" | "refunded" | "cancelled";
+          verification_status?: "unverified" | "verified" | "rejected";
+          verified_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_orders_product_code_fkey";
+            columns: ["product_code"];
+            isOneToOne: false;
+            referencedRelation: "coin_products";
+            referencedColumns: ["code"];
+          },
+          {
+            foreignKeyName: "payment_orders_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
@@ -364,6 +473,22 @@ export type Database = {
           success: boolean;
           status: string;
           remaining_balance: number | null;
+        }[];
+      };
+      credit_verified_coin_purchase: {
+        Args: {
+          p_user_id: string;
+          p_provider: "google_play" | "apple_store" | "web" | "admin_test";
+          p_provider_transaction_id: string;
+          p_product_code: string;
+          p_reference?: string | null;
+        };
+        Returns: {
+          success: boolean;
+          status: string;
+          credited_coins: number;
+          new_balance: number | null;
+          payment_order_id: string | null;
         }[];
       };
     };

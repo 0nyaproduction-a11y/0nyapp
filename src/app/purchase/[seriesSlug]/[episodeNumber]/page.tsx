@@ -139,6 +139,10 @@ export default async function PurchasePage({
                 <ButtonLink href={episodeHref} aria-label={`Watch episode ${episode.number}`}>
                   Watch episode
                 </ButtonLink>
+              ) : user && coinPrice > 0 && !hasEnoughCoins ? (
+                <ButtonLink href="/wallet" aria-label="Add coins">
+                  Add coins
+                </ButtonLink>
               ) : (
                 <form action={buyEpisodeWithCoins}>
                   <input name="episodeId" type="hidden" value={episode.id ?? ""} />
