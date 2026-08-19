@@ -6,6 +6,10 @@ Build #10 prepares the existing 0nya web backend for a future native Android
 client without changing the current payment, entitlement, or content authority.
 The web app remains the primary client today.
 
+Build #11 adds the first isolated Expo Android client foundation. See
+`docs/android-client-bootstrap.md` for the mobile app structure, auth flow, and
+remaining native-client gaps.
+
 ## Shared Architecture
 
 The intended boundary is:
