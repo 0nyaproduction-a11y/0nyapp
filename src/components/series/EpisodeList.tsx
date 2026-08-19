@@ -1,11 +1,13 @@
 import type { ContentItem } from "@/data/content";
 import { EpisodeCard } from "@/components/series/EpisodeCard";
+import type { EpisodeAccessState } from "@/lib/entitlements";
 
 type EpisodeListProps = {
   series: ContentItem;
+  episodeAccess: Map<number, EpisodeAccessState>;
 };
 
-export function EpisodeList({ series }: EpisodeListProps) {
+export function EpisodeList({ series, episodeAccess }: EpisodeListProps) {
   return (
     <section className="mx-auto max-w-7xl px-4 py-6 pb-24 sm:px-6 sm:py-8 md:pb-12 lg:px-8">
       <div className="mb-4 flex items-end justify-between gap-4">
@@ -23,7 +25,12 @@ export function EpisodeList({ series }: EpisodeListProps) {
       </div>
       <div>
         {series.episodes.map((episode) => (
-          <EpisodeCard episode={episode} key={episode.number} series={series} />
+          <EpisodeCard
+            access={episodeAccess.get(episode.number)}
+            episode={episode}
+            key={episode.number}
+            series={series}
+          />
         ))}
       </div>
     </section>

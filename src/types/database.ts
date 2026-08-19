@@ -20,6 +20,7 @@ export type Database = {
           thumbnail_url: string | null;
           video_asset_id: string | null;
           is_free: boolean;
+          coin_price: number;
           status: "draft" | "published" | "archived";
           published_at: string | null;
           created_at: string;
@@ -35,6 +36,7 @@ export type Database = {
           thumbnail_url?: string | null;
           video_asset_id?: string | null;
           is_free?: boolean;
+          coin_price?: number;
           status?: "draft" | "published" | "archived";
           published_at?: string | null;
           created_at?: string;
@@ -50,6 +52,7 @@ export type Database = {
           thumbnail_url?: string | null;
           video_asset_id?: string | null;
           is_free?: boolean;
+          coin_price?: number;
           status?: "draft" | "published" | "archived";
           published_at?: string | null;
           created_at?: string;
@@ -100,6 +103,51 @@ export type Database = {
           },
           {
             foreignKeyName: "episode_entitlements_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      coin_transactions: {
+        Row: {
+          id: string;
+          user_id: string;
+          amount: number;
+          transaction_type: "credit" | "episode_purchase" | "refund" | "promo";
+          episode_id: string | null;
+          reference: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          amount: number;
+          transaction_type: "credit" | "episode_purchase" | "refund" | "promo";
+          episode_id?: string | null;
+          reference?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          amount?: number;
+          transaction_type?: "credit" | "episode_purchase" | "refund" | "promo";
+          episode_id?: string | null;
+          reference?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "coin_transactions_episode_id_fkey";
+            columns: ["episode_id"];
+            isOneToOne: false;
+            referencedRelation: "episodes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "coin_transactions_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
@@ -307,7 +355,18 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      purchase_episode_with_coins: {
+        Args: {
+          p_episode_id: string;
+        };
+        Returns: {
+          success: boolean;
+          status: string;
+          remaining_balance: number | null;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

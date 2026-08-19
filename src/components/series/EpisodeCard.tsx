@@ -1,13 +1,23 @@
 import Link from "next/link";
 import type { ContentItem, Episode } from "@/data/content";
 import { Icon } from "@/components/ui/Icon";
+import type { EpisodeAccessState } from "@/lib/entitlements";
 
 type EpisodeCardProps = {
   series: ContentItem;
   episode: Episode;
+  access?: EpisodeAccessState;
 };
 
-export function EpisodeCard({ series, episode }: EpisodeCardProps) {
+export function EpisodeCard({ series, episode, access }: EpisodeCardProps) {
+  const episodeAccess =
+    access ??
+    (episode.isFree
+      ? ({ canWatch: true, kind: "free", label: "Free" } satisfies EpisodeAccessState)
+      : ({ canWatch: false, kind: "locked", label: "Locked" } satisfies EpisodeAccessState));
+  const isLocked = !episodeAccess.canWatch;
+  const isFree = episodeAccess.kind === "free";
+
   return (
     <Link
       href={`/watch/${series.slug}/${episode.number}`}
@@ -19,13 +29,15 @@ export function EpisodeCard({ series, episode }: EpisodeCardProps) {
         </p>
         <span
           className={`inline-flex items-center gap-1.5 border px-2 py-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] ${
-            episode.isFree
+            isFree
               ? "border-teal/45 text-teal"
-              : "border-bone/10 text-bone/58"
+              : episodeAccess.canWatch
+                ? "border-teal/25 text-bone/82"
+                : "border-bone/10 text-bone/58"
           }`}
         >
-          {episode.isLocked ? <Icon name="lock" className="h-3.5 w-3.5" /> : null}
-          {episode.isFree ? "Free" : "Locked"}
+          {isLocked ? <Icon name="lock" className="h-3.5 w-3.5" /> : null}
+          {episodeAccess.label}
         </span>
       </div>
       <div>

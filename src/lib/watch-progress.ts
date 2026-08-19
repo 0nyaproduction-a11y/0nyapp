@@ -228,7 +228,7 @@ export function progressToContentItems(
       return items;
     }
 
-    const key = `${progress.series_slug}:${progress.episode_number}`;
+    const key = series.id;
 
     if (seen.has(key)) {
       return items;

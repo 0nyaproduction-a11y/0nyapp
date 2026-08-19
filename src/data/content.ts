@@ -8,6 +8,7 @@ export type Episode = {
   runtime: string;
   isFree: boolean;
   isLocked: boolean;
+  coinPrice?: number;
   progress?: number;
 };
 

@@ -7,16 +7,48 @@ import {
 import { BrandName } from "@/components/brand/BrandName";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { buyEpisodeWithCoins } from "@/app/purchase/actions";
 import { getEpisodeBySeriesSlugAndNumber } from "@/lib/catalog";
-import { getUserWallet } from "@/lib/entitlements";
+import {
+  hasActiveSubscription,
+  userOwnsEpisode,
+  getUserWallet,
+} from "@/lib/entitlements";
 import { createClient } from "@/lib/supabase/server";
 
 type PurchasePageProps = {
   params: Promise<{ seriesSlug: string; episodeNumber: string }>;
+  searchParams: Promise<{ purchase?: string }>;
 };
 
-export default async function PurchasePage({ params }: PurchasePageProps) {
+function getPurchaseMessage(status?: string) {
+  switch (status) {
+    case "purchase_success":
+      return "Episode unlocked. You can watch it now.";
+    case "insufficient_balance":
+      return "Insufficient coins.";
+    case "already_owned":
+      return "Episode already unlocked.";
+    case "active_subscription":
+      return "Your active plan already includes this episode.";
+    case "already_accessible":
+      return "This episode is already available.";
+    case "not_authenticated":
+      return "Sign in to buy this episode.";
+    case "invalid_episode":
+    case "purchase_failed":
+      return "Purchase is not available right now.";
+    default:
+      return null;
+  }
+}
+
+export default async function PurchasePage({
+  params,
+  searchParams,
+}: PurchasePageProps) {
   const { seriesSlug, episodeNumber } = await params;
+  const { purchase } = await searchParams;
   const parsedEpisodeNumber = Number(episodeNumber);
   const catalogResult = Number.isInteger(parsedEpisodeNumber)
     ? await getEpisodeBySeriesSlugAndNumber(seriesSlug, parsedEpisodeNumber)
@@ -42,7 +74,23 @@ export default async function PurchasePage({ params }: PurchasePageProps) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const wallet = user ? await getUserWallet(user.id) : null;
+  const [wallet, hasSubscription, ownsEpisode] = user
+    ? await Promise.all([
+        getUserWallet(user.id),
+        hasActiveSubscription(user.id),
+        episode.id ? userOwnsEpisode(user.id, episode.id) : Promise.resolve(false),
+      ])
+    : [null, false, false];
+  const coinPrice = episode.coinPrice ?? 0;
+  const hasEnoughCoins = Boolean(wallet && wallet.coin_balance >= coinPrice);
+  const canBuyWithCoins =
+    Boolean(user) &&
+    Boolean(episode.id) &&
+    !ownsEpisode &&
+    !hasSubscription &&
+    coinPrice > 0 &&
+    hasEnoughCoins;
+  const purchaseMessage = getPurchaseMessage(purchase);
 
   return (
     <main className="min-h-screen bg-deep px-4 py-5 text-bone sm:px-6 lg:px-8">
@@ -64,8 +112,8 @@ export default async function PurchasePage({ params }: PurchasePageProps) {
               Unlock this episode
             </h1>
             <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-muted sm:text-base">
-              Episode purchase will be available here soon. This preview keeps
-              the story locked while the purchase experience is prepared.
+              Use coins to unlock this episode. Add-coin purchases are coming
+              later, so access changes only after a successful coin transaction.
             </p>
             <div className="mx-auto mt-6 max-w-xs border border-bone/10 bg-bone/[0.03] px-4 py-3">
               <p className="font-mono text-[0.66rem] uppercase tracking-[0.16em] text-bone/55">
@@ -74,11 +122,41 @@ export default async function PurchasePage({ params }: PurchasePageProps) {
               <p className="mt-1 font-mono text-lg text-bone">
                 {wallet ? `${wallet.coin_balance} coins` : "Sign in to view"}
               </p>
+              <p className="mt-3 font-mono text-[0.66rem] uppercase tracking-[0.16em] text-bone/55">
+                Episode price
+              </p>
+              <p className="mt-1 font-mono text-lg text-bone">
+                {coinPrice > 0 ? `${coinPrice} coins` : "Coming soon"}
+              </p>
             </div>
+            {purchaseMessage ? (
+              <p className="mx-auto mt-5 max-w-md border border-bone/10 bg-bone/[0.03] px-3 py-2 text-sm leading-6 text-bone/80">
+                {purchaseMessage}
+              </p>
+            ) : null}
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
-              <Button disabled aria-label="Purchase coming soon">
-                Coming soon
-              </Button>
+              {ownsEpisode || hasSubscription ? (
+                <ButtonLink href={episodeHref} aria-label={`Watch episode ${episode.number}`}>
+                  Watch episode
+                </ButtonLink>
+              ) : (
+                <form action={buyEpisodeWithCoins}>
+                  <input name="episodeId" type="hidden" value={episode.id ?? ""} />
+                  <input
+                    name="returnTo"
+                    type="hidden"
+                    value={`/purchase/${series.slug}/${episode.number}`}
+                  />
+                  <Button
+                    aria-label={`Buy episode ${episode.number} with coins`}
+                    className="w-full"
+                    disabled={!canBuyWithCoins}
+                    type="submit"
+                  >
+                    Buy with coins
+                  </Button>
+                </form>
+              )}
               {/* Rewarded-ad entitlements must be granted only after trusted server-side ad verification. */}
               <Button disabled variant="secondary" aria-label="Rewarded ad unlock coming soon">
                 Watch ad to unlock

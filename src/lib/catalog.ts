@@ -43,6 +43,7 @@ function mapEpisode(row: EpisodeRow): Episode {
     runtime: toRuntime(row.duration_seconds),
     isFree: row.is_free,
     isLocked: !row.is_free,
+    coinPrice: row.coin_price,
   };
 }
 
