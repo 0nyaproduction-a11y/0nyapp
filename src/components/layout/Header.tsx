@@ -56,14 +56,7 @@ export async function Header() {
               {coinBalance}
             </Link>
           ) : null}
-          <AuthStatus phone={phone} />
-          <Link
-            href={phone ? "/" : "/login"}
-            className="grid size-9 place-items-center border border-bone/10 bg-bone/[0.04] text-bone/65 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-            aria-label={phone ? "Profile" : "Log in"}
-          >
-            <Icon name="profile" className="h-4.5 w-4.5" />
-          </Link>
+          <AuthStatus isAuthenticated={Boolean(user)} phone={phone} />
         </div>
       </div>
     </header>

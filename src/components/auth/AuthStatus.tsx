@@ -1,43 +1,31 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
-import { createClient } from "@/lib/supabase/client";
 
 type AuthStatusProps = {
+  isAuthenticated: boolean;
   phone?: string;
 };
 
-export function AuthStatus({ phone }: AuthStatusProps) {
-  const router = useRouter();
-
-  async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.refresh();
-    router.push("/");
-  }
-
-  if (!phone) {
+export function AuthStatus({ isAuthenticated, phone }: AuthStatusProps) {
+  if (!isAuthenticated) {
     return (
-      <a
-        href="/login"
+      <Link
+        href="/account"
         className="hidden h-10 items-center gap-2 border border-bone/10 px-3 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal sm:inline-flex"
       >
         Account
-      </a>
+      </Link>
     );
   }
 
   return (
-    <button
-      aria-label="Log out"
+    <Link
+      href="/account"
+      aria-label="Account"
       className="hidden h-10 items-center gap-2 border border-bone/10 px-3 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal sm:inline-flex"
-      onClick={handleLogout}
-      type="button"
     >
       <Icon name="profile" className="h-4 w-4" />
-      {phone.slice(-4)}
-    </button>
+      {phone ? phone.slice(-4) : "Account"}
+    </Link>
   );
 }

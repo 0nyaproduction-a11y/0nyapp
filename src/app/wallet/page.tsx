@@ -4,7 +4,12 @@ import { BrandName } from "@/components/brand/BrandName";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { getUserWallet } from "@/lib/entitlements";
-import { getActiveCoinProducts, getUserPaymentOrders, formatOrderStatus } from "@/lib/payments";
+import {
+  formatOrderStatus,
+  formatPaymentProvider,
+  getActiveCoinProducts,
+  getUserPaymentOrders,
+} from "@/lib/payments";
 import { getUserCoinTransactions } from "@/lib/purchases";
 import { createClient } from "@/lib/supabase/server";
 
@@ -56,9 +61,8 @@ export default async function WalletPage() {
                   Your coins
                 </h1>
                 <p className="mt-5 max-w-xl text-sm leading-6 text-muted sm:text-base">
-                  Coin top-ups will appear here after verified store or payment
-                  provider purchases. This screen is ready for checkout without
-                  allowing browser-side wallet credits.
+                  Your balance and top-up history live here. Coin packs are
+                  prepared for checkout and will become available soon.
                 </p>
               </div>
               <div className="border border-bone/10 bg-bone/[0.03] px-4 py-3">
@@ -94,8 +98,7 @@ export default async function WalletPage() {
                 ))
               ) : (
                 <p className="border border-bone/10 bg-bone/[0.03] p-4 text-sm leading-6 text-muted sm:col-span-3">
-                  Coin packs will appear after the wallet top-up migration is
-                  applied.
+                  Coin packs will appear here soon.
                 </p>
               )}
             </div>
@@ -148,7 +151,8 @@ export default async function WalletPage() {
                             {formatOrderStatus(order)}
                           </p>
                           <p className="mt-1 text-xs text-muted">
-                            {order.provider.replace("_", " ")} / {formatDate(order.created_at)}
+                            {formatPaymentProvider(order.provider)} /{" "}
+                            {formatDate(order.created_at)}
                           </p>
                         </div>
                         <p className="font-mono text-sm text-bone">

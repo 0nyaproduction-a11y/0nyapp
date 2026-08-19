@@ -16,6 +16,22 @@ export function formatOrderStatus(order: PaymentOrder) {
   return order.status.replace("_", " ");
 }
 
+export function formatPaymentProvider(provider: PaymentOrder["provider"]) {
+  if (provider === "google_play") {
+    return "Google Play";
+  }
+
+  if (provider === "apple_store") {
+    return "App Store";
+  }
+
+  if (provider === "web") {
+    return "Web";
+  }
+
+  return "Verified top-up";
+}
+
 export async function getActiveCoinProducts() {
   const supabase = await createClient();
   const { data, error } = await supabase
