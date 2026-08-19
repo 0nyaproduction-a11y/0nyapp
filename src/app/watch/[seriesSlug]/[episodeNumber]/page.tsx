@@ -7,6 +7,7 @@ import {
 } from "@/data/content";
 import { LockedEpisode } from "@/components/player/LockedEpisode";
 import { VerticalPlayer } from "@/components/player/VerticalPlayer";
+import { createClient } from "@/lib/supabase/server";
 
 type WatchPageProps = {
   params: Promise<{ seriesSlug: string; episodeNumber: string }>;
@@ -34,7 +35,18 @@ export default async function WatchPage({ params }: WatchPageProps) {
   }
 
   if (episode.isLocked) {
-    return <LockedEpisode episode={episode} series={series} />;
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    return (
+      <LockedEpisode
+        episode={episode}
+        isAuthenticated={Boolean(user)}
+        series={series}
+      />
+    );
   }
 
   return (

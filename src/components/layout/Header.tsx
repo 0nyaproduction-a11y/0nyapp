@@ -1,28 +1,37 @@
+import Link from "next/link";
 import { BrandName } from "@/components/brand/BrandName";
+import { AuthStatus } from "@/components/auth/AuthStatus";
 import { Icon } from "@/components/ui/Icon";
+import { createClient } from "@/lib/supabase/server";
 
 const navItems = ["Home", "Browse", "Originals", "New"];
 
-export function Header() {
+export async function Header() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const phone = user?.phone;
+
   return (
     <header className="sticky top-0 z-40 border-b border-bone/10 bg-background/88 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-7">
-          <a
-            href="#home"
+          <Link
+            href="/"
             className="text-[2rem] text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
           >
             <BrandName />
-          </a>
+          </Link>
           <nav aria-label="Primary" className="hidden items-center gap-5 md:flex">
             {navItems.map((item) => (
-              <a
+              <Link
                 className="font-mono text-[0.66rem] uppercase tracking-[0.18em] text-bone/52 transition hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
-                href="#home"
+                href="/"
                 key={item}
               >
                 {item}
-              </a>
+              </Link>
             ))}
           </nav>
         </div>
@@ -42,13 +51,14 @@ export function Header() {
             <Icon name="coin" className="h-4 w-4" />
             120
           </button>
-          <button
-            type="button"
+          <AuthStatus phone={phone} />
+          <Link
+            href={phone ? "/" : "/login"}
             className="grid size-9 place-items-center border border-bone/10 bg-bone/[0.04] text-bone/65 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-            aria-label="Profile"
+            aria-label={phone ? "Profile" : "Log in"}
           >
             <Icon name="profile" className="h-4.5 w-4.5" />
-          </button>
+          </Link>
         </div>
       </div>
     </header>

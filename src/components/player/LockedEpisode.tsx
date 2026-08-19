@@ -1,15 +1,24 @@
 import Link from "next/link";
 import type { ContentItem, Episode } from "@/data/content";
 import { BrandName } from "@/components/brand/BrandName";
-import { Button } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 
 type LockedEpisodeProps = {
   series: ContentItem;
   episode: Episode;
+  isAuthenticated?: boolean;
 };
 
-export function LockedEpisode({ series, episode }: LockedEpisodeProps) {
+export function LockedEpisode({
+  series,
+  episode,
+  isAuthenticated = false,
+}: LockedEpisodeProps) {
+  const loginHref = `/login?next=${encodeURIComponent(
+    `/watch/${series.slug}/${episode.number}`,
+  )}`;
+
   return (
     <main className="min-h-screen bg-deep px-4 py-5 text-bone sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100svh-2.5rem)] max-w-5xl flex-col">
@@ -37,12 +46,29 @@ export function LockedEpisode({ series, episode }: LockedEpisodeProps) {
               this episode or get unlimited access with 0nya.
             </p>
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
-              <Button aria-label="Unlock episode placeholder">
-                Unlock episode
-              </Button>
-              <Button variant="secondary" aria-label="View plans placeholder">
-                View plans
-              </Button>
+              {isAuthenticated ? (
+                <>
+                  <Button aria-label="Unlock episode placeholder">
+                    Unlock episode
+                  </Button>
+                  <Button variant="secondary" aria-label="View plans placeholder">
+                    View plans
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <ButtonLink href={loginHref} aria-label="Log in to unlock episode">
+                    Unlock episode
+                  </ButtonLink>
+                  <ButtonLink
+                    href={loginHref}
+                    variant="secondary"
+                    aria-label="Log in to view plans"
+                  >
+                    View plans
+                  </ButtonLink>
+                </>
+              )}
             </div>
           </div>
         </section>
