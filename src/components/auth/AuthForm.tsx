@@ -11,6 +11,9 @@ const phoneProviderMessage =
   "Phone verification is not enabled in this development build yet.";
 
 type AuthFormProps = {
+  devError?: string;
+  devTestLoginAction?: (formData: FormData) => void | Promise<void>;
+  isDevelopment?: boolean;
   redirectTo: string;
 };
 
@@ -27,7 +30,12 @@ function getAuthErrorMessage(error: { code?: string; message: string }) {
   return isPhoneProviderError ? phoneProviderMessage : error.message;
 }
 
-export function AuthForm({ redirectTo }: AuthFormProps) {
+export function AuthForm({
+  devError,
+  devTestLoginAction,
+  isDevelopment = false,
+  redirectTo,
+}: AuthFormProps) {
   const router = useRouter();
   const [mobileNumber, setMobileNumber] = useState("");
   const [otp, setOtp] = useState("");
@@ -170,13 +178,30 @@ export function AuthForm({ redirectTo }: AuthFormProps) {
                   {message}
                 </p>
               ) : null}
-              <Button disabled={isSubmitting}>
+              <Button disabled={isSubmitting} type="submit">
                 {isSubmitting ? "Please wait" : isPhoneStep ? "Send OTP" : "Verify OTP"}
               </Button>
             </form>
             <p className="mt-5 text-sm leading-6 text-muted">
               Browse freely. Episodes 1, 2 and 3 stay open without signing in.
             </p>
+            {isDevelopment && devTestLoginAction ? (
+              <form action={devTestLoginAction} className="mt-5 border-t border-bone/10 pt-5">
+                <input name="next" type="hidden" value={redirectTo} />
+                {devError ? (
+                  <p className="mb-3 border border-bone/10 bg-bone/[0.03] px-3 py-2 text-sm leading-6 text-bone/80">
+                    {devError}
+                  </p>
+                ) : null}
+                <Button
+                  aria-label="Development test login"
+                  type="submit"
+                  variant="secondary"
+                >
+                  Dev test login
+                </Button>
+              </form>
+            ) : null}
             {!isPhoneStep ? (
               <button
                 className="mt-4 border-b border-teal/50 text-sm text-teal transition hover:border-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"

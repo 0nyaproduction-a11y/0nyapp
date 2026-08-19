@@ -1,35 +1,81 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { ContentItem, Episode } from "@/data/content";
 import { EpisodeComplete } from "@/components/player/EpisodeComplete";
 import { PlayerControls } from "@/components/player/PlayerControls";
+import { createClient } from "@/lib/supabase/client";
+import {
+  formatSeconds,
+  getFallbackPositionSeconds,
+  markEpisodeCompleted,
+  saveWatchProgress,
+  runtimeToSeconds,
+} from "@/lib/watch-progress";
 
 type VerticalPlayerProps = {
   series: ContentItem;
   episode: Episode;
   nextEpisode?: Episode;
+  initialPositionSeconds?: number;
+  durationSeconds?: number;
+  canPersistProgress?: boolean;
 };
 
-function formatProgress(progress: number, runtime: string) {
-  const [minutes = "0", seconds = "0"] = runtime.split(":");
-  const totalSeconds = Number(minutes) * 60 + Number(seconds);
-  const currentSeconds = Math.floor((totalSeconds * progress) / 100);
-  const currentMinutes = Math.floor(currentSeconds / 60);
-  const remainingSeconds = `${currentSeconds % 60}`.padStart(2, "0");
-
-  return `${currentMinutes}:${remainingSeconds}`;
-}
-
-export function VerticalPlayer({ series, episode, nextEpisode }: VerticalPlayerProps) {
+export function VerticalPlayer({
+  series,
+  episode,
+  nextEpisode,
+  initialPositionSeconds,
+  durationSeconds: providedDurationSeconds,
+  canPersistProgress = false,
+}: VerticalPlayerProps) {
+  const durationSeconds = providedDurationSeconds ?? runtimeToSeconds(episode.runtime);
+  const initialPosition = initialPositionSeconds ?? getFallbackPositionSeconds(
+    episode.progress,
+    episode.runtime,
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [progress, setProgress] = useState(Math.min(episode.progress ?? 8, 88));
+  const [positionSeconds, setPositionSeconds] = useState(() =>
+    Math.min(initialPosition, Math.max(durationSeconds - 5, 0)),
+  );
+  const supabase = useMemo(() => createClient(), []);
+  const lastSavedPositionRef = useRef(positionSeconds);
+  const positionSecondsRef = useRef(positionSeconds);
+  const completedRef = useRef(false);
+  const progress = useMemo(() => {
+    if (durationSeconds <= 0) {
+      return 0;
+    }
+
+    return Math.min(100, Math.round((positionSeconds / durationSeconds) * 100));
+  }, [durationSeconds, positionSeconds]);
   const isComplete = progress >= 100;
-  const currentTime = useMemo(
-    () => formatProgress(progress, episode.runtime),
-    [episode.runtime, progress],
+  const currentTime = useMemo(() => formatSeconds(positionSeconds), [positionSeconds]);
+
+  const persistProgress = useCallback(
+    (completed = false) => {
+      if (!canPersistProgress || durationSeconds <= 0) {
+        return;
+      }
+
+      const currentPosition = completed
+        ? durationSeconds
+        : positionSecondsRef.current;
+
+      void saveWatchProgress(supabase, {
+        seriesSlug: series.slug,
+        episodeNumber: episode.number,
+        positionSeconds: currentPosition,
+        durationSeconds,
+        completed,
+      });
+
+      lastSavedPositionRef.current = currentPosition;
+    },
+    [canPersistProgress, durationSeconds, episode.number, series.slug, supabase],
   );
 
   useEffect(() => {
@@ -38,11 +84,74 @@ export function VerticalPlayer({ series, episode, nextEpisode }: VerticalPlayerP
     }
 
     const timer = window.setInterval(() => {
-      setProgress((value) => Math.min(100, value + 2));
+      setPositionSeconds((value) => Math.min(durationSeconds, value + 2));
     }, 450);
 
     return () => window.clearInterval(timer);
-  }, [isComplete, isPlaying]);
+  }, [durationSeconds, isComplete, isPlaying]);
+
+  useEffect(() => {
+    positionSecondsRef.current = positionSeconds;
+
+    if (
+      canPersistProgress &&
+      isPlaying &&
+      Math.abs(positionSeconds - lastSavedPositionRef.current) >= 15
+    ) {
+      persistProgress(false);
+    }
+
+    if (
+      canPersistProgress &&
+      durationSeconds > 0 &&
+      !completedRef.current &&
+      durationSeconds - positionSeconds <= 5
+    ) {
+      completedRef.current = true;
+      void markEpisodeCompleted(
+        supabase,
+        series.slug,
+        episode.number,
+        durationSeconds,
+      );
+    }
+  }, [
+    canPersistProgress,
+    durationSeconds,
+    episode.number,
+    isPlaying,
+    persistProgress,
+    positionSeconds,
+    series.slug,
+    supabase,
+  ]);
+
+  useEffect(() => {
+    if (!canPersistProgress) {
+      return;
+    }
+
+    const saveBeforeLeaving = () => {
+      persistProgress(completedRef.current);
+    };
+
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    window.addEventListener("beforeunload", saveBeforeLeaving);
+
+    return () => {
+      saveBeforeLeaving();
+      window.removeEventListener("pagehide", saveBeforeLeaving);
+      window.removeEventListener("beforeunload", saveBeforeLeaving);
+    };
+  }, [canPersistProgress, persistProgress]);
+
+  const handlePlayToggle = () => {
+    if (isPlaying) {
+      persistProgress(false);
+    }
+
+    setIsPlaying((value) => !value);
+  };
 
   return (
     <section className="min-h-screen bg-deep text-bone">
@@ -90,7 +199,7 @@ export function VerticalPlayer({ series, episode, nextEpisode }: VerticalPlayerP
               isPlaying={isPlaying}
               nextHref={nextEpisode ? `/watch/${series.slug}/${nextEpisode.number}` : undefined}
               onMuteToggle={() => setIsMuted((value) => !value)}
-              onPlayToggle={() => setIsPlaying((value) => !value)}
+              onPlayToggle={handlePlayToggle}
               progress={progress}
             />
             {isComplete ? (

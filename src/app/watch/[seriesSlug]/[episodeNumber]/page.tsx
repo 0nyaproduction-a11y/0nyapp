@@ -8,6 +8,12 @@ import {
 import { LockedEpisode } from "@/components/player/LockedEpisode";
 import { VerticalPlayer } from "@/components/player/VerticalPlayer";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getEpisodeProgress,
+  getFallbackPositionSeconds,
+  getResumePositionSeconds,
+  runtimeToSeconds,
+} from "@/lib/watch-progress";
 
 type WatchPageProps = {
   params: Promise<{ seriesSlug: string; episodeNumber: string }>;
@@ -34,12 +40,12 @@ export default async function WatchPage({ params }: WatchPageProps) {
     notFound();
   }
 
-  if (episode.isLocked) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
+  if (episode.isLocked) {
     return (
       <LockedEpisode
         episode={episode}
@@ -49,9 +55,22 @@ export default async function WatchPage({ params }: WatchPageProps) {
     );
   }
 
+  const savedProgress = user
+    ? await getEpisodeProgress(supabase, series.slug, episode.number)
+    : null;
+  const durationSeconds = runtimeToSeconds(episode.runtime);
+  const initialPositionSeconds = getResumePositionSeconds(
+    savedProgress,
+    getFallbackPositionSeconds(episode.progress, episode.runtime),
+    durationSeconds,
+  );
+
   return (
     <VerticalPlayer
+      canPersistProgress={Boolean(user)}
+      durationSeconds={durationSeconds}
       episode={episode}
+      initialPositionSeconds={initialPositionSeconds}
       nextEpisode={getNextEpisode(series.slug, episode.number)}
       series={series}
     />

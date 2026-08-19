@@ -9,8 +9,17 @@ import { ContentRow } from "@/components/content/ContentRow";
 import { FeaturedHero } from "@/components/home/FeaturedHero";
 import { Header } from "@/components/layout/Header";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
+import { createClient } from "@/lib/supabase/server";
+import { getContinueWatching, progressToContentItems } from "@/lib/watch-progress";
 
-export function HomePage() {
+export async function HomePage() {
+  const supabase = await createClient();
+  const savedProgress = await getContinueWatching(supabase);
+  const savedContinueWatching = progressToContentItems(savedProgress);
+  const continueWatchingItems = savedContinueWatching.length
+    ? savedContinueWatching
+    : continueWatching;
+
   return (
     <div className="min-h-screen bg-background text-bone">
       <Header />
@@ -19,7 +28,7 @@ export function HomePage() {
         <ContentRow
           title="Continue Watching"
           kicker="Resume"
-          items={continueWatching}
+          items={continueWatchingItems}
         />
         <ContentRow title="Start Here" kicker="0nya essentials" items={startHere} />
         <ContentRow title="Trending" kicker="Tonight in India" items={trending} />

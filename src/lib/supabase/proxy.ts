@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import type { Database } from "@/types/database";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
@@ -8,7 +9,7 @@ export async function updateSession(request: NextRequest) {
   });
   const { url, key } = getSupabaseEnv();
 
-  const supabase = createServerClient(url, key, {
+  const supabase = createServerClient<Database>(url, key, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
