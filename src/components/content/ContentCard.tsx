@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { ContentItem } from "@/data/content";
 import { Icon } from "@/components/ui/Icon";
 
@@ -10,8 +11,9 @@ type ContentCardProps = {
 export function ContentCard({ item, priority = false }: ContentCardProps) {
   return (
     <article className="group w-[39vw] max-w-[176px] min-w-[136px] sm:w-[176px] md:w-[212px] lg:w-[232px] xl:w-[244px]">
-      <div
-        className="relative aspect-[9/16] overflow-hidden border border-bone/10 bg-surface"
+      <Link
+        href={`/series/${item.slug}`}
+        className="relative block aspect-[9/16] overflow-hidden border border-bone/10 bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
         style={{ "--card-accent": item.accent } as React.CSSProperties}
       >
         <Image
@@ -34,19 +36,18 @@ export function ContentCard({ item, priority = false }: ContentCardProps) {
             </span>
           ) : null}
         </div>
-        <button
+        <span
           className="absolute right-2 top-2 grid size-7 place-items-center border border-bone/10 bg-black/45 text-bone/70 transition hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-          type="button"
           aria-label={`More information about ${item.title}`}
         >
           <Icon name="info" className="h-4 w-4" />
-        </button>
+        </span>
         <div className="absolute inset-x-0 bottom-0 p-3">
           <h3 className="line-clamp-2 font-display text-[1.35rem] font-light leading-[0.95] text-bone sm:text-2xl">
             {item.title}
           </h3>
           <p className="mt-1.5 font-mono text-[0.64rem] uppercase tracking-[0.11em] text-bone/76 sm:text-[0.62rem]">
-            {item.currentEpisode ?? `${item.episodes} episodes`}
+            {item.currentEpisode ?? `${item.episodeCount} episodes`}
           </p>
           {typeof item.progress === "number" ? (
             <div
@@ -60,7 +61,7 @@ export function ContentCard({ item, priority = false }: ContentCardProps) {
             </div>
           ) : null}
         </div>
-      </div>
+      </Link>
     </article>
   );
 }

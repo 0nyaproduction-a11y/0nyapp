@@ -1,6 +1,6 @@
 import Image from "next/image";
 import type { ContentItem } from "@/data/content";
-import { Button } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 
 type FeaturedHeroProps = {
@@ -58,20 +58,29 @@ export function FeaturedHero({ item }: FeaturedHeroProps) {
             {item.title}
           </h1>
           <p className="mt-4 font-mono text-[0.7rem] uppercase tracking-[0.12em] text-bone/68 sm:text-[0.66rem]">
-            {item.genre} / {item.format} / {item.episodes} episodes / {item.runtime}
+            {item.genre} / {item.format} / {item.episodeCount} episodes / {item.episodeDuration}
           </p>
           <p className="mx-auto mt-5 max-w-xl text-base font-light leading-7 text-muted md:mx-0 md:text-lg">
             {item.synopsis}
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center md:justify-start">
-            <Button className="w-full sm:w-auto" aria-label={`Watch ${item.title} now`}>
+            <ButtonLink
+              href={`/watch/${item.slug}/1`}
+              className="w-full sm:w-auto"
+              aria-label={`Watch ${item.title} now`}
+            >
               <Icon name="play" className="h-4 w-4 fill-current" />
               Watch now
-            </Button>
-            <Button variant="secondary" className="w-full sm:w-auto" aria-label={`More information about ${item.title}`}>
+            </ButtonLink>
+            <ButtonLink
+              href={`/series/${item.slug}`}
+              variant="secondary"
+              className="w-full sm:w-auto"
+              aria-label={`More information about ${item.title}`}
+            >
               <Icon name="info" className="h-4 w-4" />
               Info
-            </Button>
+            </ButtonLink>
           </div>
         </div>
       </div>
