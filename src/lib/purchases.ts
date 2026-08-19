@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 export type PurchaseStatus =
@@ -19,6 +20,10 @@ type PurchaseResult = {
   status: PurchaseStatus;
   remainingBalance: number | null;
 };
+
+async function getSupabase(supabase?: SupabaseClient<Database>) {
+  return supabase ?? createClient();
+}
 
 function toPurchaseStatus(status: string | undefined): PurchaseStatus {
   switch (status) {
@@ -71,8 +76,11 @@ export async function purchaseEpisodeWithCoins(episodeId: string): Promise<Purch
   };
 }
 
-export async function getUserCoinTransactions(userId: string) {
-  const supabase = await createClient();
+export async function getUserCoinTransactions(
+  userId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("coin_transactions")
     .select("*")

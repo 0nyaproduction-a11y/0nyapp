@@ -1,5 +1,6 @@
 import type { Episode } from "@/data/content";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 export type Wallet = Database["public"]["Tables"]["wallets"]["Row"];
@@ -14,6 +15,7 @@ type WatchableEpisode = Episode & {
 type WatchAccessInput = {
   userId: string | null;
   episode: WatchableEpisode;
+  supabase?: SupabaseClient<Database>;
 };
 
 export type EpisodeAccessKind = "free" | "owned" | "subscription" | "locked";
@@ -34,8 +36,15 @@ function hasStarted(row: { starts_at?: string | null }) {
   return !row.starts_at || new Date(row.starts_at).getTime() <= Date.now();
 }
 
-export async function getUserWallet(userId: string) {
-  const supabase = await createClient();
+async function getSupabase(supabase?: SupabaseClient<Database>) {
+  return supabase ?? createClient();
+}
+
+export async function getUserWallet(
+  userId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("wallets")
     .select("*")
@@ -50,8 +59,11 @@ export async function getUserWallet(userId: string) {
   return data;
 }
 
-export async function getUserSubscription(userId: string) {
-  const supabase = await createClient();
+export async function getUserSubscription(
+  userId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const activeResult = await supabase
     .from("subscriptions")
     .select("*")
@@ -90,8 +102,11 @@ export async function getUserSubscription(userId: string) {
   return data;
 }
 
-export async function hasActiveSubscription(userId: string) {
-  const subscription = await getUserSubscription(userId);
+export async function hasActiveSubscription(
+  userId: string,
+  supabase?: SupabaseClient<Database>,
+) {
+  const subscription = await getUserSubscription(userId, supabase);
 
   return Boolean(
     subscription &&
@@ -101,8 +116,12 @@ export async function hasActiveSubscription(userId: string) {
   );
 }
 
-export async function hasValidEpisodeEntitlement(userId: string, episodeId: string) {
-  const supabase = await createClient();
+export async function hasValidEpisodeEntitlement(
+  userId: string,
+  episodeId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("episode_entitlements")
     .select("*")
@@ -118,19 +137,24 @@ export async function hasValidEpisodeEntitlement(userId: string, episodeId: stri
   return Boolean(data && hasCurrentTimeWindow(data));
 }
 
-export async function userOwnsEpisode(userId: string, episodeId: string) {
-  return hasValidEpisodeEntitlement(userId, episodeId);
+export async function userOwnsEpisode(
+  userId: string,
+  episodeId: string,
+  supabase?: SupabaseClient<Database>,
+) {
+  return hasValidEpisodeEntitlement(userId, episodeId, supabase);
 }
 
 export async function getValidEpisodeEntitlementIds(
   userId: string,
   episodeIds: string[],
+  supabaseClient?: SupabaseClient<Database>,
 ) {
   if (!episodeIds.length) {
     return new Set<string>();
   }
 
-  const supabase = await createClient();
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("episode_entitlements")
     .select("episode_id, expires_at")
@@ -152,14 +176,15 @@ export async function getValidEpisodeEntitlementIds(
 export async function getEpisodeAccessStates(
   userId: string | null,
   episodes: WatchableEpisode[],
+  supabase?: SupabaseClient<Database>,
 ) {
   const accessByEpisodeNumber = new Map<number, EpisodeAccessState>();
-  const hasSubscription = userId ? await hasActiveSubscription(userId) : false;
+  const hasSubscription = userId ? await hasActiveSubscription(userId, supabase) : false;
   const episodeIds = episodes
     .map((episode) => episode.id)
     .filter((episodeId): episodeId is string => Boolean(episodeId));
   const entitledEpisodeIds = userId
-    ? await getValidEpisodeEntitlementIds(userId, episodeIds)
+    ? await getValidEpisodeEntitlementIds(userId, episodeIds, supabase)
     : new Set<string>();
 
   for (const episode of episodes) {
@@ -200,7 +225,11 @@ export async function getEpisodeAccessStates(
   return accessByEpisodeNumber;
 }
 
-export async function canUserWatchEpisode({ userId, episode }: WatchAccessInput) {
+export async function canUserWatchEpisode({
+  userId,
+  episode,
+  supabase,
+}: WatchAccessInput) {
   if (episode.isFree) {
     return true;
   }
@@ -209,7 +238,7 @@ export async function canUserWatchEpisode({ userId, episode }: WatchAccessInput)
     return false;
   }
 
-  if (await hasActiveSubscription(userId)) {
+  if (await hasActiveSubscription(userId, supabase)) {
     return true;
   }
 
@@ -217,5 +246,5 @@ export async function canUserWatchEpisode({ userId, episode }: WatchAccessInput)
     return false;
   }
 
-  return hasValidEpisodeEntitlement(userId, episode.id);
+  return hasValidEpisodeEntitlement(userId, episode.id, supabase);
 }

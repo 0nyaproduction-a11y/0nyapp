@@ -1,10 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
-export async function getUserProfile(userId: string) {
-  const supabase = await createClient();
+async function getSupabase(supabase?: SupabaseClient<Database>) {
+  return supabase ?? createClient();
+}
+
+export async function getUserProfile(
+  userId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("profiles")
     .select("*")

@@ -54,6 +54,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
   const canWatch = await canUserWatchEpisode({
     userId: user?.id ?? null,
     episode,
+    supabase,
   });
 
   if (!canWatch) {

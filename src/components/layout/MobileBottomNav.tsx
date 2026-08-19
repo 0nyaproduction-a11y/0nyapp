@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
+import { accountPath } from "@/lib/routes";
 
 const items = [
   { label: "Home", icon: "home", href: "/", active: true },
   { label: "Browse", icon: "browse", href: "/", active: false },
   { label: "Search", icon: "search", href: "/", active: false },
-  { label: "Profile", icon: "profile", href: "/account", active: false },
+  { label: "Profile", icon: "profile", href: accountPath, active: false },
 ] as const;
 
 export function MobileBottomNav() {

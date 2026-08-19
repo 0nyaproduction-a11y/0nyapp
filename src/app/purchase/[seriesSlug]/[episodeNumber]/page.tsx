@@ -14,6 +14,7 @@ import {
   userOwnsEpisode,
   getUserWallet,
 } from "@/lib/entitlements";
+import { purchaseEpisodePath, walletPath, watchEpisodePath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 
 type PurchasePageProps = {
@@ -64,7 +65,7 @@ export default async function PurchasePage({
     notFound();
   }
 
-  const episodeHref = `/watch/${series.slug}/${episode.number}`;
+  const episodeHref = watchEpisodePath(series.slug, episode.number);
 
   if (episode.isFree) {
     redirect(episodeHref);
@@ -140,7 +141,7 @@ export default async function PurchasePage({
                   Watch episode
                 </ButtonLink>
               ) : user && coinPrice > 0 && !hasEnoughCoins ? (
-                <ButtonLink href="/wallet" aria-label="Add coins">
+                <ButtonLink href={walletPath} aria-label="Add coins">
                   Add coins
                 </ButtonLink>
               ) : (
@@ -149,7 +150,7 @@ export default async function PurchasePage({
                   <input
                     name="returnTo"
                     type="hidden"
-                    value={`/purchase/${series.slug}/${episode.number}`}
+                    value={purchaseEpisodePath(series.slug, episode.number)}
                   />
                   <Button
                     aria-label={`Buy episode ${episode.number} with coins`}

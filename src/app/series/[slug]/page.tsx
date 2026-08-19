@@ -31,6 +31,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
   const episodeAccess = await getEpisodeAccessStates(
     user?.id ?? null,
     series.episodes,
+    supabase,
   );
 
   return (

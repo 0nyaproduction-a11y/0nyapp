@@ -5,66 +5,17 @@ import { signOut } from "@/app/account/actions";
 import { BrandName } from "@/components/brand/BrandName";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import {
+  getSafeDisplayName,
+  getSafeUserIdentifier,
+  getSubscriptionSummary,
+} from "@/lib/account";
 import { getPublishedSeries } from "@/lib/catalog";
 import { getUserSubscription, getUserWallet } from "@/lib/entitlements";
 import { getUserProfile } from "@/lib/profiles";
+import { walletPath, watchEpisodePath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 import { getContinueWatching, progressToContentItems } from "@/lib/watch-progress";
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
-function getMetadataString(metadata: Record<string, unknown>, key: string) {
-  const value = metadata[key];
-
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function getDisplayName(
-  profileName: string | null | undefined,
-  metadata: Record<string, unknown>,
-  email: string | undefined,
-  phone: string | undefined,
-) {
-  return (
-    profileName?.trim() ||
-    getMetadataString(metadata, "display_name") ||
-    email ||
-    phone ||
-    "0nya member"
-  );
-}
-
-function getIdentifier(email: string | undefined, phone: string | undefined) {
-  if (phone) {
-    return phone;
-  }
-
-  if (email) {
-    return email;
-  }
-
-  return "Signed in";
-}
-
-function getSubscriptionLabel(
-  subscription: Awaited<ReturnType<typeof getUserSubscription>>,
-) {
-  if (subscription?.status !== "active") {
-    return "No active plan";
-  }
-
-  if (subscription.ends_at) {
-    return `Active until ${formatDate(subscription.ends_at)}`;
-  }
-
-  return "Active plan";
-}
 
 export default async function AccountPage() {
   const supabase = await createClient();
@@ -86,9 +37,9 @@ export default async function AccountPage() {
     ]);
 
   const continueWatching = progressToContentItems(progressRows, catalogItems).slice(0, 3);
-  const metadata = user.user_metadata ?? {};
-  const displayName = getDisplayName(profile?.display_name, metadata, user.email, user.phone);
-  const identifier = getIdentifier(user.email, user.phone);
+  const displayName = getSafeDisplayName(profile, user);
+  const identifier = getSafeUserIdentifier(user);
+  const subscriptionSummary = getSubscriptionSummary(subscription);
 
   return (
     <main className="min-h-screen bg-deep px-4 py-5 text-bone sm:px-6 lg:px-8">
@@ -124,7 +75,7 @@ export default async function AccountPage() {
 
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Link
-                href="/wallet"
+                href={walletPath}
                 className="border border-bone/10 bg-bone/[0.03] p-4 transition hover:border-teal/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
               >
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-bone/55">
@@ -142,7 +93,7 @@ export default async function AccountPage() {
                   Plan
                 </p>
                 <p className="mt-2 text-sm leading-6 text-bone/82">
-                  {getSubscriptionLabel(subscription)}
+                  {subscriptionSummary.label}
                 </p>
               </Link>
               <Link
@@ -176,7 +127,10 @@ export default async function AccountPage() {
                 {continueWatching.length ? (
                   continueWatching.map((item) => (
                     <Link
-                      href={`/watch/${item.slug}/${item.currentEpisode?.replace("Episode ", "") ?? 1}`}
+                      href={watchEpisodePath(
+                        item.slug,
+                        Number(item.currentEpisode?.replace("Episode ", "") ?? 1),
+                      )}
                       className="grid grid-cols-[3.5rem_1fr] gap-4 border-b border-bone/10 py-3 transition hover:border-teal/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
                       key={item.id}
                     >

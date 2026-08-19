@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@/components/ui/Icon";
+import { accountPath } from "@/lib/routes";
 
 type AuthStatusProps = {
   isAuthenticated: boolean;
@@ -10,7 +11,7 @@ export function AuthStatus({ isAuthenticated, phone }: AuthStatusProps) {
   if (!isAuthenticated) {
     return (
       <Link
-        href="/account"
+        href={accountPath}
         className="hidden h-10 items-center gap-2 border border-bone/10 px-3 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal sm:inline-flex"
       >
         Account
@@ -20,7 +21,7 @@ export function AuthStatus({ isAuthenticated, phone }: AuthStatusProps) {
 
   return (
     <Link
-      href="/account"
+      href={accountPath}
       aria-label="Account"
       className="hidden h-10 items-center gap-2 border border-bone/10 px-3 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal sm:inline-flex"
     >

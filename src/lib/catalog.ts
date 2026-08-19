@@ -7,12 +7,17 @@ import {
   type Episode,
 } from "@/data/content";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 type SeriesRow = Database["public"]["Tables"]["series"]["Row"];
 type EpisodeRow = Database["public"]["Tables"]["episodes"]["Row"];
 
 const fallbackPoster = "/logo-og.jpg";
+
+async function getSupabase(supabase?: SupabaseClient<Database>) {
+  return supabase ?? createClient();
+}
 
 function toContentFormat(format: string | null): ContentFormat {
   if (format === "Series" || format === "Mini" || format === "Short") {
@@ -73,12 +78,15 @@ function mapSeries(row: SeriesRow, episodes: EpisodeRow[] = []): ContentItem {
   };
 }
 
-async function getPublishedEpisodeRows(seriesIds: string[]) {
+async function getPublishedEpisodeRows(
+  seriesIds: string[],
+  supabaseClient?: SupabaseClient<Database>,
+) {
   if (!seriesIds.length) {
     return [];
   }
 
-  const supabase = await createClient();
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("episodes")
     .select("*")
@@ -94,8 +102,8 @@ async function getPublishedEpisodeRows(seriesIds: string[]) {
   return data;
 }
 
-export async function getPublishedSeries() {
-  const supabase = await createClient();
+export async function getPublishedSeries(supabaseClient?: SupabaseClient<Database>) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("series")
     .select("*")
@@ -107,13 +115,16 @@ export async function getPublishedSeries() {
     return [];
   }
 
-  const episodes = await getPublishedEpisodeRows(data.map((series) => series.id));
+  const episodes = await getPublishedEpisodeRows(
+    data.map((series) => series.id),
+    supabase,
+  );
 
   return data.map((series) => mapSeries(series, episodes));
 }
 
-export async function getFeaturedSeries() {
-  const supabase = await createClient();
+export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database>) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("series")
     .select("*")
@@ -131,7 +142,7 @@ export async function getFeaturedSeries() {
     return null;
   }
 
-  const episodes = await getEpisodesForSeries(data.id);
+  const episodes = await getEpisodesForSeries(data.id, supabase);
 
   return mapSeries(data, episodes.map((episode) => ({
     ...episode,
@@ -139,8 +150,11 @@ export async function getFeaturedSeries() {
   })));
 }
 
-export async function getSeriesBySlug(slug: string) {
-  const supabase = await createClient();
+export async function getSeriesBySlug(
+  slug: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("series")
     .select("*")
@@ -156,13 +170,16 @@ export async function getSeriesBySlug(slug: string) {
     return null;
   }
 
-  const episodes = await getEpisodesForSeries(data.id);
+  const episodes = await getEpisodesForSeries(data.id, supabase);
 
   return mapSeries(data, episodes);
 }
 
-export async function getEpisodesForSeries(seriesId: string) {
-  const supabase = await createClient();
+export async function getEpisodesForSeries(
+  seriesId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("episodes")
     .select("*")
@@ -181,8 +198,9 @@ export async function getEpisodesForSeries(seriesId: string) {
 export async function getEpisodeBySeriesSlugAndNumber(
   slug: string,
   episodeNumber: number,
+  supabase?: SupabaseClient<Database>,
 ) {
-  const series = await getSeriesBySlug(slug);
+  const series = await getSeriesBySlug(slug, supabase);
 
   if (!series) {
     return null;

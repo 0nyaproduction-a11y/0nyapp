@@ -1,8 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 export type CoinProduct = Database["public"]["Tables"]["coin_products"]["Row"];
 export type PaymentOrder = Database["public"]["Tables"]["payment_orders"]["Row"];
+
+async function getSupabase(supabase?: SupabaseClient<Database>) {
+  return supabase ?? createClient();
+}
 
 export function formatOrderStatus(order: PaymentOrder) {
   if (order.status === "completed" && order.verification_status === "verified") {
@@ -32,8 +37,8 @@ export function formatPaymentProvider(provider: PaymentOrder["provider"]) {
   return "Verified top-up";
 }
 
-export async function getActiveCoinProducts() {
-  const supabase = await createClient();
+export async function getActiveCoinProducts(supabaseClient?: SupabaseClient<Database>) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("coin_products")
     .select("*")
@@ -48,8 +53,11 @@ export async function getActiveCoinProducts() {
   return data;
 }
 
-export async function getUserPaymentOrders(userId: string) {
-  const supabase = await createClient();
+export async function getUserPaymentOrders(
+  userId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("payment_orders")
     .select("*")
@@ -65,8 +73,12 @@ export async function getUserPaymentOrders(userId: string) {
   return data;
 }
 
-export async function getPaymentOrderById(userId: string, orderId: string) {
-  const supabase = await createClient();
+export async function getPaymentOrderById(
+  userId: string,
+  orderId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
   const { data, error } = await supabase
     .from("payment_orders")
     .select("*")

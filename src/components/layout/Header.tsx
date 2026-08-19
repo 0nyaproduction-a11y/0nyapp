@@ -3,6 +3,7 @@ import { BrandName } from "@/components/brand/BrandName";
 import { AuthStatus } from "@/components/auth/AuthStatus";
 import { Icon } from "@/components/ui/Icon";
 import { getUserWallet } from "@/lib/entitlements";
+import { walletPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 
 const navItems = ["Home", "Browse", "Originals", "New"];
@@ -48,7 +49,7 @@ export async function Header() {
           </button>
           {user ? (
             <Link
-              href="/wallet"
+              href={walletPath}
               className="hidden h-10 items-center gap-2 border border-bone/10 px-3 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-teal/50 hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal sm:inline-flex"
               aria-label={`Wallet balance ${coinBalance} coins`}
             >
