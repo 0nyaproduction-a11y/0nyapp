@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import {
   contentItems,
-  getEpisode,
-  getNextEpisode,
-  getSeriesBySlug,
+  getEpisode as getMockEpisode,
+  getSeriesBySlug as getMockSeriesBySlug,
 } from "@/data/content";
 import { LockedEpisode } from "@/components/player/LockedEpisode";
 import { VerticalPlayer } from "@/components/player/VerticalPlayer";
+import { getEpisodeBySeriesSlugAndNumber } from "@/lib/catalog";
 import { createClient } from "@/lib/supabase/server";
 import {
   getEpisodeProgress,
@@ -31,10 +31,15 @@ export function generateStaticParams() {
 export default async function WatchPage({ params }: WatchPageProps) {
   const { seriesSlug, episodeNumber } = await params;
   const parsedEpisodeNumber = Number(episodeNumber);
-  const series = getSeriesBySlug(seriesSlug);
-  const episode = Number.isInteger(parsedEpisodeNumber)
-    ? getEpisode(seriesSlug, parsedEpisodeNumber)
+  const catalogResult = Number.isInteger(parsedEpisodeNumber)
+    ? await getEpisodeBySeriesSlugAndNumber(seriesSlug, parsedEpisodeNumber)
+    : null;
+  const mockSeries = getMockSeriesBySlug(seriesSlug);
+  const mockEpisode = Number.isInteger(parsedEpisodeNumber)
+    ? getMockEpisode(seriesSlug, parsedEpisodeNumber)
     : undefined;
+  const series = catalogResult?.series ?? mockSeries;
+  const episode = catalogResult?.episode ?? mockEpisode;
 
   if (!series || !episode) {
     notFound();
@@ -45,7 +50,9 @@ export default async function WatchPage({ params }: WatchPageProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (episode.isLocked) {
+  const isLocked = !episode.isFree;
+
+  if (isLocked) {
     return (
       <LockedEpisode
         episode={episode}
@@ -71,7 +78,9 @@ export default async function WatchPage({ params }: WatchPageProps) {
       durationSeconds={durationSeconds}
       episode={episode}
       initialPositionSeconds={initialPositionSeconds}
-      nextEpisode={getNextEpisode(series.slug, episode.number)}
+      nextEpisode={series.episodes.find(
+        (nextEpisode) => nextEpisode.number === episode.number + 1,
+      )}
       series={series}
     />
   );

@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
-import { contentItems, getSeriesBySlug } from "@/data/content";
+import { contentItems, getSeriesBySlug as getMockSeriesBySlug } from "@/data/content";
 import { Header } from "@/components/layout/Header";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { EpisodeList } from "@/components/series/EpisodeList";
 import { SeriesHero } from "@/components/series/SeriesHero";
+import { getSeriesBySlug } from "@/lib/catalog";
 
 type SeriesPageProps = {
   params: Promise<{ slug: string }>;
@@ -15,7 +16,7 @@ export function generateStaticParams() {
 
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { slug } = await params;
-  const series = getSeriesBySlug(slug);
+  const series = (await getSeriesBySlug(slug)) ?? getMockSeriesBySlug(slug);
 
   if (!series) {
     notFound();

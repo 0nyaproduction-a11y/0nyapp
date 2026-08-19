@@ -212,11 +212,16 @@ export async function getContinueWatching(supabase: TypedSupabaseClient) {
   return data;
 }
 
-export function progressToContentItems(progressRows: WatchProgress[]) {
+export function progressToContentItems(
+  progressRows: WatchProgress[],
+  catalogItems = contentItems,
+) {
   const seen = new Set<string>();
 
   return progressRows.reduce<ContentItem[]>((items, progress) => {
-    const series = getSeriesBySlug(progress.series_slug);
+    const series =
+      catalogItems.find((item) => item.slug === progress.series_slug) ??
+      getSeriesBySlug(progress.series_slug);
     const episode = getEpisode(progress.series_slug, progress.episode_number);
 
     if (!series || !episode || progress.completed) {
