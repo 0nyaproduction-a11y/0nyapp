@@ -93,6 +93,16 @@ export function WatchScreen({ route }: Props) {
             setEpisode(authorizedEpisode);
           }
         }}
+        onSelectEpisode={(episodeNumber) => {
+          const targetEpisode = series.episodes.find(
+            (candidate) => candidate.number === episodeNumber,
+          );
+          const targetAccess = episodeAccess[String(episodeNumber)];
+
+          if (targetEpisode && targetAccess?.canWatch && targetAccess.kind !== "locked") {
+            setEpisode(targetEpisode);
+          }
+        }}
         savedProgress={accessToken ? progressByEpisode[episode.number] : undefined}
       />
     );
@@ -137,6 +147,21 @@ function buildSeriesEpisodeContext(
         }
       : undefined;
 
+  const episodeSummaries = episodes.map((candidate) => {
+    const candidateAccess =
+      episodeAccess[String(candidate.number)] ??
+      (candidate.number === episode.number ? access : undefined);
+
+    return {
+      number: candidate.number,
+      title: candidate.title,
+      runtime: candidate.runtime,
+      accessKind: candidateAccess?.kind ?? "locked",
+      canWatch: candidateAccess?.canWatch ?? false,
+      accessLabel: candidateAccess?.label ?? "Locked",
+    };
+  });
+
   return {
     type: "SERIES_EPISODE",
     seriesSlug,
@@ -147,5 +172,6 @@ function buildSeriesEpisodeContext(
     accessLabel: access.label,
     nextEpisode: authorizedNextEpisode,
     hasLockedNextEpisode: Boolean(nextEpisode) && !authorizedNextEpisode,
+    episodes: episodeSummaries,
   };
 }

@@ -1,8 +1,10 @@
 import { useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getDevelopmentPlaybackSource } from "./devSources";
+import { EpisodeActions } from "./EpisodeActions";
+import { EpisodeSelector } from "./EpisodeSelector";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerStatusOverlay } from "./PlayerStatusOverlay";
 import { useAutoHideControls } from "./useAutoHideControls";
@@ -19,6 +21,7 @@ type PlayerScreenProps = {
   onAdvanceToNext?: (
     nextEpisode: NonNullable<Extract<PlaybackContext, { type: "SERIES_EPISODE" }>["nextEpisode"]>,
   ) => void;
+  onSelectEpisode?: (episodeNumber: number) => void;
   isProgressResolved?: boolean;
   savedProgress?: WatchProgressItem;
 };
@@ -34,10 +37,12 @@ export function PlayerScreen({
   isProgressResolved = true,
   onAdvanceToNext,
   onEnded,
+  onSelectEpisode,
   savedProgress,
 }: PlayerScreenProps) {
   const navigation = useNavigation();
   const source = useMemo(() => getDevelopmentPlaybackSource(context), [context]);
+  const [isEpisodeSelectorOpen, setIsEpisodeSelectorOpen] = useState(false);
   const lastTapRef = useRef<{ side: "left" | "right"; timestamp: number } | null>(null);
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressRef = useRef(false);
@@ -100,6 +105,8 @@ export function PlayerScreen({
     transitionStartedRef.current = false;
     resumeAppliedContextRef.current = null;
     progressSyncArmedRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- context changes are episode lifecycle boundaries; close a stale selector before the new episode renders.
+    setIsEpisodeSelectorOpen(false);
   }, [contextKey]);
 
   useEffect(() => {
@@ -161,6 +168,17 @@ export function PlayerScreen({
 
     controller.togglePlay();
   }, [controller, progressSync]);
+
+  const handleSelectEpisode = useCallback(
+    (episodeNumber: number) => {
+      void (async () => {
+        // Flush the departing episode's progress before switching context.
+        await progressSyncRef.current.saveNow();
+        onSelectEpisode?.(episodeNumber);
+      })();
+    },
+    [onSelectEpisode],
+  );
 
   const handleSideTap = (side: "left" | "right") => {
     const now = Date.now();
@@ -307,9 +325,29 @@ export function PlayerScreen({
                 title={title}
               />
             ) : null}
+
+            {areControlsVisible && !controller.hasEnded ? (
+              <EpisodeActions
+                onEpisodesPress={
+                  context.type === "SERIES_EPISODE" && context.episodes.length > 0
+                    ? () => setIsEpisodeSelectorOpen(true)
+                    : undefined
+                }
+              />
+            ) : null}
           </View>
         </View>
       </View>
+
+      {context.type === "SERIES_EPISODE" ? (
+        <EpisodeSelector
+          currentEpisodeNumber={context.episodeNumber}
+          episodes={context.episodes}
+          onClose={() => setIsEpisodeSelectorOpen(false)}
+          onSelectEpisode={handleSelectEpisode}
+          visible={isEpisodeSelectorOpen}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

@@ -1,5 +1,15 @@
 import type { VideoSource } from "expo-video";
 
+// Server-derived access summary for one episode in the series; never computed locally.
+export type PlaybackEpisodeSummary = {
+  number: number;
+  title: string;
+  runtime?: string;
+  accessKind: "free" | "owned" | "included" | "locked";
+  canWatch: boolean;
+  accessLabel: string;
+};
+
 export type SeriesEpisodePlaybackContext = {
   type: "SERIES_EPISODE";
   seriesSlug: string;
@@ -15,6 +25,7 @@ export type SeriesEpisodePlaybackContext = {
     accessLabel: string;
   };
   hasLockedNextEpisode: boolean;
+  episodes: PlaybackEpisodeSummary[];
 };
 
 export type ShortFilmPlaybackContext = {
