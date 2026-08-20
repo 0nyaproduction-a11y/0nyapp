@@ -6,6 +6,7 @@ import { getDevelopmentPlaybackSource } from "./devSources";
 import { EpisodeActions } from "./EpisodeActions";
 import { EpisodeSelector } from "./EpisodeSelector";
 import { PlayerControls } from "./PlayerControls";
+import { PlayerSettings } from "./PlayerSettings";
 import { PlayerStatusOverlay } from "./PlayerStatusOverlay";
 import { useAutoHideControls } from "./useAutoHideControls";
 import { usePlaybackController } from "./usePlaybackController";
@@ -43,6 +44,7 @@ export function PlayerScreen({
   const navigation = useNavigation();
   const source = useMemo(() => getDevelopmentPlaybackSource(context), [context]);
   const [isEpisodeSelectorOpen, setIsEpisodeSelectorOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const lastTapRef = useRef<{ side: "left" | "right"; timestamp: number } | null>(null);
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressRef = useRef(false);
@@ -107,6 +109,7 @@ export function PlayerScreen({
     progressSyncArmedRef.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- context changes are episode lifecycle boundaries; close a stale selector before the new episode renders.
     setIsEpisodeSelectorOpen(false);
+    setIsSettingsOpen(false);
   }, [contextKey]);
 
   useEffect(() => {
@@ -321,6 +324,7 @@ export function PlayerScreen({
                 onPlayPause={handlePlayPause}
                 onReplay={controller.replay}
                 onSeekTo={controller.seekTo}
+                onSettingsPress={() => setIsSettingsOpen(true)}
                 subtitle={eyebrow}
                 title={title}
               />
@@ -348,6 +352,15 @@ export function PlayerScreen({
           visible={isEpisodeSelectorOpen}
         />
       ) : null}
+
+      <PlayerSettings
+        currentSubtitleTrack={controller.currentSubtitleTrack}
+        currentVideoTrack={controller.currentVideoTrack}
+        onClose={() => setIsSettingsOpen(false)}
+        onSelectSubtitleTrack={controller.setSubtitleTrack}
+        subtitleTracks={controller.subtitleTracks}
+        visible={isSettingsOpen}
+      />
     </SafeAreaView>
   );
 }

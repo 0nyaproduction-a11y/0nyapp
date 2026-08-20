@@ -7,6 +7,7 @@ import {
   type SubtitleTrack,
   type VideoPlayerStatus,
   type VideoSource,
+  type VideoTrack,
 } from "expo-video";
 import type { PlaybackContext, PlaybackEndedPayload } from "./types";
 
@@ -27,6 +28,9 @@ export function usePlaybackController({
   const [duration, setDuration] = useState(0);
   const [bufferedPosition, setBufferedPosition] = useState(0);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [currentSubtitleTrack, setCurrentSubtitleTrack] = useState<SubtitleTrack | null>(null);
+  const [videoTracks, setVideoTracks] = useState<VideoTrack[]>([]);
+  const [currentVideoTrack, setCurrentVideoTrack] = useState<VideoTrack | null>(null);
   const [hasEnded, setHasEnded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [status, setStatus] = useState<VideoPlayerStatus>(INITIAL_STATUS);
@@ -108,6 +112,14 @@ export function usePlaybackController({
     [player],
   );
 
+  const setSubtitleTrack = useCallback(
+    (track: SubtitleTrack | null) => {
+      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes subtitle selection through this mutable player property.
+      player.subtitleTrack = track;
+    },
+    [player],
+  );
+
   const retry = useCallback(async () => {
     userPausedRef.current = false;
     setHasEnded(false);
@@ -129,6 +141,10 @@ export function usePlaybackController({
     setError(undefined);
     setSourceLoadCount(0);
     setStatus(INITIAL_STATUS);
+    // Track selections belong to the previous source; never carry them into the next episode.
+    setCurrentSubtitleTrack(null);
+    setVideoTracks([]);
+    setCurrentVideoTrack(null);
     player.play();
   }, [player]);
 
@@ -149,11 +165,20 @@ export function usePlaybackController({
   useEventListener(player, "sourceLoad", (payload) => {
     setDuration(payload.duration);
     setSubtitleTracks(payload.availableSubtitleTracks);
+    setVideoTracks(payload.availableVideoTracks);
     setSourceLoadCount((count) => count + 1);
   });
 
   useEventListener(player, "availableSubtitleTracksChange", (payload) => {
     setSubtitleTracks(payload.availableSubtitleTracks);
+  });
+
+  useEventListener(player, "subtitleTrackChange", (payload) => {
+    setCurrentSubtitleTrack(payload.subtitleTrack);
+  });
+
+  useEventListener(player, "videoTrackChange", (payload) => {
+    setCurrentVideoTrack(payload.videoTrack);
   });
 
   useEventListener(player, "playToEnd", () => {
@@ -196,6 +221,9 @@ export function usePlaybackController({
     duration: duration || player.duration || 0,
     bufferedPosition,
     subtitleTracks,
+    currentSubtitleTrack,
+    videoTracks,
+    currentVideoTrack,
     pause,
     play,
     togglePlay,
@@ -204,5 +232,6 @@ export function usePlaybackController({
     replay,
     retry,
     setTemporaryRate,
+    setSubtitleTrack,
   };
 }

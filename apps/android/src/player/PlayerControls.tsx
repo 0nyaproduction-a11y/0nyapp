@@ -18,6 +18,7 @@ type PlayerControlsProps = {
   onPlayPause: () => void;
   onReplay: () => void;
   onSeekTo: (seconds: number) => void;
+  onSettingsPress?: () => void;
   title: string;
   subtitle?: string;
 };
@@ -39,6 +40,7 @@ export function PlayerControls({
   onPlayPause,
   onReplay,
   onSeekTo,
+  onSettingsPress,
   subtitle,
   title,
 }: PlayerControlsProps) {
@@ -206,6 +208,17 @@ export function PlayerControls({
         ) : null}
       </View>
 
+      {onSettingsPress ? (
+        <Pressable
+          accessibilityLabel="Open playback settings"
+          accessibilityRole="button"
+          onPress={onSettingsPress}
+          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.settingsGlyph}>⚙</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.center}>
         <Pressable
           accessibilityLabel={hasEnded ? "Replay video" : isPlaying ? "Pause video" : "Play video"}
@@ -294,7 +307,21 @@ const styles = StyleSheet.create({
   },
   topBar: {
     gap: 4,
+    paddingRight: 56,
     paddingTop: 8,
+  },
+  settingsButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+    position: "absolute",
+    right: 12,
+    top: 8,
+  },
+  settingsGlyph: {
+    color: "#D8EDE9",
+    fontSize: 20,
   },
   title: {
     color: "#F4FFFD",
