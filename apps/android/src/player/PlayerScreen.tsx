@@ -1,13 +1,14 @@
 import { useNavigation } from "@react-navigation/native";
-import { VideoView } from "expo-video";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getDevelopmentPlaybackSource } from "./devSources";
 import { PlayerControls } from "./PlayerControls";
+import { PlayerStatusOverlay } from "./PlayerStatusOverlay";
 import { useAutoHideControls } from "./useAutoHideControls";
 import { usePlaybackController } from "./usePlaybackController";
 import { useWatchProgressSync } from "./useWatchProgressSync";
+import { VerticalVideoSurface } from "./VerticalVideoSurface";
 import type { PlaybackContext, PlaybackEndedPayload } from "./types";
 import type { WatchProgressItem } from "../types/api";
 
@@ -208,14 +209,7 @@ export function PlayerScreen({
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.shell}>
         <View style={styles.videoViewport}>
-          <VideoView
-            allowsPictureInPicture={false}
-            contentFit="contain"
-            nativeControls={false}
-            player={controller.player}
-            style={styles.video}
-            surfaceType="textureView"
-          />
+          <VerticalVideoSurface player={controller.player} />
 
           <View pointerEvents="box-none" style={styles.overlayLayer}>
             <View style={styles.touchLayer}>
@@ -259,11 +253,12 @@ export function PlayerScreen({
               />
             </View>
 
-            {controller.isBuffering ? (
-              <View pointerEvents="none" style={styles.loadingOverlay}>
-                <ActivityIndicator color="#00E5CC" />
-              </View>
-            ) : null}
+            <PlayerStatusOverlay
+              isBuffering={controller.isBuffering}
+              onExit={() => navigation.goBack()}
+              onRetry={controller.retry}
+              status={controller.status}
+            />
 
             {controller.hasEnded && !shouldAutoAdvance(context) ? (
               <View pointerEvents="box-none" style={styles.endedOverlay}>
@@ -295,31 +290,6 @@ export function PlayerScreen({
                     </Pressable>
                   </View>
                 </View>
-              </View>
-            ) : null}
-
-            {controller.status === "error" ? (
-              <View style={styles.errorPanel}>
-                <Text style={styles.errorTitle}>Playback is unavailable</Text>
-                <Text style={styles.errorBody}>
-                  The video could not start. Check your connection and try again.
-                </Text>
-                <Pressable
-                  accessibilityLabel="Retry video playback"
-                  accessibilityRole="button"
-                  onPress={controller.retry}
-                  style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityLabel="Exit video player"
-                  accessibilityRole="button"
-                  onPress={() => navigation.goBack()}
-                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.secondaryText}>Back</Text>
-                </Pressable>
               </View>
             ) : null}
 
@@ -362,9 +332,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: "100%",
   },
-  video: {
-    ...StyleSheet.absoluteFill,
-  },
   overlayLayer: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
@@ -376,11 +343,6 @@ const styles = StyleSheet.create({
   },
   tapZone: {
     flex: 1,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFill,
-    alignItems: "center",
-    justifyContent: "center",
   },
   endedOverlay: {
     ...StyleSheet.absoluteFill,
@@ -443,52 +405,6 @@ const styles = StyleSheet.create({
     color: "#00E5CC",
     fontSize: 12,
     fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  errorPanel: {
-    flex: 1,
-    alignItems: "center",
-    gap: 16,
-    justifyContent: "center",
-    padding: 24,
-  },
-  errorTitle: {
-    color: "#F4FFFD",
-    fontSize: 22,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  errorBody: {
-    color: "#A8B9B6",
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
-  },
-  retryButton: {
-    alignItems: "center",
-    borderRadius: 8,
-    backgroundColor: "#00E5CC",
-    justifyContent: "center",
-    minHeight: 48,
-    minWidth: 128,
-    paddingHorizontal: 18,
-  },
-  retryText: {
-    color: "#050A0A",
-    fontSize: 13,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  secondaryButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 18,
-  },
-  secondaryText: {
-    color: "#D8EDE9",
-    fontSize: 13,
-    fontWeight: "800",
     textTransform: "uppercase",
   },
   pressed: {
