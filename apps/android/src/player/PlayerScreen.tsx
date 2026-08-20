@@ -7,14 +7,19 @@ import { getDevelopmentPlaybackSource } from "./devSources";
 import { PlayerControls } from "./PlayerControls";
 import { useAutoHideControls } from "./useAutoHideControls";
 import { usePlaybackController } from "./usePlaybackController";
+import { useWatchProgressSync } from "./useWatchProgressSync";
 import type { PlaybackContext, PlaybackEndedPayload } from "./types";
+import type { WatchProgressItem } from "../types/api";
 
 type PlayerScreenProps = {
+  accessToken?: string | null;
   context: PlaybackContext;
   onEnded?: (payload: PlaybackEndedPayload) => void;
   onAdvanceToNext?: (
     nextEpisode: NonNullable<Extract<PlaybackContext, { type: "SERIES_EPISODE" }>["nextEpisode"]>,
   ) => void;
+  isProgressResolved?: boolean;
+  savedProgress?: WatchProgressItem;
 };
 
 const DOUBLE_TAP_DELAY_MS = 280;
@@ -22,13 +27,26 @@ const SEEK_SECONDS = 10;
 const HOLD_RATE = 1.5;
 const NORMAL_RATE = 1;
 
-export function PlayerScreen({ context, onAdvanceToNext, onEnded }: PlayerScreenProps) {
+export function PlayerScreen({
+  accessToken,
+  context,
+  isProgressResolved = true,
+  onAdvanceToNext,
+  onEnded,
+  savedProgress,
+}: PlayerScreenProps) {
   const navigation = useNavigation();
   const source = useMemo(() => getDevelopmentPlaybackSource(context), [context]);
   const lastTapRef = useRef<{ side: "left" | "right"; timestamp: number } | null>(null);
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressRef = useRef(false);
   const transitionStartedRef = useRef(false);
+  const resumeAppliedContextRef = useRef<string | null>(null);
+  const progressSyncArmedRef = useRef(false);
+  const progressSyncRef = useRef({
+    saveFinal: () => Promise.resolve(),
+    saveNow: () => Promise.resolve(),
+  });
   const contextKey =
     context.type === "SERIES_EPISODE"
       ? `${context.seriesSlug}:${context.episodeNumber}`
@@ -36,17 +54,21 @@ export function PlayerScreen({ context, onAdvanceToNext, onEnded }: PlayerScreen
 
   const handlePlaybackEnded = useCallback(
     (payload: PlaybackEndedPayload) => {
-      if (
-        context.type === "SERIES_EPISODE" &&
-        context.nextEpisode &&
-        !transitionStartedRef.current
-      ) {
-        transitionStartedRef.current = true;
-        onAdvanceToNext?.(context.nextEpisode);
-        return;
-      }
+      void (async () => {
+        if (
+          context.type === "SERIES_EPISODE" &&
+          context.nextEpisode &&
+          !transitionStartedRef.current
+        ) {
+          transitionStartedRef.current = true;
+          await progressSyncRef.current.saveFinal();
+          onAdvanceToNext?.(context.nextEpisode);
+          return;
+        }
 
-      onEnded?.(payload);
+        await progressSyncRef.current.saveFinal();
+        onEnded?.(payload);
+      })();
     },
     [context, onAdvanceToNext, onEnded],
   );
@@ -60,13 +82,28 @@ export function PlayerScreen({ context, onAdvanceToNext, onEnded }: PlayerScreen
     controller.isPlaying,
   );
   const { pause, seekBy, setTemporaryRate } = controller;
+  const progressSync = useWatchProgressSync({
+    accessToken,
+    context,
+    currentTime: controller.currentTime,
+    duration: controller.duration,
+    isPlaying: controller.isPlaying,
+    isSyncArmedRef: progressSyncArmedRef,
+  });
+
+  useEffect(() => {
+    progressSyncRef.current = progressSync;
+  }, [progressSync]);
 
   useEffect(() => {
     transitionStartedRef.current = false;
+    resumeAppliedContextRef.current = null;
+    progressSyncArmedRef.current = false;
   }, [contextKey]);
 
   useEffect(() => {
     const unsubscribeBlur = navigation.addListener("blur", () => {
+      void progressSync.saveNow();
       pause();
       setTemporaryRate(NORMAL_RATE);
     });
@@ -74,7 +111,55 @@ export function PlayerScreen({ context, onAdvanceToNext, onEnded }: PlayerScreen
     return () => {
       unsubscribeBlur();
     };
-  }, [navigation, pause, setTemporaryRate]);
+  }, [navigation, pause, progressSync, setTemporaryRate]);
+
+  useEffect(() => {
+    const unsubscribeBeforeRemove = navigation.addListener("beforeRemove", () => {
+      void progressSync.saveNow();
+    });
+
+    return () => {
+      unsubscribeBeforeRemove();
+      void progressSync.saveNow();
+    };
+  }, [navigation, progressSync]);
+
+  useEffect(() => {
+    if (
+      context.type !== "SERIES_EPISODE" ||
+      resumeAppliedContextRef.current === contextKey ||
+      controller.sourceLoadCount === 0 ||
+      !isProgressResolved
+    ) {
+      return;
+    }
+
+    const resumePosition = getResumePosition(savedProgress, controller.duration);
+
+    if (resumePosition !== null) {
+      controller.seekTo(resumePosition);
+    }
+
+    resumeAppliedContextRef.current = contextKey;
+    progressSyncArmedRef.current = true;
+  }, [
+    context.type,
+    context,
+    contextKey,
+    controller,
+    controller.duration,
+    controller.sourceLoadCount,
+    isProgressResolved,
+    savedProgress,
+  ]);
+
+  const handlePlayPause = useCallback(() => {
+    if (controller.isPlaying) {
+      void progressSync.saveNow();
+    }
+
+    controller.togglePlay();
+  }, [controller, progressSync]);
 
   const handleSideTap = (side: "left" | "right") => {
     const now = Date.now();
@@ -245,7 +330,7 @@ export function PlayerScreen({ context, onAdvanceToNext, onEnded }: PlayerScreen
                 duration={controller.duration}
                 hasEnded={controller.hasEnded}
                 isPlaying={controller.isPlaying}
-                onPlayPause={controller.togglePlay}
+                onPlayPause={handlePlayPause}
                 onReplay={controller.replay}
                 onSeekTo={controller.seekTo}
                 subtitle={eyebrow}
@@ -437,4 +522,18 @@ function getEndedBody(context: PlaybackContext) {
   }
 
   return "Replay this episode whenever you are ready.";
+}
+
+function getResumePosition(progress: WatchProgressItem | undefined, duration: number) {
+  if (!progress || progress.completed || progress.positionSeconds <= 0) {
+    return null;
+  }
+
+  const effectiveDuration = duration > 0 ? duration : progress.durationSeconds;
+
+  if (effectiveDuration > 0 && effectiveDuration - progress.positionSeconds <= 5) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(progress.positionSeconds, effectiveDuration || progress.positionSeconds));
 }

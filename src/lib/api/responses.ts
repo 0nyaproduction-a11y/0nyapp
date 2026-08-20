@@ -1,6 +1,7 @@
 type ApiErrorCode =
   | "not_authenticated"
   | "not_found"
+  | "forbidden"
   | "invalid_request"
   | "server_error";
 

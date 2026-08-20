@@ -19,6 +19,13 @@ type SaveWatchProgressInput = {
   completed?: boolean;
 };
 
+type SaveServerWatchProgressInput = {
+  seriesSlug: string;
+  episodeNumber: number;
+  positionSeconds: number;
+  durationSeconds: number;
+};
+
 function clampSeconds(value: number, max: number) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -172,6 +179,65 @@ export async function saveWatchProgress(
   }
 
   return true;
+}
+
+export async function saveServerWatchProgress(
+  supabase: TypedSupabaseClient,
+  input: SaveServerWatchProgressInput,
+) {
+  const userId = await getAuthenticatedUserId(supabase);
+
+  if (!userId) {
+    return null;
+  }
+
+  const durationSeconds = Math.max(0, Math.floor(input.durationSeconds));
+  const positionSeconds = durationSeconds > 0
+    ? clampSeconds(input.positionSeconds, durationSeconds)
+    : Math.max(0, Math.floor(input.positionSeconds));
+  const derivedCompleted =
+    durationSeconds > 0 && durationSeconds - positionSeconds <= 5;
+  const now = new Date().toISOString();
+
+  const { data: existing, error: existingError } = await supabase
+    .from("watch_progress")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("series_slug", input.seriesSlug)
+    .eq("episode_number", input.episodeNumber)
+    .maybeSingle();
+
+  if (existingError) {
+    console.warn("Unable to load existing watch progress.");
+    return null;
+  }
+
+  const completed = Boolean(existing?.completed || derivedCompleted);
+  const { data, error } = await supabase
+    .from("watch_progress")
+    .upsert(
+      {
+        user_id: userId,
+        series_slug: input.seriesSlug,
+        episode_number: input.episodeNumber,
+        position_seconds: positionSeconds,
+        duration_seconds: durationSeconds,
+        completed,
+        last_watched_at: now,
+      },
+      {
+        onConflict: "user_id,series_slug,episode_number",
+      },
+    )
+    .select("*")
+    .single();
+
+  if (error) {
+    console.warn("Unable to save watch progress.");
+    return null;
+  }
+
+  return data;
 }
 
 export async function markEpisodeCompleted(

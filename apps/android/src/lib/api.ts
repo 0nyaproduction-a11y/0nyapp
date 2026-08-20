@@ -5,11 +5,15 @@ import type {
   MeResponse,
   SeriesResponse,
   WalletResponse,
+  WatchProgressWriteRequest,
+  WatchProgressWriteResponse,
   WatchProgressResponse,
 } from "../types/api";
 
 type ApiRequestOptions = {
   accessToken?: string | null;
+  body?: unknown;
+  method?: "GET" | "PUT";
 };
 
 export class ApiError extends Error {
@@ -25,7 +29,7 @@ export class ApiError extends Error {
 
 async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
   const { apiBaseUrl } = getMobileEnv();
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     Accept: "application/json",
   };
 
@@ -33,10 +37,18 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
 
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
   let response: Response;
 
   try {
-    response = await fetch(`${apiBaseUrl}${path}`, { headers });
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers,
+      method: options.method ?? "GET",
+    });
   } catch {
     throw new ApiError("network_error", "Could not reach 0nya.", 0);
   }
@@ -77,5 +89,16 @@ export function getWallet(accessToken: string) {
 export function getWatchProgress(accessToken: string) {
   return requestApi<WatchProgressResponse>("/api/v1/watch-progress", {
     accessToken,
+  });
+}
+
+export function putWatchProgress(
+  accessToken: string,
+  progress: WatchProgressWriteRequest,
+) {
+  return requestApi<WatchProgressWriteResponse>("/api/v1/watch-progress", {
+    accessToken,
+    body: progress,
+    method: "PUT",
   });
 }

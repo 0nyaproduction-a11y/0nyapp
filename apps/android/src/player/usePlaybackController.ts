@@ -31,6 +31,7 @@ export function usePlaybackController({
   const [isPlaying, setIsPlaying] = useState(false);
   const [status, setStatus] = useState<VideoPlayerStatus>(INITIAL_STATUS);
   const [error, setError] = useState<PlayerError | undefined>();
+  const [sourceLoadCount, setSourceLoadCount] = useState(0);
   const isMountedRef = useRef(true);
   const userPausedRef = useRef(false);
 
@@ -126,6 +127,7 @@ export function usePlaybackController({
     setDuration(0);
     setBufferedPosition(0);
     setError(undefined);
+    setSourceLoadCount(0);
     setStatus(INITIAL_STATUS);
     player.play();
   }, [player]);
@@ -147,6 +149,7 @@ export function usePlaybackController({
   useEventListener(player, "sourceLoad", (payload) => {
     setDuration(payload.duration);
     setSubtitleTracks(payload.availableSubtitleTracks);
+    setSourceLoadCount((count) => count + 1);
   });
 
   useEventListener(player, "availableSubtitleTracksChange", (payload) => {
@@ -187,6 +190,7 @@ export function usePlaybackController({
     error,
     isPlaying,
     isBuffering: status === "loading",
+    sourceLoadCount,
     hasEnded,
     currentTime,
     duration: duration || player.duration || 0,

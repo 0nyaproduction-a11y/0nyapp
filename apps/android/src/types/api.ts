@@ -80,13 +80,23 @@ export type WalletResponse = {
   }[];
 };
 
-export type WatchProgressResponse = {
-  progress: {
-    seriesSlug: string;
-    episodeNumber: number;
-    positionSeconds: number;
-    durationSeconds: number;
-    completed: boolean;
-    lastWatchedAt: string;
-  }[];
+export type WatchProgressItem = {
+  seriesSlug: string;
+  episodeNumber: number;
+  positionSeconds: number;
+  durationSeconds: number;
+  completed: boolean;
+  lastWatchedAt: string;
 };
+
+export type WatchProgressResponse = {
+  progress: WatchProgressItem[];
+};
+
+export type WatchProgressWriteRequest = {
+  seriesSlug: string;
+  episodeNumber: number;
+  positionSeconds: number;
+};
+
+export type WatchProgressWriteResponse = WatchProgressItem;
