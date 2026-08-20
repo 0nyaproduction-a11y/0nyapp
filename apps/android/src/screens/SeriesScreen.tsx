@@ -78,6 +78,7 @@ export function SeriesScreen({ navigation, route }: Props) {
                 navigation.navigate("Watch", {
                   access,
                   episode,
+                  episodeAccess: data.episodeAccess,
                   series: data.series,
                 })
               }

@@ -10,6 +10,7 @@ export type RootStackParamList = {
     series: ApiSeries;
     episode: ApiEpisode;
     access: EpisodeAccess;
+    episodeAccess: Record<string, EpisodeAccess>;
   };
   Wallet: undefined;
   Account: undefined;
