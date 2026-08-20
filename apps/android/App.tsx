@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { LoadingState } from "./src/components/ui";
 import { AuthProvider, useAuth } from "./src/lib/authContext";
 import type { RootStackParamList } from "./src/navigation/types";
+import { colors } from "./src/theme/tokens";
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { SeriesScreen } from "./src/screens/SeriesScreen";
@@ -24,9 +25,9 @@ function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator
         screenOptions={{
-          contentStyle: { backgroundColor: "#070707" },
-          headerStyle: { backgroundColor: "#070707" },
-          headerTintColor: "#f7f2e8",
+          contentStyle: { backgroundColor: colors.background },
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: "800" },
         }}
       >

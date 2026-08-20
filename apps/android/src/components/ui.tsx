@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { borders, colors, radii, spacing } from "../theme/tokens";
 
 export function Title({ children }: PropsWithChildren) {
   return <Text style={styles.title}>{children}</Text>;
@@ -68,7 +69,7 @@ export function Field(props: FieldProps) {
 }
 
 export function LoadingState() {
-  return <ActivityIndicator color="#f3c969" size="large" />;
+  return <ActivityIndicator color={colors.accent} size="large" />;
 }
 
 export function ErrorText({ children }: PropsWithChildren) {
@@ -77,59 +78,63 @@ export function ErrorText({ children }: PropsWithChildren) {
 
 const styles = StyleSheet.create({
   title: {
-    color: "#f7f2e8",
+    color: colors.text,
     fontSize: 28,
     fontWeight: "800",
   },
   label: {
-    color: "#f3c969",
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "800",
     textTransform: "uppercase",
   },
   body: {
-    color: "#d8d3ca",
+    color: colors.muted,
     fontSize: 15,
     lineHeight: 22,
   },
   card: {
     gap: 10,
-    borderColor: "#2c2924",
-    borderRadius: 8,
-    borderWidth: 1,
-    backgroundColor: "#11100e",
-    padding: 16,
+    borderColor: borders.color,
+    borderRadius: radii.none,
+    borderWidth: borders.width,
+    backgroundColor: colors.surface,
+    padding: spacing.cardPadding,
   },
   button: {
     alignItems: "center",
-    borderRadius: 8,
-    backgroundColor: "#f3c969",
+    borderRadius: radii.none,
+    backgroundColor: colors.accent,
     minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
   buttonDisabled: {
+    // legacy non-tokenized value: no verified web disabled-button color exists
+    // (web expresses disabled state via opacity, not a distinct fill color)
     backgroundColor: "#3a3834",
   },
   buttonPressed: {
     opacity: 0.82,
   },
   buttonText: {
+    // legacy non-tokenized value: retained for contrast against the accent fill
     color: "#11100e",
     fontSize: 14,
     fontWeight: "800",
     textTransform: "uppercase",
   },
   field: {
-    borderColor: "#3a3834",
-    borderRadius: 8,
-    borderWidth: 1,
-    color: "#f7f2e8",
+    borderColor: borders.color,
+    borderRadius: radii.none,
+    borderWidth: borders.width,
+    color: colors.text,
     minHeight: 48,
     paddingHorizontal: 14,
   },
   error: {
+    // legacy non-tokenized value: no verified web error/alert color equivalent
     color: "#ff8d76",
     fontSize: 14,
     lineHeight: 20,
