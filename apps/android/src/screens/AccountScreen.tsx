@@ -11,7 +11,7 @@ import {
   LoadingState,
   RecoveryState,
 } from "../components/ui";
-import { getMe, getWatchProgress } from "../lib/api";
+import { getMe } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import type { ProfileStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
@@ -33,7 +33,6 @@ export function AccountScreen({ navigation }: Props) {
     }
 
     const meData = await getMe(token);
-    await getWatchProgress(token);
     return meData;
   }, [token]);
 

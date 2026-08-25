@@ -5,7 +5,7 @@ import { Screen } from "../components/Screen";
 import { Body, Card, ErrorText, Label, Title } from "../components/ui";
 import { deleteAccount } from "../lib/api";
 import { supabase } from "../lib/supabase";
-import { colors } from "../theme/tokens";
+import { borders, colors } from "../theme/tokens";
 import { useAuth } from "../lib/authContext";
 import type { ProfileStackScreenProps } from "../navigation/types";
 
@@ -119,20 +119,22 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     alignItems: "center",
-    backgroundColor: "#8f2323",
+    backgroundColor: colors.backgroundSoft,
+    borderColor: colors.error,
+    borderWidth: borders.width,
     minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
   deleteButtonDisabled: {
-    backgroundColor: "#5d1d1d",
+    opacity: 0.5,
   },
   deleteButtonPressed: {
     opacity: 0.82,
   },
   deleteButtonText: {
-    color: "#fff6f6",
+    color: colors.error,
     fontSize: 14,
     fontWeight: "800",
     textTransform: "uppercase",

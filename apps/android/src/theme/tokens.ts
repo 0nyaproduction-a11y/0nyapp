@@ -20,6 +20,8 @@ export const colors = {
   // actual rendered web border value (Tailwind `border-bone/10`), not the
   // unused 8%-opacity --border-bone CSS variable
   border: "rgba(232, 228, 218, 0.10)",
+  // existing app semantic error tone (previously hardcoded in shared UI)
+  error: "#ff8d76",
 } as const;
 
 export const spacing = {

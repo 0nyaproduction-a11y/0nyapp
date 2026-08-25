@@ -395,6 +395,9 @@ const styles = StyleSheet.create({
 backButton: {
   alignItems: "center",
   alignSelf: "flex-start",
+  justifyContent: "center",
+  minHeight: 48,
+  minWidth: 48,
 },
 backArrow: {
   color: colors.text,

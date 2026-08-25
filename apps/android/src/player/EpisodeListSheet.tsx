@@ -101,7 +101,7 @@ export function EpisodeListSheet({
               <Pressable
                 accessibilityLabel={buildEpisodeA11yLabel(item, access, isPlaying)}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isPlaying, disabled: isLocked }}
+                accessibilityState={{ selected: isPlaying }}
                 onPress={() => onSelectEpisode(item.number)}
                 style={({ pressed }) => [
                   styles.cell,

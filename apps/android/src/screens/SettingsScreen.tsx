@@ -178,7 +178,7 @@ export function SettingsScreen({}: Props) {
   };
 
   const handleMissingDestination = (label: string) => {
-    Alert.alert("Not available yet", `${label} is not wired in this build.`);
+    Alert.alert("Not available yet", `${label} is not available yet.`);
   };
 
   return (
@@ -246,34 +246,34 @@ export function SettingsScreen({}: Props) {
       <Card>
         <Label>Support & Legal</Label>
         <SettingsRow
-          detail="MISSING / NOT PROVEN — no app destination was found in the repository."
+          detail="Support destination is not available yet."
           label="Help & Support"
           onPress={() => handleMissingDestination("Help & Support")}
-          value="MISSING"
+          value="Coming soon"
         />
         <SettingsRow
-          detail="MISSING / NOT PROVEN — no content-issue destination was found in the repository."
+          detail="Content issue reporting is not available yet."
           label="Report a Content Issue"
           onPress={() => handleMissingDestination("Report a Content Issue")}
-          value="MISSING"
+          value="Coming soon"
         />
         <SettingsRow
-          detail="MISSING / NOT PROVEN — no grievance/contact destination was found in the repository."
+          detail="Grievance contact is not available yet."
           label="Grievance / Contact"
           onPress={() => handleMissingDestination("Grievance / Contact")}
-          value="MISSING"
+          value="Coming soon"
         />
         <SettingsRow
-          detail="MISSING / NOT PROVEN — no legal terms destination was found in the repository."
+          detail="Terms destination is not available yet."
           label="Terms"
           onPress={() => handleMissingDestination("Terms")}
-          value="MISSING"
+          value="Coming soon"
         />
         <SettingsRow
-          detail="MISSING / NOT PROVEN — no privacy-policy destination was found in the repository."
+          detail="Privacy policy destination is not available yet."
           label="Privacy Policy"
           onPress={() => handleMissingDestination("Privacy Policy")}
-          value="MISSING"
+          value="Coming soon"
         />
       </Card>
 
