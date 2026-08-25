@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ContentItem } from "@/data/content";
 import { Icon } from "@/components/ui/Icon";
+import { shortFilmPath } from "@/lib/routes";
 
 type ContentCardProps = {
   item: ContentItem;
@@ -9,10 +10,12 @@ type ContentCardProps = {
 };
 
 export function ContentCard({ item, priority = false }: ContentCardProps) {
+  const href = item.format === "Short" ? shortFilmPath(item.slug) : `/series/${item.slug}`;
+
   return (
     <article className="group w-[39vw] max-w-[176px] min-w-[136px] sm:w-[176px] md:w-[212px] lg:w-[232px] xl:w-[244px]">
       <Link
-        href={`/series/${item.slug}`}
+        href={href}
         className="relative block aspect-[9/16] overflow-hidden border border-bone/10 bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
         style={{ "--card-accent": item.accent } as React.CSSProperties}
       >

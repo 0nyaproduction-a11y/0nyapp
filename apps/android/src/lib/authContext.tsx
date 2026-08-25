@@ -1,5 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { clearParentalSessionUnlock } from "./parentalControls";
+import { mergeGuestWatchHistory } from "./playbackHistory";
 import { supabase } from "./supabase";
 
 type AuthContextValue = {
@@ -14,18 +16,64 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const lastUserIdRef = useRef<string | null>(null);
+
+  function syncParentalUnlocks(nextSession: Session | null) {
+    const nextUserId = nextSession?.user?.id ?? null;
+
+    if (lastUserIdRef.current !== nextUserId) {
+      clearParentalSessionUnlock();
+    }
+
+    lastUserIdRef.current = nextUserId;
+  }
 
   useEffect(() => {
     let isMounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (isMounted) {
+    supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!isMounted) {
+          return;
+        }
+
+        if (!data.session) {
+          syncParentalUnlocks(null);
+          setSession(null);
+          setIsLoading(false);
+          return;
+        }
+
+        const { error: userError } = await supabase.auth.getUser();
+
+        if (userError) {
+          await supabase.auth.signOut({ scope: "local" });
+          if (isMounted) {
+            syncParentalUnlocks(null);
+            setSession(null);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        syncParentalUnlocks(data.session);
         setSession(data.session);
         setIsLoading(false);
-      }
-    });
+      })
+      .catch(async () => {
+        if (!isMounted) {
+          return;
+        }
+
+        await supabase.auth.signOut({ scope: "local" });
+        syncParentalUnlocks(null);
+        setSession(null);
+        setIsLoading(false);
+      });
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      syncParentalUnlocks(nextSession);
       setSession(nextSession);
       setIsLoading(false);
     });
@@ -35,6 +83,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!session?.access_token || !session.user?.id) {
+      return undefined;
+    }
+
+    let active = true;
+
+    void mergeGuestWatchHistory(session).catch((error) => {
+      if (active) {
+        console.warn("Unable to merge guest watch history after sign-in.", error);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

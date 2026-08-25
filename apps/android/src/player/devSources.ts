@@ -16,6 +16,7 @@ const ACTIVE_DEV_HLS_SOURCE = DEV_HLS_SOURCES.vertical;
 export function getDevelopmentPlaybackSource(context: PlaybackContext): PlaybackSource {
   return {
     isDevelopmentOnly: true,
+    playbackUri: ACTIVE_DEV_HLS_SOURCE.uri,
     source: {
       uri: ACTIVE_DEV_HLS_SOURCE.uri,
       contentType: "hls",

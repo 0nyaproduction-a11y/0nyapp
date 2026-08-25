@@ -1,3 +1,5 @@
+import type { ContentDescriptor, ContentRating } from "@/lib/classification";
+
 export type ContentFormat = "Series" | "Mini" | "Short";
 
 export type Episode = {
@@ -9,6 +11,17 @@ export type Episode = {
   isFree: boolean;
   isLocked: boolean;
   coinPrice?: number;
+  coinUnlockEnabled: boolean;
+  rewardedUnlockEnabled: boolean;
+  rewardedAccessMode: "permanent" | "session";
+  plusAccess: boolean;
+  lockedPreviewSeconds: number;
+  contentRatingOverride?: ContentRating | null;
+  contentDescriptorsOverride?: ContentDescriptor[];
+  contentRating?: ContentRating | null;
+  contentDescriptors?: ContentDescriptor[];
+  parentalLockRequired?: boolean;
+  ageVerificationRequired?: boolean;
   progress?: number;
 };
 
@@ -24,6 +37,10 @@ export type ContentItem = {
   poster: string;
   accent: string;
   episodes: Episode[];
+  contentRating?: ContentRating | null;
+  contentDescriptors?: ContentDescriptor[];
+  parentalLockRequired?: boolean;
+  ageVerificationRequired?: boolean;
   isFree?: boolean;
   isLocked?: boolean;
   progress?: number;
@@ -41,6 +58,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:42",
     isFree: true,
     isLocked: false,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
     progress: 100,
   },
   {
@@ -51,6 +73,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:55",
     isFree: true,
     isLocked: false,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
     progress: 72,
   },
   {
@@ -61,6 +88,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:48",
     isFree: true,
     isLocked: false,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
   {
     number: 4,
@@ -70,6 +102,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "2:00",
     isFree: false,
     isLocked: true,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
   {
     number: 5,
@@ -79,6 +116,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:36",
     isFree: false,
     isLocked: true,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
   {
     number: 6,
@@ -88,6 +130,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:58",
     isFree: false,
     isLocked: true,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
   {
     number: 7,
@@ -97,6 +144,11 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:44",
     isFree: false,
     isLocked: true,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
   {
     number: 8,
@@ -106,8 +158,27 @@ const aadhaTakiyaEpisodes: Episode[] = [
     runtime: "1:52",
     isFree: false,
     isLocked: true,
+    coinUnlockEnabled: false,
+    rewardedUnlockEnabled: false,
+    rewardedAccessMode: "permanent",
+    plusAccess: true,
+    lockedPreviewSeconds: 0,
   },
 ];
+
+// Mock/placeholder episodes carry an explicit, fixed access configuration.
+// Access must never be inferred from episode number/position; series that
+// need a free episode configure it explicitly (see aadhaTakiyaEpisodes).
+// These are generic mock DATA defaults, not a platform rule: no commerce
+// method is invented for placeholder episodes, and Plus is explicitly
+// disabled (not left to fail open) unless a series configures otherwise.
+const PLACEHOLDER_EPISODE_IS_FREE = false;
+const PLACEHOLDER_EPISODE_IS_LOCKED = true;
+const PLACEHOLDER_EPISODE_COIN_UNLOCK_ENABLED = false;
+const PLACEHOLDER_EPISODE_REWARDED_UNLOCK_ENABLED = false;
+const PLACEHOLDER_EPISODE_REWARDED_ACCESS_MODE = "permanent" as const;
+const PLACEHOLDER_EPISODE_PLUS_ACCESS = false;
+const PLACEHOLDER_EPISODE_LOCKED_PREVIEW_SECONDS = 0;
 
 const placeholderEpisodes = (
   count: number,
@@ -122,8 +193,13 @@ const placeholderEpisodes = (
       title: `${titlePrefix} ${number}`,
       description: "A compact vertical episode placeholder for the 0nya mock catalogue.",
       runtime: duration.replace(" min episodes", ":00"),
-      isFree: number <= 3,
-      isLocked: number > 3,
+      isFree: PLACEHOLDER_EPISODE_IS_FREE,
+      isLocked: PLACEHOLDER_EPISODE_IS_LOCKED,
+      coinUnlockEnabled: PLACEHOLDER_EPISODE_COIN_UNLOCK_ENABLED,
+      rewardedUnlockEnabled: PLACEHOLDER_EPISODE_REWARDED_UNLOCK_ENABLED,
+      rewardedAccessMode: PLACEHOLDER_EPISODE_REWARDED_ACCESS_MODE,
+      plusAccess: PLACEHOLDER_EPISODE_PLUS_ACCESS,
+      lockedPreviewSeconds: PLACEHOLDER_EPISODE_LOCKED_PREVIEW_SECONDS,
     };
   });
 
@@ -139,7 +215,12 @@ export const featuredSeries: ContentItem = {
     "Two paying guests in Mumbai split a room, a pillow, and a silence neither of them can afford to break.",
   poster: artwork,
   accent: "#0DD1BC",
-  episodes: aadhaTakiyaEpisodes,
+  // Mirrors the current real published/DB state: only Episode 1 currently
+  // has usable playback media. Episodes 2-8 stay defined above as retained
+  // catalog/editorial rows (matching the DB's 'draft' rows) but must not be
+  // exposed as consumer-published here, since this fallback mirrors the
+  // published catalog when the live Supabase lookup is unavailable.
+  episodes: aadhaTakiyaEpisodes.filter((episode) => episode.number === 1),
   isFree: true,
   progress: 62,
   currentEpisode: "Episode 8",
@@ -180,14 +261,14 @@ export const contentItems: ContentItem[] = [
   },
   {
     id: "mute-button",
-    title: "Mute Button",
+    title: "Trial & Error",
     slug: "mute-button",
     genre: "Office romance",
     format: "Short",
     episodeCount: 15,
     episodeDuration: "6 min episodes",
     synopsis:
-      "A support agent discovers the voice she has been training belongs to the man who ghosted her.",
+      "Two young couples navigate the awkward, hopeful and often confusing process of trying to fall in love. As expectations clash with reality, small misunderstandings, vulnerable conversations and unexpected moments force them to question whether love is something you find—or something you slowly learn to build.",
     poster: artwork,
     accent: "#334F45",
     episodes: placeholderEpisodes(15, "6 min episodes", "Call"),
@@ -309,6 +390,14 @@ export const newReleases = [
 
 export function getSeriesBySlug(slug: string) {
   return contentItems.find((item) => item.slug === slug);
+}
+
+export function getShortFilmBySlug(slug: string) {
+  return contentItems.find((item) => item.slug === slug && item.format === "Short");
+}
+
+export function getShortFilms() {
+  return contentItems.filter((item) => item.format === "Short");
 }
 
 export function getEpisode(seriesSlug: string, episodeNumber: number) {

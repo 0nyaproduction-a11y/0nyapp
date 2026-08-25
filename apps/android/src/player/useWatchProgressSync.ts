@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { AppState, type AppStateStatus } from "react-native";
-import { putWatchProgress } from "../lib/api";
+import type { Session } from "@supabase/supabase-js";
+import { saveWatchHistory } from "../lib/playbackHistory";
 import type { PlaybackContext } from "./types";
 
 type WatchProgressSyncOptions = {
-  accessToken?: string | null;
   context: PlaybackContext;
   currentTime: number;
   duration: number;
+  enabled?: boolean;
   isPlaying: boolean;
   isSyncArmedRef: RefObject<boolean>;
+  session: Session | null;
 };
 
 type LatestProgressState = {
-  accessToken?: string | null;
   context: PlaybackContext;
   currentTime: number;
   duration: number;
@@ -24,15 +25,15 @@ const MIN_WRITE_DELTA_SECONDS = 5;
 const WRITE_TIMEOUT_MS = 4000;
 
 export function useWatchProgressSync({
-  accessToken,
   context,
   currentTime,
   duration,
+  enabled = true,
   isPlaying,
   isSyncArmedRef,
+  session,
 }: WatchProgressSyncOptions) {
   const latestRef = useRef<LatestProgressState>({
-    accessToken,
     context,
     currentTime,
     duration,
@@ -43,12 +44,11 @@ export function useWatchProgressSync({
 
   useLayoutEffect(() => {
     latestRef.current = {
-      accessToken,
       context,
       currentTime,
       duration,
     };
-  }, [accessToken, context, currentTime, duration]);
+  }, [context, currentTime, duration]);
 
   useEffect(() => {
     queueRef.current = Promise.resolve();
@@ -56,13 +56,17 @@ export function useWatchProgressSync({
   }, [contextKey]);
 
   const enqueueSave = useCallback((mode: "final" | "periodic" | "user" = "user") => {
+    if (!enabled) {
+      return Promise.resolve();
+    }
+
     const latest = latestRef.current;
 
     if (mode !== "final" && !isSyncArmedRef.current) {
       return Promise.resolve();
     }
 
-    if (!latest.accessToken || latest.context.type !== "SERIES_EPISODE") {
+    if (latest.context.type !== "SERIES_EPISODE" && latest.context.type !== "SHORT_FILM") {
       return Promise.resolve();
     }
 
@@ -98,41 +102,54 @@ export function useWatchProgressSync({
 
     lastQueuedPositionRef.current = positionSeconds;
 
-    const request = {
-      accessToken: latest.accessToken,
-      episodeNumber: latest.context.episodeNumber,
-      positionSeconds,
-      seriesSlug: latest.context.seriesSlug,
-    };
+    const request =
+      latest.context.type === "SERIES_EPISODE"
+        ? {
+            contentType: "series_episode" as const,
+            episodeNumber: latest.context.episodeNumber,
+            positionSeconds,
+            seriesSlug: latest.context.seriesSlug,
+          }
+        : {
+            contentType: "short_film" as const,
+            positionSeconds,
+            shortFilmSlug: latest.context.filmSlug,
+          };
 
     queueRef.current = queueRef.current
       .catch(() => undefined)
       .then(async () => {
         try {
-          await withTimeout(
-            putWatchProgress(request.accessToken, {
-              episodeNumber: request.episodeNumber,
-              positionSeconds: request.positionSeconds,
-              seriesSlug: request.seriesSlug,
-            }),
-          );
+          await withTimeout(saveWatchHistory(session, request, latest.duration));
         } catch {
           // Progress sync should never interrupt playback.
         }
       });
 
     return queueRef.current.catch(() => undefined);
-  }, [isSyncArmedRef]);
+  }, [enabled, isSyncArmedRef, session]);
 
   useEffect(() => {
-    if (!isSyncArmedRef.current || !isPlaying || context.type !== "SERIES_EPISODE") {
+    if (!enabled) {
+      return undefined;
+    }
+
+    if (
+      !isSyncArmedRef.current ||
+      !isPlaying ||
+      (context.type !== "SERIES_EPISODE" && context.type !== "SHORT_FILM")
+    ) {
       return;
     }
 
     void enqueueSave("periodic");
-  }, [context.type, currentTime, enqueueSave, isPlaying, isSyncArmedRef]);
+  }, [context.type, currentTime, enabled, enqueueSave, isPlaying, isSyncArmedRef]);
 
   useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state !== "active") {
         void enqueueSave("user");
@@ -144,7 +161,7 @@ export function useWatchProgressSync({
     return () => {
       subscription.remove();
     };
-  }, [enqueueSave]);
+  }, [enabled, enqueueSave]);
 
   const saveFinal = useCallback(() => enqueueSave("final"), [enqueueSave]);
   const saveNow = useCallback(() => enqueueSave("user"), [enqueueSave]);

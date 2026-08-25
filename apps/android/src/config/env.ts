@@ -2,6 +2,10 @@ type MobileEnv = {
   supabaseUrl: string;
   supabasePublishableKey: string;
   apiBaseUrl: string;
+  canonicalSiteUrl: string | null;
+  admobRewardedAdUnitId: string | null;
+  muxTestPlaybackEnabled: boolean;
+  shortFilmMuxTestPlaybackEnabled: boolean;
 };
 
 function readEnv(name: string, value: string | undefined) {
@@ -12,7 +16,18 @@ function readEnv(name: string, value: string | undefined) {
   return value;
 }
 
+function readBooleanEnv(value: string | undefined) {
+  return value?.trim().toLowerCase() === "true";
+}
+
 export function getMobileEnv(): MobileEnv {
+  const canonicalSiteUrl = process.env.EXPO_PUBLIC_ONYA_CANONICAL_URL?.trim();
+  const admobRewardedAdUnitId = process.env.EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID?.trim();
+  const muxTestPlaybackEnabled = readBooleanEnv(process.env.EXPO_PUBLIC_ONYA_TEST_MUX_PLAYBACK);
+  const shortFilmMuxTestPlaybackEnabled = readBooleanEnv(
+    process.env.EXPO_PUBLIC_ONYA_TEST_SHORT_FILM_MUX_PLAYBACK,
+  );
+
   return {
     supabaseUrl: readEnv(
       "EXPO_PUBLIC_SUPABASE_URL",
@@ -26,5 +41,9 @@ export function getMobileEnv(): MobileEnv {
       "EXPO_PUBLIC_ONYA_API_BASE_URL",
       process.env.EXPO_PUBLIC_ONYA_API_BASE_URL,
     ).replace(/\/$/, ""),
+    canonicalSiteUrl: canonicalSiteUrl ? canonicalSiteUrl.replace(/\/$/, "") : null,
+    admobRewardedAdUnitId: admobRewardedAdUnitId ? admobRewardedAdUnitId : null,
+    muxTestPlaybackEnabled,
+    shortFilmMuxTestPlaybackEnabled,
   };
 }

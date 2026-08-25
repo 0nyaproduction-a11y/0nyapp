@@ -27,6 +27,31 @@ export const spacing = {
   cardPadding: 16,
 } as const;
 
+export const typography = {
+  homeSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    lineHeight: 22,
+  },
+  homeCardTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  homeCardMeta: {
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
+    letterSpacing: 0.2,
+  },
+  navLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 14,
+    letterSpacing: 0.2,
+  },
+} as const;
+
 export const radii = {
   // web design language uses square corners everywhere (no rounded-* usage found)
   none: 0,

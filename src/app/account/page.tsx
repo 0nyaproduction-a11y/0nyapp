@@ -13,7 +13,7 @@ import {
 import { getPublishedSeries } from "@/lib/catalog";
 import { getUserSubscription, getUserWallet } from "@/lib/entitlements";
 import { getUserProfile } from "@/lib/profiles";
-import { walletPath, watchEpisodePath } from "@/lib/routes";
+import { deleteAccountPath, walletPath, watchEpisodePath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 import { getContinueWatching, progressToContentItems } from "@/lib/watch-progress";
 
@@ -71,6 +71,12 @@ export default async function AccountPage() {
                   Sign out
                 </Button>
               </form>
+              <Link
+                href={deleteAccountPath}
+                className="inline-flex w-fit items-center font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/55 transition hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
+              >
+                Delete account
+              </Link>
             </div>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

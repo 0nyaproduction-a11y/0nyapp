@@ -41,8 +41,7 @@ export function LockedEpisode({
               Episode {episode.number} is waiting for you.
             </h1>
             <p className="mx-auto mt-5 max-w-md text-sm leading-6 text-muted sm:text-base">
-              The first 3 episodes are free. Continue the story by unlocking
-              this episode or get unlimited access with 0nya.
+              Choose an option to continue.
             </p>
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
               {isAuthenticated ? (

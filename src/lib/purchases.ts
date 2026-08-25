@@ -40,8 +40,11 @@ function toPurchaseStatus(status: string | undefined): PurchaseStatus {
   }
 }
 
-export async function purchaseEpisodeWithCoins(episodeId: string): Promise<PurchaseResult> {
-  const supabase = await createClient();
+export async function purchaseEpisodeWithCoins(
+  episodeId: string,
+  supabaseClient?: SupabaseClient<Database>,
+): Promise<PurchaseResult> {
+  const supabase = await getSupabase(supabaseClient);
   const {
     data: { user },
   } = await supabase.auth.getUser();

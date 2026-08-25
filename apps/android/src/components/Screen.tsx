@@ -8,7 +8,10 @@ type ScreenProps = PropsWithChildren<{
 }>;
 
 export function Screen({ children, scroll = true }: ScreenProps) {
-  const content = <View style={styles.content}>{children}</View>;
+  // Non-scrolling screens rely on a flex:1 chain (e.g. FlatList) to fill the
+  // remaining height. Without flex:1 here, this View auto-sizes to its
+  // content instead of stretching, so flex:1 descendants collapse to 0.
+  const content = <View style={[styles.content, !scroll && styles.contentFill]}>{children}</View>;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -25,5 +28,8 @@ const styles = StyleSheet.create({
   content: {
     gap: 18,
     padding: 20,
+  },
+  contentFill: {
+    flex: 1,
   },
 });

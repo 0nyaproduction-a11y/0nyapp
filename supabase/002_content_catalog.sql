@@ -138,7 +138,7 @@ values
   ),
   (
     'mute-button',
-    'Mute Button',
+    'Trial & Error',
     'A support agent discovers the voice she has been training belongs to the man who ghosted her.',
     'Office romance',
     'Hindi',
@@ -195,14 +195,21 @@ with episode_seed as (
     seed.published_at
   from (
     values
+      -- Aadha Takiya: only Episode 1 currently has real usable/playable media
+      -- (see DEV_REHYDRATION_TARGETS in src/lib/mux/index.ts). Episodes 2-8
+      -- remain retained catalog/editorial rows awaiting media and are seeded
+      -- as 'draft' so they are not exposed as consumer-published. Do NOT
+      -- flip them back to 'published' without a corresponding real media
+      -- association; do NOT add rows 9-45 (45 is planned/total metadata
+      -- only, tracked separately on public.series.episode_count).
       ('aadha-takiya', 1, 'Episode 1', null::text, 102, '/logo-og.jpg', null::text, true, 'published', now()),
-      ('aadha-takiya', 2, 'Episode 2', null::text, 115, '/logo-og.jpg', null::text, true, 'published', now()),
-      ('aadha-takiya', 3, 'Episode 3', null::text, 108, '/logo-og.jpg', null::text, true, 'published', now()),
-      ('aadha-takiya', 4, 'Episode 4', null::text, 120, '/logo-og.jpg', null::text, false, 'published', now()),
-      ('aadha-takiya', 5, 'Episode 5', null::text, 96, '/logo-og.jpg', null::text, false, 'published', now()),
-      ('aadha-takiya', 6, 'Episode 6', null::text, 118, '/logo-og.jpg', null::text, false, 'published', now()),
-      ('aadha-takiya', 7, 'Episode 7', null::text, 104, '/logo-og.jpg', null::text, false, 'published', now()),
-      ('aadha-takiya', 8, 'Episode 8', null::text, 112, '/logo-og.jpg', null::text, false, 'published', now()),
+      ('aadha-takiya', 2, 'Episode 2', null::text, 115, '/logo-og.jpg', null::text, true, 'draft', now()),
+      ('aadha-takiya', 3, 'Episode 3', null::text, 108, '/logo-og.jpg', null::text, true, 'draft', now()),
+      ('aadha-takiya', 4, 'Episode 4', null::text, 120, '/logo-og.jpg', null::text, false, 'draft', now()),
+      ('aadha-takiya', 5, 'Episode 5', null::text, 96, '/logo-og.jpg', null::text, false, 'draft', now()),
+      ('aadha-takiya', 6, 'Episode 6', null::text, 118, '/logo-og.jpg', null::text, false, 'draft', now()),
+      ('aadha-takiya', 7, 'Episode 7', null::text, 104, '/logo-og.jpg', null::text, false, 'draft', now()),
+      ('aadha-takiya', 8, 'Episode 8', null::text, 112, '/logo-og.jpg', null::text, false, 'draft', now()),
       ('chaadar', 1, 'Episode 1', null::text, 420, '/logo-og.jpg', null::text, true, 'published', now()),
       ('chaadar', 2, 'Episode 2', null::text, 420, '/logo-og.jpg', null::text, true, 'published', now()),
       ('chaadar', 3, 'Episode 3', null::text, 420, '/logo-og.jpg', null::text, true, 'published', now()),
@@ -259,7 +266,22 @@ set
   synopsis = excluded.synopsis,
   duration_seconds = excluded.duration_seconds,
   thumbnail_url = excluded.thumbnail_url,
-  video_asset_id = excluded.video_asset_id,
+  -- Preserve any locally provisioned media association when reseeding.
+  video_asset_id = coalesce(public.episodes.video_asset_id, excluded.video_asset_id),
   is_free = excluded.is_free,
   status = excluded.status,
   published_at = coalesce(public.episodes.published_at, excluded.published_at);
+
+update public.episodes
+set
+  coin_unlock_enabled = false,
+  rewarded_unlock_enabled = true,
+  rewarded_access_mode = 'permanent',
+  plus_access = false
+where episode_number = 4
+  and exists (
+    select 1
+    from public.series
+    where public.series.id = public.episodes.series_id
+      and public.series.slug = 'chaadar'
+  );

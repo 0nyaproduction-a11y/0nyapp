@@ -13,19 +13,25 @@ import {
   getFeaturedSeries,
   getMockOrCatalogRows,
   getPublishedSeries,
+  getPublishedShortFilms,
 } from "@/lib/catalog";
 import { createClient } from "@/lib/supabase/server";
 import { getContinueWatching, progressToContentItems } from "@/lib/watch-progress";
 
 export async function HomePage() {
-  const [catalogFeaturedSeries, catalogSeries, supabase] = await Promise.all([
+  const [catalogFeaturedSeries, catalogSeries, catalogShortFilms, supabase] = await Promise.all([
     getFeaturedSeries(),
     getPublishedSeries(),
+    getPublishedShortFilms(),
     createClient(),
   ]);
   const catalogItems = getMockOrCatalogRows(catalogSeries);
   const savedProgress = await getContinueWatching(supabase);
-  const savedContinueWatching = progressToContentItems(savedProgress, catalogItems);
+  const savedContinueWatching = progressToContentItems(
+    savedProgress,
+    catalogItems,
+    catalogShortFilms,
+  );
   const featuredItem = catalogFeaturedSeries ?? featuredSeries;
   const continueWatchingItems = savedContinueWatching.length
     ? savedContinueWatching

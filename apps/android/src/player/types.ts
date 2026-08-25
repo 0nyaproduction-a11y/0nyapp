@@ -1,4 +1,4 @@
-import type { VideoSource } from "expo-video";
+import type { VideoSourceObject } from "expo-video";
 
 export type SeriesEpisodePlaybackContext = {
   type: "SERIES_EPISODE";
@@ -6,15 +6,16 @@ export type SeriesEpisodePlaybackContext = {
   seriesTitle: string;
   episodeNumber: number;
   episodeTitle: string;
-  accessKind: "free" | "owned" | "included";
+  accessKind: "free" | "owned" | "included" | "locked";
   accessLabel: string;
   nextEpisode?: {
     episodeNumber: number;
     episodeTitle: string;
-    accessKind: "free" | "owned" | "included";
+    accessKind: "free" | "owned" | "included" | "locked";
     accessLabel: string;
   };
   hasLockedNextEpisode: boolean;
+  hasUnreleasedNextEpisode: boolean;
 };
 
 export type ShortFilmPlaybackContext = {
@@ -25,8 +26,11 @@ export type ShortFilmPlaybackContext = {
 
 export type PlaybackContext = SeriesEpisodePlaybackContext | ShortFilmPlaybackContext;
 
+export type PlaybackMode = "full" | "preview";
+
 export type PlaybackSource = {
-  source: VideoSource;
+  playbackUri: string;
+  source: VideoSourceObject;
   isDevelopmentOnly: boolean;
 };
 

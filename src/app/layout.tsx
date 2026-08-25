@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, DM_Mono, Outfit } from "next/font/google";
 import "./globals.css";
+import { getCanonicalSiteUrl } from "@/lib/public-url";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -21,10 +22,13 @@ const dmMono = DM_Mono({
   subsets: ["latin"],
 });
 
+const canonicalSiteUrl = getCanonicalSiteUrl();
+
 export const metadata: Metadata = {
   title: "0nya | Premium Vertical Cinema",
   description:
     "India-first premium vertical cinema and micro-dramas for mobile storytelling.",
+  ...(canonicalSiteUrl ? { metadataBase: new URL(canonicalSiteUrl) } : {}),
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",

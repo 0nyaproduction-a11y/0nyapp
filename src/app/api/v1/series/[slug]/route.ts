@@ -12,12 +12,7 @@ type SeriesApiRouteProps = {
 export async function GET(request: Request, { params }: SeriesApiRouteProps) {
   const { slug } = await params;
   const auth = await getApiAuth(request);
-
-  if (auth.error) {
-    return errorResponse("not_authenticated", "Authentication is required.", 401);
-  }
-
-  const series = (await getSeriesBySlug(slug, auth.supabase)) ?? getMockSeriesBySlug(slug);
+  const series = (await getSeriesBySlug(slug, auth.error ? undefined : auth.supabase)) ?? getMockSeriesBySlug(slug);
 
   if (!series) {
     return errorResponse("not_found", "Series not found.", 404);
@@ -25,7 +20,7 @@ export async function GET(request: Request, { params }: SeriesApiRouteProps) {
 
   const episodeAccess = auth.user
     ? await getEpisodeAccessStates(auth.user.id, series.episodes, auth.supabase)
-    : await getEpisodeAccessStates(null, series.episodes, auth.supabase);
+    : await getEpisodeAccessStates(null, series.episodes, auth.error ? undefined : auth.supabase);
 
   return dataResponse({
     series: serializeSeries(series),

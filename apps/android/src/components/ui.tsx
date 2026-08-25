@@ -6,11 +6,28 @@ import {
   Text,
   TextInput,
   View,
+  type StyleProp,
+  type TextInputProps,
+  type TextStyle,
 } from "react-native";
 import { borders, colors, radii, spacing } from "../theme/tokens";
 
 export function Title({ children }: PropsWithChildren) {
   return <Text style={styles.title}>{children}</Text>;
+}
+
+type BrandWordmarkProps = {
+  plus?: boolean;
+  style?: StyleProp<TextStyle>;
+};
+
+export function BrandWordmark({ plus = false, style }: BrandWordmarkProps) {
+  return (
+    <Text accessibilityLabel={plus ? "0nya Plus" : "0nya"} allowFontScaling style={[styles.brand, style]}>
+      <Text style={styles.brandAccent}>0</Text>
+      <Text style={styles.brandText}>{plus ? "nya Plus" : "nya"}</Text>
+    </Text>
+  );
 }
 
 export function Label({ children }: PropsWithChildren) {
@@ -23,6 +40,33 @@ export function Body({ children }: PropsWithChildren) {
 
 export function Card({ children }: PropsWithChildren) {
   return <View style={styles.card}>{children}</View>;
+}
+
+type NavigationRowProps = {
+  accessibilityLabel?: string;
+  onPress: () => void;
+  subtitle?: string;
+  title: string;
+};
+
+// Compact tappable row (title + optional supporting line + chevron) for
+// secondary navigation actions that should not compete visually with a
+// screen's primary content, e.g. Restore/Sync, Buy Coins.
+export function NavigationRow({ accessibilityLabel, onPress, subtitle, title }: NavigationRowProps) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel ?? (subtitle ? `${title}. ${subtitle}` : title)}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.navigationRow, pressed && styles.navigationRowPressed]}
+    >
+      <View style={styles.navigationRowCopy}>
+        <Text style={styles.navigationRowTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.navigationRowSubtitle}>{subtitle}</Text> : null}
+      </View>
+      <Text style={styles.navigationRowChevron}>{"\u203A"}</Text>
+    </Pressable>
+  );
 }
 
 type ButtonProps = PropsWithChildren<{
@@ -51,10 +95,14 @@ export function Button({ accessibilityLabel, children, disabled, onPress }: Butt
 
 type FieldProps = {
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoComplete?: TextInputProps["autoComplete"];
   accessibilityLabel: string;
   onChangeText: (value: string) => void;
+  keyboardType?: TextInputProps["keyboardType"];
+  maxLength?: number;
   placeholder: string;
   secureTextEntry?: boolean;
+  textContentType?: TextInputProps["textContentType"];
   value: string;
 };
 
@@ -76,11 +124,55 @@ export function ErrorText({ children }: PropsWithChildren) {
   return <Text style={styles.error}>{children}</Text>;
 }
 
+type RecoveryStateProps = {
+  body: string;
+  primaryActionLabel: string;
+  onPrimaryAction: () => void;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
+  title: string;
+};
+
+export function RecoveryState({
+  body,
+  onPrimaryAction,
+  onSecondaryAction,
+  primaryActionLabel,
+  secondaryActionLabel,
+  title,
+}: RecoveryStateProps) {
+  return (
+    <Card>
+      <Title>{title}</Title>
+      <Body>{body}</Body>
+      <Button accessibilityLabel={primaryActionLabel} onPress={onPrimaryAction}>
+        {primaryActionLabel}
+      </Button>
+      {secondaryActionLabel && onSecondaryAction ? (
+        <Button accessibilityLabel={secondaryActionLabel} onPress={onSecondaryAction}>
+          {secondaryActionLabel}
+        </Button>
+      ) : null}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
   title: {
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
+  },
+  brand: {
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  brandAccent: {
+    color: colors.accent,
+  },
+  brandText: {
+    color: colors.text,
   },
   label: {
     color: colors.accent,
@@ -100,6 +192,42 @@ const styles = StyleSheet.create({
     borderWidth: borders.width,
     backgroundColor: colors.surface,
     padding: spacing.cardPadding,
+  },
+  navigationRow: {
+    alignItems: "center",
+    backgroundColor: colors.backgroundSoft,
+    borderColor: borders.color,
+    borderRadius: radii.none,
+    borderWidth: borders.width,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 56,
+    paddingHorizontal: spacing.cardPadding,
+    paddingVertical: 12,
+  },
+  navigationRowPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.08)",
+    borderColor: "rgba(232, 228, 218, 0.14)",
+  },
+  navigationRowCopy: {
+    flex: 1,
+    gap: 2,
+    paddingRight: 12,
+  },
+  navigationRowTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  navigationRowSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  navigationRowChevron: {
+    color: colors.muted,
+    fontSize: 22,
+    lineHeight: 22,
   },
   button: {
     alignItems: "center",

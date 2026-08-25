@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Image,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -8,22 +9,31 @@ import {
   type PanResponderGestureState,
   View,
 } from "react-native";
+import { TOP_DOWN_SCRIM_GRADIENT_URI } from "./gradientAssets";
 
 type PlayerControlsProps = {
   bufferedPosition: number;
   currentTime: number;
   duration: number;
   hasEnded: boolean;
+  isFastPlayActive?: boolean;
   isPlaying: boolean;
+  onBack: () => void;
+  onOpenEpisodes?: () => void;
+  onOpenMore?: () => void;
   onPlayPause: () => void;
   onReplay: () => void;
   onSeekTo: (seconds: number) => void;
+  onShare: () => void;
+  showEpisodesControl: boolean;
   title: string;
   subtitle?: string;
 };
 
 const DRAG_THRESHOLD = 6;
 const THUMB_HOLD_RADIUS = 24;
+// Keeps the effective touch target >= ~48dp for a ~38dp visible icon backing.
+const ICON_HIT_SLOP = { top: 5, bottom: 5, left: 5, right: 5 };
 
 type TrackMeasurement = {
   pageX: number;
@@ -35,10 +45,16 @@ export function PlayerControls({
   currentTime,
   duration,
   hasEnded,
+  isFastPlayActive = false,
   isPlaying,
+  onBack,
+  onOpenEpisodes,
+  onOpenMore,
   onPlayPause,
   onReplay,
   onSeekTo,
+  onShare,
+  showEpisodesControl,
   subtitle,
   title,
 }: PlayerControlsProps) {
@@ -195,26 +211,80 @@ export function PlayerControls({
 
   return (
     <View pointerEvents="box-none" style={styles.container}>
+      <View pointerEvents="none" style={styles.topScrim}>
+        <Image resizeMode="stretch" source={{ uri: TOP_DOWN_SCRIM_GRADIENT_URI }} style={styles.scrimImage} />
+      </View>
+      <View pointerEvents="none" style={[styles.bottomScrim, styles.bottomScrimFlip]}>
+        <Image resizeMode="stretch" source={{ uri: TOP_DOWN_SCRIM_GRADIENT_URI }} style={styles.scrimImage} />
+      </View>
+
       <View style={styles.topBar}>
-        <Text numberOfLines={1} style={styles.title}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text numberOfLines={1} style={styles.subtitle}>
-            {subtitle}
+        <Pressable
+          accessibilityLabel="Back"
+          accessibilityRole="button"
+          hitSlop={ICON_HIT_SLOP}
+          onPress={onBack}
+          style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.backGlyph}>{"\u2039"}</Text>
+        </Pressable>
+
+        <View style={styles.topBarTitleColumn}>
+          <Text numberOfLines={1} style={styles.title}>
+            {title}
           </Text>
-        ) : null}
+          {subtitle ? (
+            <Text numberOfLines={1} style={styles.subtitle}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.topBarActions}>
+          <Pressable
+            accessibilityLabel="Share"
+            accessibilityRole="button"
+            hitSlop={ICON_HIT_SLOP}
+            onPress={onShare}
+            style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
+          >
+            <ShareGlyph color="#F4FFFD" />
+          </Pressable>
+
+          {onOpenMore ? (
+            <Pressable
+              accessibilityLabel="Playback settings"
+              accessibilityRole="button"
+              hitSlop={ICON_HIT_SLOP}
+              onPress={onOpenMore}
+              style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.gearGlyph}>{"\u2699"}</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.center}>
-        <Pressable
-          accessibilityLabel={hasEnded ? "Replay video" : isPlaying ? "Pause video" : "Play video"}
-          accessibilityRole="button"
-          onPress={hasEnded ? onReplay : onPlayPause}
-          style={({ pressed }) => [styles.playButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.playText}>{hasEnded ? "Replay" : isPlaying ? "Pause" : "Play"}</Text>
-        </Pressable>
+        {isFastPlayActive ? null : (
+          <Pressable
+            accessibilityLabel={hasEnded ? "Replay video" : isPlaying ? "Pause video" : "Play video"}
+            accessibilityRole="button"
+            onPress={hasEnded ? onReplay : onPlayPause}
+            style={({ pressed }) => [styles.playButton, pressed && styles.pressed]}
+          >
+            {hasEnded ? (
+              <Text style={styles.replayGlyph}>{"\u21BA"}</Text>
+            ) : isPlaying ? (
+              <View style={styles.pauseGlyph}>
+                <View style={styles.pauseBar} />
+                <View style={styles.pauseBar} />
+              </View>
+            ) : (
+              <View style={styles.playGlyph} />
+            )}
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.bottomBar}>
@@ -238,9 +308,80 @@ export function PlayerControls({
             pointerEvents="none"
             style={[styles.progressTrack, { width: `${progress * 100}%` }]}
           />
-          <View pointerEvents="none" style={[styles.thumb, { left: `${progress * 100}%` }]} />
+          <View
+            pointerEvents="none"
+            style={[
+              styles.thumb,
+              isScrubbing && styles.thumbActive,
+              { left: `${progress * 100}%` },
+            ]}
+          />
         </View>
+
+        {showEpisodesControl ? (
+          <View style={styles.actionRow}>
+            <Pressable
+              accessibilityLabel="Episodes"
+              accessibilityRole="button"
+              hitSlop={ICON_HIT_SLOP}
+              onPress={onOpenEpisodes}
+              style={({ pressed }) => [styles.episodesButton, pressed && styles.pressed]}
+            >
+              <EpisodesGlyph color="#A8B9B6" />
+              <Text style={styles.actionLabel}>Episodes</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
+    </View>
+  );
+}
+
+function EpisodesGlyph({ color }: { color: string }) {
+  return (
+    <View style={styles.episodesGlyphBox}>
+      <View style={[styles.episodesGlyphDot, styles.episodesGlyphDotTop, { backgroundColor: color }]} />
+      <View
+        style={[styles.episodesGlyphLine, styles.episodesGlyphLineTop, { backgroundColor: color }]}
+      />
+      <View
+        style={[styles.episodesGlyphDot, styles.episodesGlyphDotMiddle, { backgroundColor: color }]}
+      />
+      <View
+        style={[
+          styles.episodesGlyphLine,
+          styles.episodesGlyphLineMiddle,
+          { backgroundColor: color },
+        ]}
+      />
+      <View
+        style={[styles.episodesGlyphDot, styles.episodesGlyphDotBottom, { backgroundColor: color }]}
+      />
+      <View
+        style={[
+          styles.episodesGlyphLine,
+          styles.episodesGlyphLineBottom,
+          { backgroundColor: color },
+        ]}
+      />
+    </View>
+  );
+}
+
+function ShareGlyph({ color }: { color: string }) {
+  return (
+    <View style={styles.shareGlyphBox}>
+      <View style={[styles.shareGlyphLine, styles.shareGlyphLineTop, { backgroundColor: color }]} />
+      <View
+        style={[styles.shareGlyphLine, styles.shareGlyphLineBottom, { backgroundColor: color }]}
+      />
+      <View style={[styles.shareGlyphNode, styles.shareGlyphNodeLeft, { borderColor: color }]} />
+      <View
+        style={[styles.shareGlyphNode, styles.shareGlyphNodeTopRight, { borderColor: color }]}
+      />
+      <View
+        style={[styles.shareGlyphNode, styles.shareGlyphNodeBottomRight, { borderColor: color }]}
+      />
     </View>
   );
 }
@@ -280,8 +421,13 @@ function formatTime(seconds: number) {
   }
 
   const roundedSeconds = Math.floor(seconds);
-  const minutes = Math.floor(roundedSeconds / 60);
+  const hours = Math.floor(roundedSeconds / 3600);
+  const minutes = Math.floor((roundedSeconds % 3600) / 60);
   const remainder = roundedSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${remainder.toString().padStart(2, "0")}`;
+  }
 
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
@@ -290,22 +436,66 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFill,
     justifyContent: "space-between",
-    padding: 18,
+  },
+  topScrim: {
+    height: 120,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  bottomScrim: {
+    bottom: 0,
+    height: 150,
+    left: 0,
+    position: "absolute",
+    right: 0,
+  },
+  bottomScrimFlip: {
+    transform: [{ scaleY: -1 }],
+  },
+  scrimImage: {
+    height: "100%",
+    width: "100%",
   },
   topBar: {
-    gap: 4,
-    paddingTop: 8,
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+  },
+  topBarTitleColumn: {
+    flex: 1,
+    gap: 2,
+  },
+  topBarActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  topIconButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(5, 10, 10, 0.28)",
+    borderRadius: 19,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  backGlyph: {
+    color: "#F4FFFD",
+    fontSize: 21,
+    fontWeight: "700",
   },
   title: {
     color: "#F4FFFD",
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "700",
   },
   subtitle: {
     color: "#A8B9B6",
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
+    fontSize: 13,
+    fontWeight: "500",
   },
   center: {
     alignItems: "center",
@@ -313,27 +503,46 @@ const styles = StyleSheet.create({
   },
   playButton: {
     alignItems: "center",
-    borderColor: "#00E5CC",
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: "rgba(5, 10, 10, 0.78)",
+    backgroundColor: "rgba(5, 10, 10, 0.38)",
+    borderRadius: 26,
+    height: 52,
     justifyContent: "center",
-    minHeight: 56,
-    minWidth: 112,
-    paddingHorizontal: 20,
+    width: 52,
   },
   pressed: {
     opacity: 0.78,
   },
-  playText: {
-    color: "#00E5CC",
-    fontSize: 13,
-    fontWeight: "900",
-    textTransform: "uppercase",
+  playGlyph: {
+    backgroundColor: "transparent",
+    borderBottomColor: "transparent",
+    borderBottomWidth: 14,
+    borderLeftColor: "#F4FFFD",
+    borderLeftWidth: 22,
+    borderTopColor: "transparent",
+    borderTopWidth: 14,
+    height: 0,
+    marginLeft: 4,
+    width: 0,
+  },
+  pauseGlyph: {
+    flexDirection: "row",
+    gap: 7,
+  },
+  pauseBar: {
+    backgroundColor: "#F4FFFD",
+    borderRadius: 1,
+    height: 26,
+    width: 7,
+  },
+  replayGlyph: {
+    color: "#F4FFFD",
+    fontSize: 26,
+    fontWeight: "700",
   },
   bottomBar: {
-    gap: 10,
-    paddingBottom: 12,
+    gap: 12,
+    paddingBottom: 30,
+    paddingHorizontal: 18,
   },
   timeRow: {
     flexDirection: "row",
@@ -351,24 +560,126 @@ const styles = StyleSheet.create({
   },
   bufferedTrack: {
     borderRadius: 999,
-    backgroundColor: "rgba(216, 237, 233, 0.28)",
-    height: 4,
+    backgroundColor: "rgba(216, 237, 233, 0.22)",
+    height: 3,
     position: "absolute",
   },
   progressTrack: {
     borderRadius: 999,
     backgroundColor: "#00E5CC",
-    height: 4,
+    height: 3,
     position: "absolute",
   },
   thumb: {
     backgroundColor: "#F4FFFD",
     borderColor: "#00E5CC",
-    borderRadius: 9,
+    borderRadius: 5,
     borderWidth: 2,
-    height: 18,
-    marginLeft: -9,
+    height: 10,
+    marginLeft: -5,
     position: "absolute",
-    width: 18,
+    width: 10,
+  },
+  thumbActive: {
+    borderRadius: 8,
+    height: 16,
+    marginLeft: -8,
+    width: 16,
+  },
+  actionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  episodesButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    minHeight: 44,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  episodesGlyphBox: {
+    height: 14,
+    width: 16,
+  },
+  episodesGlyphDot: {
+    borderRadius: 1.5,
+    height: 3,
+    left: 0,
+    position: "absolute",
+    width: 3,
+  },
+  episodesGlyphDotTop: {
+    top: 0.5,
+  },
+  episodesGlyphDotMiddle: {
+    top: 5.5,
+  },
+  episodesGlyphDotBottom: {
+    top: 10.5,
+  },
+  episodesGlyphLine: {
+    borderRadius: 1,
+    height: 2,
+    left: 6,
+    position: "absolute",
+    width: 10,
+  },
+  episodesGlyphLineTop: {
+    top: 0,
+  },
+  episodesGlyphLineMiddle: {
+    top: 5,
+  },
+  episodesGlyphLineBottom: {
+    top: 10,
+  },
+  actionLabel: {
+    color: "#A8B9B6",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  gearGlyph: {
+    color: "#F4FFFD",
+    fontSize: 21,
+  },
+  shareGlyphBox: {
+    height: 22,
+    width: 22,
+  },
+  shareGlyphLine: {
+    height: 1.6,
+    position: "absolute",
+    width: 15.65,
+  },
+  shareGlyphLineTop: {
+    left: 3.18,
+    top: 6.7,
+    transform: [{ rotate: "-26.565deg" }],
+  },
+  shareGlyphLineBottom: {
+    left: 3.18,
+    top: 13.7,
+    transform: [{ rotate: "26.565deg" }],
+  },
+  shareGlyphNode: {
+    backgroundColor: "transparent",
+    borderRadius: 3,
+    borderWidth: 1.4,
+    height: 6,
+    position: "absolute",
+    width: 6,
+  },
+  shareGlyphNodeLeft: {
+    left: 1,
+    top: 8,
+  },
+  shareGlyphNodeTopRight: {
+    left: 15,
+    top: 1,
+  },
+  shareGlyphNodeBottomRight: {
+    left: 15,
+    top: 15,
   },
 });

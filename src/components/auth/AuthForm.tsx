@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BrandName } from "@/components/brand/BrandName";
 import { Button } from "@/components/ui/Button";
+import { deleteAccountPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
 
 const phoneProviderMessage =
@@ -185,6 +186,12 @@ export function AuthForm({
             <p className="mt-5 text-sm leading-6 text-muted">
               Browse freely. Episodes 1, 2 and 3 stay open without signing in.
             </p>
+            <Link
+              href={deleteAccountPath}
+              className="mt-4 inline-flex w-fit items-center font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/55 transition hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
+            >
+              Delete account
+            </Link>
             {isDevelopment && devTestLoginAction ? (
               <form action={devTestLoginAction} className="mt-5 border-t border-bone/10 pt-5">
                 <input name="next" type="hidden" value={redirectTo} />

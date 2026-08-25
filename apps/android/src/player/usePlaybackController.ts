@@ -5,6 +5,7 @@ import {
   useVideoPlayer,
   type PlayerError,
   type SubtitleTrack,
+  type VideoTrack,
   type VideoPlayerStatus,
   type VideoSource,
 } from "expo-video";
@@ -12,6 +13,7 @@ import type { PlaybackContext, PlaybackEndedPayload } from "./types";
 
 type UsePlaybackControllerOptions = {
   context: PlaybackContext;
+  playbackLimitSeconds?: number | null;
   source: VideoSource;
   onEnded?: (payload: PlaybackEndedPayload) => void;
 };
@@ -20,6 +22,7 @@ const INITIAL_STATUS: VideoPlayerStatus = "idle";
 
 export function usePlaybackController({
   context,
+  playbackLimitSeconds,
   onEnded,
   source,
 }: UsePlaybackControllerOptions) {
@@ -27,24 +30,58 @@ export function usePlaybackController({
   const [duration, setDuration] = useState(0);
   const [bufferedPosition, setBufferedPosition] = useState(0);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack | null>(null);
+  const [videoTracks, setVideoTracks] = useState<VideoTrack[]>([]);
+  const [videoTrack, setVideoTrack] = useState<VideoTrack | null>(null);
   const [hasEnded, setHasEnded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRateState] = useState(1);
   const [status, setStatus] = useState<VideoPlayerStatus>(INITIAL_STATUS);
   const [error, setError] = useState<PlayerError | undefined>();
   const [sourceLoadCount, setSourceLoadCount] = useState(0);
   const isMountedRef = useRef(true);
   const userPausedRef = useRef(false);
+  const endedRef = useRef(false);
+  const playbackLimit =
+    typeof playbackLimitSeconds === "number" && Number.isFinite(playbackLimitSeconds) && playbackLimitSeconds > 0
+      ? playbackLimitSeconds
+      : null;
 
   const player = useVideoPlayer(source, (createdPlayer) => {
     createdPlayer.loop = false;
     createdPlayer.muted = false;
     createdPlayer.volume = 1;
+    createdPlayer.preservesPitch = true;
     createdPlayer.playbackRate = 1;
     createdPlayer.timeUpdateEventInterval = 0.5;
     createdPlayer.keepScreenOnWhilePlaying = true;
     createdPlayer.showNowPlayingNotification = false;
     createdPlayer.staysActiveInBackground = false;
   });
+  const effectiveDuration =
+    playbackLimit !== null
+      ? Math.min(duration || player.duration || 0, playbackLimit)
+      : duration || player.duration || 0;
+  const effectiveCurrentTime = playbackLimit !== null ? Math.min(currentTime, playbackLimit) : currentTime;
+
+  const signalEnded = useCallback(() => {
+    if (endedRef.current) {
+      return;
+    }
+
+    endedRef.current = true;
+    setHasEnded(true);
+    setIsPlaying(false);
+    player.pause();
+    onEnded?.({ context });
+  }, [context, onEnded, player]);
+
+  useEffect(() => {
+    // expo-video exposes playbackRate as a mutable player property.
+    if (player.playbackRate !== playbackRate) {
+      player.playbackRate = playbackRate;
+    }
+  }, [playbackRate, player]);
 
   const pause = useCallback(() => {
     userPausedRef.current = true;
@@ -53,6 +90,7 @@ export function usePlaybackController({
 
   const play = useCallback(() => {
     userPausedRef.current = false;
+    endedRef.current = false;
     setHasEnded(false);
     player.play();
   }, [player]);
@@ -63,6 +101,7 @@ export function usePlaybackController({
       player.pause();
     } else if (hasEnded) {
       userPausedRef.current = false;
+      endedRef.current = false;
       player.replay();
       setHasEnded(false);
       player.play();
@@ -74,26 +113,38 @@ export function usePlaybackController({
 
   const seekBy = useCallback(
     (seconds: number) => {
-      setHasEnded(false);
-      player.seekBy(seconds);
-    },
-    [player],
-  );
-
-  const seekTo = useCallback(
-    (seconds: number) => {
       const safeDuration = duration > 0 ? duration : player.duration;
-      const nextTime = Math.max(0, Math.min(seconds, safeDuration || seconds));
+      const current = currentTime;
+      const proposedTime = current + seconds;
+      const maxAllowed = playbackLimit ?? (safeDuration || proposedTime);
+      const nextTime = Math.max(0, Math.min(proposedTime, maxAllowed));
+
+      endedRef.current = false;
       setHasEnded(false);
       // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
       player.currentTime = nextTime;
       setCurrentTime(nextTime);
     },
-    [duration, player],
+    [currentTime, duration, playbackLimit, player],
+  );
+
+  const seekTo = useCallback(
+    (seconds: number) => {
+      const safeDuration = duration > 0 ? duration : player.duration;
+      const maxAllowed = playbackLimit ?? (safeDuration || seconds);
+      const nextTime = Math.max(0, Math.min(seconds, maxAllowed));
+      endedRef.current = false;
+      setHasEnded(false);
+      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
+      player.currentTime = nextTime;
+      setCurrentTime(nextTime);
+    },
+    [duration, playbackLimit, player],
   );
 
   const replay = useCallback(() => {
     userPausedRef.current = false;
+    endedRef.current = false;
     player.replay();
     setHasEnded(false);
     player.play();
@@ -108,8 +159,18 @@ export function usePlaybackController({
     [player],
   );
 
+  const setPlaybackRate = useCallback(
+    (rate: number) => {
+      setPlaybackRateState(rate);
+      player.preservesPitch = true;
+      player.playbackRate = rate;
+    },
+    [player],
+  );
+
   const retry = useCallback(async () => {
     userPausedRef.current = false;
+    endedRef.current = false;
     setHasEnded(false);
     setCurrentTime(0);
     setDuration(0);
@@ -121,6 +182,7 @@ export function usePlaybackController({
 
   useEffect(() => {
     userPausedRef.current = false;
+    endedRef.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- player changes are source lifecycle boundaries; reset stale source state before autoplay.
     setHasEnded(false);
     setCurrentTime(0);
@@ -129,6 +191,8 @@ export function usePlaybackController({
     setError(undefined);
     setSourceLoadCount(0);
     setStatus(INITIAL_STATUS);
+    // A new player instance always constructs with subtitleTrack: null (expo-video default).
+    setSubtitleTrack(null);
     player.play();
   }, [player]);
 
@@ -144,6 +208,10 @@ export function usePlaybackController({
   useEventListener(player, "timeUpdate", (payload) => {
     setCurrentTime(payload.currentTime);
     setBufferedPosition(payload.bufferedPosition);
+
+    if (playbackLimit !== null && !endedRef.current && payload.currentTime >= playbackLimit) {
+      signalEnded();
+    }
   });
 
   useEventListener(player, "sourceLoad", (payload) => {
@@ -156,10 +224,20 @@ export function usePlaybackController({
     setSubtitleTracks(payload.availableSubtitleTracks);
   });
 
+  useEventListener(player, "videoTrackChange", (payload) => {
+    setVideoTrack(payload.videoTrack);
+  });
+
+  useEventListener(player, "playbackRateChange", (payload) => {
+    setPlaybackRateState(payload.playbackRate);
+  });
+
+  useEventListener(player, "subtitleTrackChange", (payload) => {
+    setSubtitleTrack(payload.subtitleTrack);
+  });
+
   useEventListener(player, "playToEnd", () => {
-    setHasEnded(true);
-    setIsPlaying(false);
-    onEnded?.({ context });
+    signalEnded();
   });
 
   useEffect(() => {
@@ -167,7 +245,7 @@ export function usePlaybackController({
       if (state !== "active") {
         userPausedRef.current = true;
         player.pause();
-        player.playbackRate = 1;
+        player.playbackRate = playbackRate;
       }
     };
 
@@ -176,7 +254,7 @@ export function usePlaybackController({
     return () => {
       subscription.remove();
     };
-  }, [player]);
+  }, [player, playbackRate]);
 
   useEffect(() => {
     return () => {
@@ -192,10 +270,14 @@ export function usePlaybackController({
     isBuffering: status === "loading",
     sourceLoadCount,
     hasEnded,
-    currentTime,
-    duration: duration || player.duration || 0,
-    bufferedPosition,
+    currentTime: effectiveCurrentTime,
+    duration: effectiveDuration,
+    bufferedPosition: playbackLimit !== null ? Math.min(bufferedPosition, playbackLimit) : bufferedPosition,
+    videoTracks,
+    videoTrack,
+    playbackRate,
     subtitleTracks,
+    subtitleTrack,
     pause,
     play,
     togglePlay,
@@ -203,6 +285,7 @@ export function usePlaybackController({
     seekTo,
     replay,
     retry,
+    setPlaybackRate,
     setTemporaryRate,
   };
 }
