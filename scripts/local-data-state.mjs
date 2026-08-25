@@ -233,6 +233,8 @@ function readManifest(backupDir) {
   return JSON.parse(readFileSync(manifestPath, "utf8"));
 }
 
+// Kept for restore compatibility; backup now uses recursive SDK traversal.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function downloadArtworkFiles(apiUrl, serviceRoleKey, objects, destinationDir) {
   mkdirSync(destinationDir, { recursive: true });
 
@@ -288,6 +290,63 @@ async function deleteArtworkFiles(apiUrl, serviceRoleKey, objects) {
   }
 }
 
+async function listArtworkObjectsRecursive(apiUrl, serviceRoleKey) {
+  const supabase = createStorageClient(apiUrl, serviceRoleKey);
+  const objects = [];
+
+  async function walk(prefix) {
+    const { data, error } = await supabase.storage.from(artworkBucket).list(prefix, {
+      limit: 1000,
+      sortBy: { column: "name", order: "asc" },
+    });
+
+    if (error) {
+      throw new Error(`Failed to list artwork objects at "${prefix}": ${error.message}`);
+    }
+
+    for (const item of data ?? []) {
+      const fullPath = prefix ? `${prefix}/${item.name}` : item.name;
+
+      if (item.id === null) {
+        await walk(fullPath);
+        continue;
+      }
+
+      objects.push({
+        created_at: item.created_at ?? null,
+        metadata: item.metadata ?? null,
+        name: fullPath,
+        updated_at: item.updated_at ?? null,
+      });
+    }
+  }
+
+  await walk("");
+  return objects;
+}
+
+async function downloadArtworkFilesViaSdk(apiUrl, serviceRoleKey, objects, destinationDir) {
+  const supabase = createStorageClient(apiUrl, serviceRoleKey);
+
+  mkdirSync(destinationDir, { recursive: true });
+
+  for (const object of objects) {
+    const { data, error } = await supabase.storage.from(artworkBucket).download(object.name);
+
+    if (error || !data) {
+      throw new Error(`Failed to download ${object.name}: ${error?.message ?? "missing file data"}`);
+    }
+
+    const bytes = Buffer.from(await data.arrayBuffer());
+    if (bytes.length === 0) {
+      throw new Error(`Failed to download ${object.name}: empty file`);
+    }
+
+    const outputPath = path.join(destinationDir, object.name.split("/").join(path.sep));
+    mkdirSync(path.dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, bytes);
+  }
+}
 async function backupCommand() {
   const statusJson = parseStatusJson();
   const statusEnv = parseStatusEnv();
@@ -319,18 +378,9 @@ async function backupCommand() {
     dumpFilePath,
   ]);
 
-  const objectRows = queryRows(
-    [
-      "select name, metadata, created_at, updated_at",
-      "from storage.objects",
-      `where bucket_id = '${artworkBucket}'`,
-      "order by name",
-    ].join(" "),
-    backupDir,
-    "objects.sql",
-  );
+  const objectRows = await listArtworkObjectsRecursive(apiUrl, serviceRoleKey);
 
-  await downloadArtworkFiles(apiUrl, serviceRoleKey, objectRows, storageDir);
+  await downloadArtworkFilesViaSdk(apiUrl, serviceRoleKey, objectRows, storageDir);
 
   const manifest = {
     apiUrl,
