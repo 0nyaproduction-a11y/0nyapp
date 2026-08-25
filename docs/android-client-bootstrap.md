@@ -22,17 +22,39 @@ TypeScript config, and public environment variable example.
 
 ## Environment
 
-Create a local Expo environment file when running the app:
+Create or edit `apps/android/.env.local` when running the app:
 
 ```text
+ADMOB_ANDROID_APP_ID=
+EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID=
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 EXPO_PUBLIC_ONYA_API_BASE_URL=http://localhost:3000
+EXPO_PUBLIC_ONYA_CANONICAL_URL=
+EXPO_PUBLIC_ONYA_TEST_MUX_PLAYBACK=false
+EXPO_PUBLIC_ONYA_TEST_SHORT_FILM_MUX_PLAYBACK=false
 ```
 
 Only publishable client configuration belongs in the mobile app. Service-role
 credentials, payment provider secrets, Twilio credentials, and verification
 keys must never be included.
+
+## Local Reset Recovery
+
+Normal app stop/start does not require any database repair.
+
+If you intentionally run `supabase db reset`, the local workflow is:
+
+1. start Supabase again
+2. let the canonical seed restore content rows
+3. run `npm run dev:media:rehydrate`
+4. verify playback authorization
+
+Do not re-upload videos after a reset.
+
+The AdMob Android App ID is required before a fresh native dev build. Development
+rewarded testing uses Google test ads; production rewarded unlocks read the real
+ad unit from `EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID`.
 
 ## Auth Flow
 
