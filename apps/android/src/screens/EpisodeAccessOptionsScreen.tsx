@@ -81,6 +81,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
   const [rewardedAttempt, setRewardedAttempt] = useState<RewardedAdAttemptResponse | null>(null);
   const [rewardedFlowState, setRewardedFlowState] = useState<RewardedFlowState>("idle");
   const [rewardedFlowMessage, setRewardedFlowMessage] = useState<string | null>(null);
+  const [rewardedRecovery, setRewardedRecovery] = useState<"expired" | "rejected" | null>(null);
   const [pendingUnlockAction, setPendingUnlockAction] = useState<PendingUnlockAction>(null);
   const pollingInFlightRef = useRef(false);
 
@@ -175,16 +176,18 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (
+    const isBusy =
       rewardedFlowState === "creating-attempt" ||
       rewardedFlowState === "ready" ||
       rewardedFlowState === "loading" ||
       rewardedFlowState === "showing" ||
-      rewardedFlowState === "confirming"
-    ) {
+      rewardedFlowState === "confirming";
+
+    if (isBusy) {
       return;
     }
 
+    setRewardedRecovery(null);
     setRewardedFlowState("creating-attempt");
     setRewardedFlowMessage("Preparing unlock...");
     setRewardedAttempt(null);
@@ -211,8 +214,9 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
         result.status === "expired" ||
         result.status === "failed"
       ) {
-        setRewardedFlowState("unavailable");
-        setRewardedFlowMessage("Rewarded unlock is unavailable right now.");
+        setRewardedRecovery("expired");
+        setRewardedFlowState("failed");
+        setRewardedFlowMessage("Unlock couldn't be verified. Please try the rewarded ad again.");
         return;
       }
 
@@ -322,7 +326,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
 
     const timeoutId = setTimeout(() => {
       setRewardedFlowState("confirming");
-      setRewardedFlowMessage("Confirming unlock...");
+      setRewardedFlowMessage("We're confirming your rewarded ad. This can take a moment.");
     }, 0);
 
     return () => clearTimeout(timeoutId);
@@ -386,11 +390,12 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
           status.status === "rewarded_disabled" ||
           status.status === "not_found"
         ) {
+          setRewardedRecovery(status.status === "expired" || status.status === "not_found" ? "expired" : "rejected");
           setRewardedFlowState("failed");
-          setRewardedFlowMessage("Confirming unlock failed.");
+          setRewardedFlowMessage("Unlock couldn't be verified. Please try the rewarded ad again.");
           setRewardedAttempt(null);
         } else {
-          setRewardedFlowMessage("Confirming unlock...");
+          setRewardedFlowMessage("We're confirming your rewarded ad. This can take a moment.");
         }
       } catch (error) {
         if (!active) {
@@ -398,14 +403,15 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
         }
 
         if (error instanceof ApiError && error.code === "not_authenticated") {
+          setRewardedRecovery(null);
           setRewardedFlowState("failed");
-          setRewardedFlowMessage("Confirming unlock failed.");
+          setRewardedFlowMessage("Unlock couldn't be verified. Please try the rewarded ad again.");
           setRewardedAttempt(null);
           return;
         }
 
         if (active) {
-          setRewardedFlowMessage("Confirming unlock...");
+          setRewardedFlowMessage("We're confirming your rewarded ad. This can take a moment.");
         }
       } finally {
         pollingInFlightRef.current = false;
@@ -546,6 +552,29 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
   const rewardedDetailText =
     rewardedFlowState === "idle" ? null : rewardedFlowMessage ?? "Unlock this episode.";
 
+  const handleRewardedRetry = useCallback(() => {
+    setRewardedRecovery(null);
+    setRewardedFlowState("idle");
+    setRewardedFlowMessage(null);
+    setRewardedAttempt(null);
+    void startRewardedUnlock();
+  }, [startRewardedUnlock]);
+
+  if (rewardedRecovery) {
+    return (
+      <Screen>
+        <RecoveryState
+          body="Please try the rewarded ad again."
+          onPrimaryAction={handleRewardedRetry}
+          onSecondaryAction={() => navigation.goBack()}
+          primaryActionLabel="Try Again"
+          secondaryActionLabel="Back"
+          title="Unlock couldn't be verified"
+        />
+      </Screen>
+    );
+  }
+
   if (!hasAnyUnlockMethods) {
     return (
       <Screen>
@@ -595,7 +624,16 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
             accessibilityLabel="Watch ad to unlock"
             detail={rewardedDetailText}
             disabled={isRewardedBusy || (accessToken ? !rewardedAdsReady : false)}
-            onPress={accessToken ? () => void startRewardedUnlock() : () => handleSignIn("rewarded")}
+            onPress={
+              accessToken
+                ? () => {
+                    if (isRewardedBusy) {
+                      return;
+                    }
+                    void startRewardedUnlock();
+                  }
+                : () => handleSignIn("rewarded")
+            }
             subtitle="Unlock this episode"
             title="Watch an ad"
           />
