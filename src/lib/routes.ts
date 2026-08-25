@@ -24,6 +24,8 @@ export const adminPath = "/admin";
 export const seriesListPath = "/admin/series";
 export const seriesNewPath = "/admin/series/new";
 export const mediaListPath = "/admin/media";
+export const shortFilmListPath = "/admin/short-films";
+export const shortFilmNewPath = "/admin/short-films/new";
 
 export function seriesEditPath(seriesId: string) {
   return `/admin/series/${seriesId}`;
@@ -35,4 +37,8 @@ export function episodeNewPath(seriesId: string) {
 
 export function episodeEditPath(seriesId: string, episodeId: string) {
   return `/admin/series/${seriesId}/episodes/${episodeId}`;
+}
+
+export function shortFilmEditPath(shortFilmId: string) {
+  return `/admin/short-films/${shortFilmId}`;
 }

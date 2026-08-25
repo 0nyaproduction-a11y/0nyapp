@@ -3,7 +3,7 @@ import { signOut } from "@/app/account/actions";
 import { Button } from "@/components/ui/Button";
 import { getSafeUserIdentifier } from "@/lib/account";
 import { requireCmsAdmin } from "@/lib/cms/auth";
-import { mediaListPath, seriesListPath } from "@/lib/routes";
+import { mediaListPath, seriesListPath, shortFilmListPath } from "@/lib/routes";
 
 export default async function AdminPage() {
   const context = await requireCmsAdmin();
@@ -43,7 +43,7 @@ export default async function AdminPage() {
           Signed in as {getSafeUserIdentifier(user)}
         </p>
 
-        <nav className="mt-8 grid gap-3 sm:grid-cols-3">
+        <nav className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href={seriesListPath}
             className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
@@ -61,6 +61,15 @@ export default async function AdminPage() {
               Media
             </p>
             <p className="mt-2 text-sm text-bone/70">Mux uploads &amp; status</p>
+          </Link>
+          <Link
+            href={shortFilmListPath}
+            className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
+          >
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
+              Short Films
+            </p>
+            <p className="mt-2 text-sm text-bone/70">Short-film CMS</p>
           </Link>
           <div className="border border-bone/10 bg-bone/[0.03] px-4 py-5">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">

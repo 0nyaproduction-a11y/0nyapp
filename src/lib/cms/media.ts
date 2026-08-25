@@ -162,3 +162,50 @@ export async function assignEpisodeMediaAsset(episodeId: string, mediaAssetId: s
 
   return { episodeId: episode.id, mediaAssetId: mediaAsset.id, updated: true as const };
 }
+
+export async function assignShortFilmMediaAsset(shortFilmId: string, mediaAssetId: string) {
+  const supabase = getAdminClient();
+  const normalizedShortFilmId = shortFilmId.trim();
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  if (!normalizedShortFilmId) {
+    throw new Error("Short film ID is required.");
+  }
+
+  if (!normalizedMediaAssetId) {
+    throw new Error("Media asset ID is required.");
+  }
+
+  const [{ data: shortFilm, error: shortFilmError }, { data: mediaAsset, error: mediaAssetError }] =
+    await Promise.all([
+      supabase.from("short_films").select("id,media_asset_id").eq("id", normalizedShortFilmId).maybeSingle(),
+      supabase.from("media_assets").select("id,status").eq("id", normalizedMediaAssetId).maybeSingle(),
+    ]);
+
+  if (shortFilmError || !shortFilm) {
+    throw new Error("Short film not found.");
+  }
+
+  if (mediaAssetError || !mediaAsset) {
+    throw new Error("Media asset not found.");
+  }
+
+  if (mediaAsset.status !== "ready") {
+    throw new Error("Only ready media assets can be assigned to a short film.");
+  }
+
+  if (shortFilm.media_asset_id === mediaAsset.id) {
+    return { shortFilmId: shortFilm.id, mediaAssetId: mediaAsset.id, updated: false as const };
+  }
+
+  const { error: updateError } = await supabase
+    .from("short_films")
+    .update({ media_asset_id: mediaAsset.id })
+    .eq("id", shortFilm.id);
+
+  if (updateError) {
+    throw new Error("Unable to assign the media asset to the short film.");
+  }
+
+  return { shortFilmId: shortFilm.id, mediaAssetId: mediaAsset.id, updated: true as const };
+}
