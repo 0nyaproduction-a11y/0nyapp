@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { deleteWebAccount } from "./actions";
 import { BrandName } from "@/components/brand/BrandName";
-import { Button } from "@/components/ui/Button";
 import { deleteAccountPath, loginPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteAccountSubmitButton } from "./DeleteAccountSubmitButton";
 
 type DeleteAccountPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -50,7 +50,7 @@ export default async function DeleteAccountPage({ searchParams }: DeleteAccountP
 
             {user ? (
               <form action={deleteWebAccount} className="mt-6 grid gap-3">
-                <Button type="submit">Delete Account</Button>
+                <DeleteAccountSubmitButton />
                 <Link
                   href="/account"
                   className="inline-flex w-fit items-center font-mono text-[0.66rem] uppercase tracking-[0.14em] text-bone/55 transition hover:text-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
