@@ -112,8 +112,19 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
       return;
     }
 
-    await updateSeriesStatus(id, status as SeriesStatus);
+    const result = await updateSeriesStatus(id, status as SeriesStatus);
+
+    if (!result.success) {
+      return;
+    }
+
     revalidatePath(seriesEditPath(id));
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath(seriesPath(result.series.slug));
+    revalidatePath("/api/v1/catalog");
+    redirect(seriesEditPath(id));
   }
 
   async function requestPosterUploadAction(mimeType: string) {

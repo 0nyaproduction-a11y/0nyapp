@@ -22,7 +22,7 @@ import {
 import { errorsToRecord, parseEpisodeFormData, type EpisodeFormState } from "@/lib/cms/episode-form";
 import { assignEpisodeMediaAsset, listReadyMediaAssetsForAdmin, type MediaAssetFormState } from "@/lib/cms/media";
 import { getSeriesForAdminById } from "@/lib/cms/series";
-import { episodeEditPath, seriesEditPath, seriesListPath, seriesPath, purchaseEpisodePath, watchEpisodePath } from "@/lib/routes";
+import { episodeEditPath, homeListPath, seriesEditPath, seriesListPath, seriesPath, purchaseEpisodePath, watchEpisodePath } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -106,8 +106,22 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
       return;
     }
 
-    await updateEpisodeStatus(episodeId, status as EpisodeStatus);
+    const result = await updateEpisodeStatus(episodeId, status as EpisodeStatus);
+
+    if (!result.success) {
+      return;
+    }
+
     revalidatePath(episodeEditPath(seriesId, episodeId));
+    revalidatePath(seriesEditPath(seriesId));
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath(seriesPath(currentSeries.slug));
+    revalidatePath(watchEpisodePath(currentSeries.slug, currentEpisode.episode_number));
+    revalidatePath(purchaseEpisodePath(currentSeries.slug, currentEpisode.episode_number));
+    revalidatePath("/api/v1/catalog");
+    redirect(episodeEditPath(seriesId, episodeId));
   }
 
   async function requestThumbnailUploadAction(mimeType: string) {
