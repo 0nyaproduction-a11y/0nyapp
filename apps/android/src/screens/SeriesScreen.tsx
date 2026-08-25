@@ -30,6 +30,8 @@ function formatEpisodeCount(count: number) {
 export function SeriesScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
+  const hasValidSlug = normalizedSlug.length > 0;
   const [data, setData] = useState<SeriesResponse | null>(null);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [error, setError] = useState<RecoveryCopy | null>(null);
@@ -38,9 +40,19 @@ export function SeriesScreen({ navigation, route }: Props) {
   const hasHydratedRef = useRef(false);
 
   useEffect(() => {
+    if (!hasValidSlug) {
+      setError({
+        body: "This series link is unavailable.",
+        title: "Unavailable",
+      });
+      setIsLoading(false);
+      setData(null);
+      return undefined;
+    }
+
     let isMounted = true;
 
-    getSeries(route.params.slug, accessToken)
+    getSeries(normalizedSlug, accessToken)
       .then((seriesData) => {
         if (isMounted) {
           setData(seriesData);
@@ -67,7 +79,7 @@ export function SeriesScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [route.params.slug, accessToken]);
+  }, [hasValidSlug, normalizedSlug, accessToken]);
 
   useFocusEffect(
     useCallback(() => {
@@ -200,6 +212,20 @@ export function SeriesScreen({ navigation, route }: Props) {
     );
   }
 
+  if (!hasValidSlug) {
+    return (
+      <Screen scroll={false}>
+        <RecoveryState
+          body="This series link is unavailable."
+          onPrimaryAction={() => navigation.goBack()}
+          primaryActionLabel="Back"
+          variant="cinematic"
+          title="Unavailable"
+        />
+      </Screen>
+    );
+  }
+
   if (!data) {
     return (
       <Screen scroll={false}>
@@ -209,7 +235,7 @@ export function SeriesScreen({ navigation, route }: Props) {
             setIsLoading(true);
             setData(null);
             setError(null);
-            void getSeries(route.params.slug, accessToken)
+            void getSeries(normalizedSlug, accessToken)
               .then((seriesData) => {
                 setData(seriesData);
               })

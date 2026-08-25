@@ -189,9 +189,34 @@ export function getSeries(slug: string, accessToken?: string | null) {
   });
 }
 
+export function isShortFilmPublished(shortFilm: Partial<ApiShortFilm> | null | undefined) {
+  if (!shortFilm) {
+    return false;
+  }
+
+  if (shortFilm.status !== "published") {
+    return false;
+  }
+
+  if (typeof shortFilm.publishAt === "string" && shortFilm.publishAt.trim().length > 0) {
+    const publishTime = Date.parse(shortFilm.publishAt);
+    if (!Number.isNaN(publishTime) && publishTime > Date.now()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function getShortFilm(slug: string, accessToken?: string | null) {
   return requestApi<ShortFilmResponse>(`/api/v1/short-films/${encodeURIComponent(slug)}`, {
     accessToken,
+  }).then((payload) => {
+    if (!payload || !payload.shortFilm || !isShortFilmPublished(payload.shortFilm)) {
+      throw new ApiError("not_found", "This title is unavailable right now.", 404);
+    }
+
+    return payload;
   });
 }
 

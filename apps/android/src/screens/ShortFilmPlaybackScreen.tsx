@@ -2,7 +2,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Screen } from "../components/Screen";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getShortFilm } from "../lib/api";
+import { getShortFilm, isShortFilmPublished } from "../lib/api";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import {
   getParentalScope,
@@ -23,6 +23,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "ShortFilmPlayback">;
 export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
+  const hasValidSlug = normalizedSlug.length > 0;
   const shouldStartFromBeginning = route.params.startFromBeginning === true;
   const parentalScope = useMemo(() => getParentalScope(session), [session]);
   const isSessionUnlocked = isParentalSessionUnlocked(parentalScope);
@@ -66,10 +68,21 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
   }, [route.params.slug]);
 
   const loadShortFilm = useCallback(async () => {
-    return getShortFilm(route.params.slug, accessToken);
-  }, [accessToken, route.params.slug]);
+    if (!hasValidSlug) {
+      throw new Error("Invalid short film slug.");
+    }
+
+    return getShortFilm(normalizedSlug, accessToken);
+  }, [accessToken, hasValidSlug, normalizedSlug]);
 
   useEffect(() => {
+    if (!hasValidSlug) {
+      setError("This short film link is unavailable.");
+      setShortFilm(null);
+      setIsLoading(false);
+      return undefined;
+    }
+
     let isMounted = true;
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch lifecycle boundary.
@@ -109,7 +122,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [loadShortFilm, session]);
+  }, [hasValidSlug, loadShortFilm, session]);
 
   const context = useMemo<PlaybackContext | null>(
     () =>
@@ -170,6 +183,19 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     });
   }, [chai, navigation, shortFilm]);
 
+  if (!hasValidSlug) {
+    return (
+      <Screen>
+        <RecoveryState
+          body="This short film link is unavailable."
+          onPrimaryAction={() => navigation.goBack()}
+          primaryActionLabel="Back"
+          title="Unavailable"
+        />
+      </Screen>
+    );
+  }
+
   if (isLoading) {
     return (
       <Screen>
@@ -203,6 +229,19 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
           }}
           primaryActionLabel="Retry"
           title="We couldn't load this right now."
+        />
+      </Screen>
+    );
+  }
+
+  if (!isShortFilmPublished(shortFilm)) {
+    return (
+      <Screen>
+        <RecoveryState
+          body="This short film is unavailable right now."
+          onPrimaryAction={() => navigation.goBack()}
+          primaryActionLabel="Back"
+          title="Unavailable"
         />
       </Screen>
     );

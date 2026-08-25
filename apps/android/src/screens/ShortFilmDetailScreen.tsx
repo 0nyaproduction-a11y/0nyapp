@@ -4,7 +4,7 @@ import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from "rea
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Screen } from "../components/Screen";
 import { Button, LoadingState, RecoveryState, Title } from "../components/ui";
-import { getCatalog, getShortFilm } from "../lib/api";
+import { getCatalog, getShortFilm, isShortFilmPublished } from "../lib/api";
 import { buildShortFilmShareMessage } from "../lib/content-links";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import {
@@ -42,6 +42,8 @@ function formatPublishYear(publishAt: string | null) {
 export function ShortFilmDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
+  const hasValidSlug = normalizedSlug.length > 0;
   const parentalScope = useMemo(() => getParentalScope(session), [session]);
   const [shortFilm, setShortFilm] = useState<ShortFilmResponse["shortFilm"] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,9 +58,13 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
   }, [navigation]);
 
   const loadShortFilm = useCallback(async () => {
-    const data = await getShortFilm(route.params.slug, accessToken);
+    if (!hasValidSlug) {
+      throw new Error("Invalid short film slug.");
+    }
+
+    const data = await getShortFilm(normalizedSlug, accessToken);
     return data.shortFilm;
-  }, [accessToken, route.params.slug]);
+  }, [accessToken, hasValidSlug, normalizedSlug]);
 
   const resolveResumeAtSeconds = useCallback(
     (history: Awaited<ReturnType<typeof loadWatchHistory>>, shortFilmSlug: string) => {
@@ -72,6 +78,13 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
   );
 
   useEffect(() => {
+    if (!hasValidSlug) {
+      setError("This short film link is unavailable.");
+      setIsLoading(false);
+      setShortFilm(null);
+      return undefined;
+    }
+
     let isMounted = true;
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch lifecycle boundary.
@@ -103,7 +116,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [loadShortFilm, resolveResumeAtSeconds, session]);
+  }, [hasValidSlug, loadShortFilm, resolveResumeAtSeconds, session]);
 
   useFocusEffect(
     useCallback(() => {
@@ -115,18 +128,23 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
             return;
           }
 
-          setResumeAtSeconds(resolveResumeAtSeconds(history, route.params.slug));
+          setResumeAtSeconds(resolveResumeAtSeconds(history, normalizedSlug));
         })
         .catch(() => undefined);
 
       return () => {
         isActive = false;
       };
-    }, [resolveResumeAtSeconds, route.params.slug, session]),
+    }, [normalizedSlug, resolveResumeAtSeconds, session]),
   );
 
   useEffect(() => {
     let isMounted = true;
+
+    if (!hasValidSlug) {
+      setRelatedShortFilms([]);
+      return undefined;
+    }
 
     void getCatalog(accessToken)
       .then((data) => {
@@ -135,7 +153,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
         }
 
         setRelatedShortFilms(
-          data.shortFilms.filter((item) => item.slug !== route.params.slug).slice(0, 6),
+          data.shortFilms.filter((item) => item.slug !== normalizedSlug).slice(0, 6),
         );
       })
       .catch(() => {
@@ -147,7 +165,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [accessToken, route.params.slug]);
+  }, [accessToken, hasValidSlug, normalizedSlug]);
 
   const classification = shortFilm
     ? formatClassification(shortFilm.contentRating, shortFilm.contentDescriptors)
@@ -180,7 +198,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
   }, [shortFilm]);
 
   const handlePlay = useCallback(() => {
-    if (!shortFilm) {
+    if (!shortFilm || !isShortFilmPublished(shortFilm)) {
       return;
     }
 
@@ -208,6 +226,19 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
       slug: shortFilm.slug,
     });
   }, [canPlayFilm, hasConfiguredParentalLock, isSessionUnlocked, navigation, resumeAtSeconds, shortFilm]);
+
+  if (!hasValidSlug) {
+    return (
+      <Screen>
+        <RecoveryState
+          body="This short film link is unavailable."
+          onPrimaryAction={() => navigation.goBack()}
+          primaryActionLabel="Back"
+          title="Unavailable"
+        />
+      </Screen>
+    );
+  }
 
   if (isLoading) {
     return (
