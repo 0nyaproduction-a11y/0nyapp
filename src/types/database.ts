@@ -485,6 +485,21 @@ export type Database = {
         };
         Relationships: [];
       };
+      cms_admins: {
+        Row: {
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       series: {
         Row: {
           id: string;
@@ -1341,6 +1356,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      is_cms_admin: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       get_short_film_chai_details: {
         Args: {
           p_short_film_slug: string;

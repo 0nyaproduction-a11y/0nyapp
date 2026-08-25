@@ -19,3 +19,4 @@ export const deleteAccountPath = "/delete-account";
 export const walletPath = "/wallet";
 export const plansPath = "/plans";
 export const loginPath = "/login";
+export const adminPath = "/admin";
