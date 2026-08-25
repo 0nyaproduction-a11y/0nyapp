@@ -548,6 +548,118 @@ export type Database = {
         };
         Relationships: [];
       };
+      home_settings: {
+        Row: {
+          id: string;
+          key: string;
+          value: number;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          key: string;
+          value?: number;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          key?: string;
+          value?: number;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      home_rows: {
+        Row: {
+          id: string;
+          title: string;
+          row_role: "start_here" | "editorial";
+          enabled: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          row_role: "start_here" | "editorial";
+          enabled?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          row_role?: "start_here" | "editorial";
+          enabled?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      home_row_items: {
+        Row: {
+          id: string;
+          row_id: string;
+          content_type: "series" | "short_film";
+          series_id: string | null;
+          short_film_id: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          row_id: string;
+          content_type: "series" | "short_film";
+          series_id?: string | null;
+          short_film_id?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          row_id?: string;
+          content_type?: "series" | "short_film";
+          series_id?: string | null;
+          short_film_id?: string | null;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "home_row_items_row_id_fkey";
+            columns: ["row_id"];
+            isOneToOne: false;
+            referencedRelation: "home_rows";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "home_row_items_series_id_fkey";
+            columns: ["series_id"];
+            isOneToOne: false;
+            referencedRelation: "series";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "home_row_items_short_film_id_fkey";
+            columns: ["short_film_id"];
+            isOneToOne: false;
+            referencedRelation: "short_films";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       short_films: {
         Row: {
           id: string;

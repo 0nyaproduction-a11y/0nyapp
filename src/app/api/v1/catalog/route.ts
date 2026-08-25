@@ -6,6 +6,8 @@ import {
   getPublishedSeries,
   getPublishedShortFilms,
 } from "@/lib/catalog";
+import { getHomeState } from "@/lib/home";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +21,15 @@ export async function GET() {
     shortFilm.slug === "mute-button" ? { ...shortFilm, title: "Trial & Error" } : shortFilm,
   );
 
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const home = await getHomeState(user?.id ?? null);
+
   return dataResponse({
     catalog: seriesCatalog.map(serializeSeries),
     shortFilms: normalizedShortFilms.map(serializeShortFilm),
+    home,
   });
 }
