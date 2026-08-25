@@ -23,6 +23,7 @@ export const adminPath = "/admin";
 
 export const seriesListPath = "/admin/series";
 export const seriesNewPath = "/admin/series/new";
+export const mediaListPath = "/admin/media";
 
 export function seriesEditPath(seriesId: string) {
   return `/admin/series/${seriesId}`;

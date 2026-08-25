@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
 import { EpisodeMetadataForm } from "@/components/cms/EpisodeMetadataForm";
 import { Button } from "@/components/ui/Button";
+import { EpisodeMediaAssignmentForm } from "@/components/cms/EpisodeMediaAssignmentForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   EPISODE_STATUSES,
@@ -15,6 +16,7 @@ import {
   type EpisodeStatus,
 } from "@/lib/cms/episodes";
 import { errorsToRecord, parseEpisodeFormData, type EpisodeFormState } from "@/lib/cms/episode-form";
+import { assignEpisodeMediaAsset, listReadyMediaAssetsForAdmin, type MediaAssetFormState } from "@/lib/cms/media";
 import { getSeriesForAdminById } from "@/lib/cms/series";
 import { episodeEditPath, seriesEditPath } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
@@ -50,6 +52,7 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
   }
 
   const mediaReadiness = await resolveEpisodeMediaReadiness(episode);
+  const readyMediaAssets = await listReadyMediaAssetsForAdmin();
 
   async function updateEpisodeAction(
     _prevState: EpisodeFormState,
@@ -138,6 +141,37 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     return { success: true as const };
   }
 
+  async function assignMediaAssetAction(
+    _state: MediaAssetFormState,
+    formData: FormData,
+  ): Promise<MediaAssetFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(episodeEditPath(seriesId, episodeId));
+
+    if (guard.status !== "authorized") {
+      return { error: "Not authorized." };
+    }
+
+    const mediaAssetId = String(formData.get("mediaAssetId") ?? "").trim();
+
+    if (!mediaAssetId) {
+      return { error: "Select a ready media asset." };
+    }
+
+    try {
+      const result = await assignEpisodeMediaAsset(episodeId, mediaAssetId);
+      revalidatePath(episodeEditPath(seriesId, episodeId));
+      return {
+        message: result.updated ? "Media assignment updated." : "Media assignment already matched.",
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : "Unable to assign the media asset.",
+      };
+    }
+  }
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-3xl space-y-10">
@@ -193,10 +227,14 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
             Video: <span className="text-bone">{mediaReadiness.video}</span> · Preview clip:{" "}
             <span className="text-bone">{mediaReadiness.preview}</span>
           </p>
-          <p className="mt-1 text-xs text-bone/40">
-            Uploading and assigning Mux video is a Phase 3 capability. This is a read-only status
-            display.
-          </p>
+          <div className="mt-4">
+            <EpisodeMediaAssignmentForm
+              action={assignMediaAssetAction}
+              currentMediaAssetId={episode.media_asset_id}
+              currentMediaAssetStatus={mediaReadiness.video}
+              readyMediaAssets={readyMediaAssets}
+            />
+          </div>
         </section>
 
         <section>

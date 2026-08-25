@@ -3,9 +3,7 @@ import { signOut } from "@/app/account/actions";
 import { Button } from "@/components/ui/Button";
 import { getSafeUserIdentifier } from "@/lib/account";
 import { requireCmsAdmin } from "@/lib/cms/auth";
-import { seriesListPath } from "@/lib/routes";
-
-const PLACEHOLDER_SECTIONS = ["Media", "Home"] as const;
+import { mediaListPath, seriesListPath } from "@/lib/routes";
 
 export default async function AdminPage() {
   const context = await requireCmsAdmin();
@@ -55,14 +53,21 @@ export default async function AdminPage() {
             </p>
             <p className="mt-2 text-sm text-bone/70">Series &amp; episodes</p>
           </Link>
-          {PLACEHOLDER_SECTIONS.map((label) => (
-            <div key={label} className="border border-bone/10 bg-bone/[0.03] px-4 py-5">
-              <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
-                {label}
-              </p>
-              <p className="mt-2 text-sm text-bone/60">Coming soon</p>
-            </div>
-          ))}
+          <Link
+            href={mediaListPath}
+            className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
+          >
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
+              Media
+            </p>
+            <p className="mt-2 text-sm text-bone/70">Mux uploads &amp; status</p>
+          </Link>
+          <div className="border border-bone/10 bg-bone/[0.03] px-4 py-5">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
+              Home
+            </p>
+            <p className="mt-2 text-sm text-bone/60">Coming soon</p>
+          </div>
         </nav>
 
         <form action={signOut} className="mt-8">

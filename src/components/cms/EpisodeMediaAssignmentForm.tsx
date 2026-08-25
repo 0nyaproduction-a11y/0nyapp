@@ -1,0 +1,61 @@
+"use client";
+
+import { useActionState } from "react";
+import { Button } from "@/components/ui/Button";
+import type { MediaAssetRow, MediaAssetFormState } from "@/lib/cms/media";
+
+type EpisodeMediaAssignmentFormProps = {
+  action: (state: MediaAssetFormState, formData: FormData) => Promise<MediaAssetFormState>;
+  currentMediaAssetId: string | null;
+  currentMediaAssetStatus: string;
+  readyMediaAssets: MediaAssetRow[];
+};
+
+export function EpisodeMediaAssignmentForm({
+  action,
+  currentMediaAssetId,
+  currentMediaAssetStatus,
+  readyMediaAssets,
+}: EpisodeMediaAssignmentFormProps) {
+  const [state, formAction, pending] = useActionState(action, {});
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <p className="text-sm text-bone/60">
+        Current media asset: <span className="text-bone">{currentMediaAssetId ?? "not assigned"}</span> ·{" "}
+        <span className="text-bone">{currentMediaAssetStatus}</span>
+      </p>
+
+      <label className="block space-y-1.5">
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
+          Ready media asset
+        </span>
+        <select
+          name="mediaAssetId"
+          defaultValue={currentMediaAssetId ?? ""}
+          disabled={readyMediaAssets.length === 0 || pending}
+          className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+        >
+          <option value="">Choose a ready media asset</option>
+          {readyMediaAssets.map((mediaAsset) => (
+            <option key={mediaAsset.id} value={mediaAsset.id}>
+              {mediaAsset.id} · {mediaAsset.provider_name ?? "mux"} · {mediaAsset.created_at}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={pending || readyMediaAssets.length === 0}>
+          {pending ? "Assigning…" : "Assign media"}
+        </Button>
+        {readyMediaAssets.length === 0 && (
+          <p className="text-xs text-bone/50">No ready media assets available.</p>
+        )}
+      </div>
+
+      {state.message && <p className="text-xs text-teal">{state.message}</p>}
+      {state.error && <p className="text-xs text-red-400">{state.error}</p>}
+    </form>
+  );
+}
