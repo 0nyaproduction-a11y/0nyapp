@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "mux:operator": "node scripts/mux-local-operator.mjs",
-    "dev:media:rehydrate": "node scripts/mux-local-operator.mjs --rehydrate"
+    "dev:media:rehydrate": "node scripts/mux-local-operator.mjs --rehydrate",
+    "local:backup": "node scripts/local-data-state.mjs backup",
+    "local:restore": "node scripts/local-data-state.mjs restore"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
