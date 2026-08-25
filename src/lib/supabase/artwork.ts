@@ -5,6 +5,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const ARTWORK_BUCKET_ID = "content-artwork" as const;
 
+// Mirrors the content-artwork bucket's file_size_limit configured in
+// supabase/migrations/20260823002000_014_content_artwork_storage_foundation.sql.
+// Kept here so CMS upload UI can validate client-side before requesting a
+// signed upload URL, without inventing a new limit.
+export const ARTWORK_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+
 export const ARTWORK_KINDS = [
   "series-poster",
   "series-hero",

@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { signOut } from "@/app/account/actions";
 import { Button } from "@/components/ui/Button";
 import { getSafeUserIdentifier } from "@/lib/account";
 import { requireCmsAdmin } from "@/lib/cms/auth";
+import { seriesListPath } from "@/lib/routes";
 
-const PLACEHOLDER_SECTIONS = ["Content", "Media", "Home"] as const;
+const PLACEHOLDER_SECTIONS = ["Media", "Home"] as const;
 
 export default async function AdminPage() {
   const context = await requireCmsAdmin();
@@ -44,6 +46,15 @@ export default async function AdminPage() {
         </p>
 
         <nav className="mt-8 grid gap-3 sm:grid-cols-3">
+          <Link
+            href={seriesListPath}
+            className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
+          >
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
+              Content
+            </p>
+            <p className="mt-2 text-sm text-bone/70">Series &amp; episodes</p>
+          </Link>
           {PLACEHOLDER_SECTIONS.map((label) => (
             <div key={label} className="border border-bone/10 bg-bone/[0.03] px-4 py-5">
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
