@@ -36,6 +36,10 @@ export function episodeNewPath(seriesId: string) {
   return `/admin/series/${seriesId}/episodes/new`;
 }
 
+export function episodeBulkUploadPath(seriesId: string) {
+  return `/admin/series/${seriesId}/episodes/bulk-upload`;
+}
+
 export function episodeEditPath(seriesId: string, episodeId: string) {
   return `/admin/series/${seriesId}/episodes/${episodeId}`;
 }
