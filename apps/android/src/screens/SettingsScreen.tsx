@@ -1,86 +1,201 @@
-import { useCallback, useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import appJson from "../../app.json";
 import { Screen } from "../components/Screen";
-import { Body, Button, Card, ErrorText, Label, Title } from "../components/ui";
-import { useAdMob } from "../lib/adMob";
-import { useAuth } from "../lib/authContext";
-import { useEpisodeRewardedUnlockAd } from "../lib/episodeRewardedUnlockAd";
-import { getSubtitlePreference, type SubtitlePreference } from "../lib/subtitles";
-import { colors, borders } from "../theme/tokens";
+import { Body, Card, Label } from "../components/ui";
+import {
+  getAutoplayNextPreference,
+  getMarketingNotificationsPreference,
+  getNewReleaseNotificationsPreference,
+  setAutoplayNextPreference,
+  setMarketingNotificationsPreference,
+  setNewReleaseNotificationsPreference,
+} from "../lib/settingsPreferences";
+import { getSubtitlePreference, setSubtitlePreference, type SubtitlePreference } from "../lib/subtitles";
 import type { ProfileStackScreenProps } from "../navigation/types";
+import { borders, colors } from "../theme/tokens";
 
 type Props = ProfileStackScreenProps<"Settings">;
+
+const appVersion = appJson.expo?.version ?? "unknown";
+
+function formatSubtitleLanguage(value: string | null) {
+  if (!value) {
+    return "Auto";
+  }
+
+  switch (value.toLowerCase()) {
+    case "en":
+      return "English";
+    case "hi":
+      return "Hindi";
+    default:
+      return value.toUpperCase();
+  }
+}
 
 function SettingsRow({
   detail,
   label,
+  onPress,
   value,
 }: {
-  detail: string;
+  detail?: string;
   label: string;
-  value: string;
+  onPress?: () => void;
+  value?: string;
 }) {
-  return (
-    <View style={styles.row}>
+  const content = (
+    <View style={[styles.row, styles.staticRow]}>
       <View style={styles.rowText}>
         <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowDetail}>{detail}</Text>
+        {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
       </View>
-      <Text style={styles.rowValue}>{value}</Text>
+      {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+    </View>
+  );
+
+  if (!onPress) {
+    return content;
+  }
+
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.rowPressable, pressed && styles.rowPressablePressed]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+function SettingsToggleRow({
+  detail,
+  label,
+  onValueChange,
+  value,
+}: {
+  detail?: string;
+  label: string;
+  onValueChange: (nextValue: boolean) => void;
+  value: boolean;
+}) {
+  return (
+    <View style={styles.toggleRow}>
+      <View style={styles.rowText}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
+      </View>
+      <Switch
+        accessibilityLabel={label}
+        onValueChange={onValueChange}
+        thumbColor={value ? colors.accent : "#f1efe9"}
+        trackColor={{ false: "#3c3a37", true: colors.accent }}
+        value={value}
+      />
     </View>
   );
 }
 
-export function SettingsScreen({ navigation }: Props) {
-  const [deviceSettingsError, setDeviceSettingsError] = useState<string | null>(null);
-  const [subtitlePreference, setSubtitlePreference] = useState<SubtitlePreference | null>(null);
-  const [rewardedTestAdError, setRewardedTestAdError] = useState<string | null>(null);
-  const { session } = useAuth();
-  const adMob = useAdMob();
-  const rewardedTestAd = useEpisodeRewardedUnlockAd({
-    enabled: __DEV__,
+export function SettingsScreen({}: Props) {
+  const [autoplayNext, setAutoplayNext] = useState(true);
+  const [newReleaseNotifications, setNewReleaseNotifications] = useState(false);
+  const [marketingNotifications, setMarketingNotifications] = useState(false);
+  const [subtitlePreference, setSubtitlePreferenceState] = useState<SubtitlePreference>({
+    enabled: false,
+    preferredLanguageCode: null,
   });
-  const rootNavigation = navigation.getParent()?.getParent();
+  const [deviceSettingsError, setDeviceSettingsError] = useState<string | null>(null);
 
-  const openDeviceSettings = useCallback(async () => {
+  useEffect(() => {
+    let isActive = true;
+
+    void Promise.all([
+      getAutoplayNextPreference(),
+      getNewReleaseNotificationsPreference(),
+      getMarketingNotificationsPreference(),
+      getSubtitlePreference(),
+    ])
+      .then(([nextAutoplay, newReleases, marketing, subtitle]) => {
+        if (!isActive) {
+          return;
+        }
+
+        setAutoplayNext(nextAutoplay);
+        setNewReleaseNotifications(newReleases);
+        setMarketingNotifications(marketing);
+        setSubtitlePreferenceState(subtitle);
+      })
+      .catch(() => {
+        console.warn("Unable to load settings preferences.");
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const updateSubtitlePreference = async (nextPreference: SubtitlePreference) => {
+    setSubtitlePreferenceState(nextPreference);
+    await setSubtitlePreference(nextPreference);
+  };
+
+  const openSubtitleLanguagePicker = () => {
+    const subtitleLanguageOptions: Array<{ label: string; value: string | null }> = [
+      { label: "Auto", value: null },
+      { label: "English", value: "en" },
+      { label: "Hindi", value: "hi" },
+    ];
+
+    Alert.alert(
+      "Default subtitle language",
+      "Choose the default subtitle language for future playback.",
+      [
+        { style: "cancel", text: "Cancel" },
+        ...subtitleLanguageOptions.map((option) => ({
+          onPress: () => {
+            void updateSubtitlePreference({
+              enabled: subtitlePreference.enabled,
+              preferredLanguageCode: option.value,
+            });
+          },
+          text: option.label,
+        })),
+      ],
+    );
+  };
+
+  const handleOpenDeviceSettings = async () => {
     setDeviceSettingsError(null);
 
     try {
       await Linking.openSettings();
     } catch {
-      setDeviceSettingsError("We couldn't open settings.");
+      setDeviceSettingsError("We couldn't open Android settings.");
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    let active = true;
-
-    void getSubtitlePreference().then((preference) => {
-      if (active) {
-        setSubtitlePreference(preference);
-      }
-    }).catch(() => {
-      console.warn("Unable to load subtitle preference.");
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const handleMissingDestination = (label: string) => {
+    Alert.alert("Not available yet", `${label} is not wired in this build.`);
+  };
 
   return (
     <Screen>
-      <Title>Settings</Title>
-
       <Card>
         <Label>Playback</Label>
-        <SettingsRow
-          detail="No persisted V04 setting exists yet, so this reflects the current player behavior."
+        <SettingsToggleRow
+          detail="Resume to the next episode when the current one ends."
           label="Autoplay Next"
-          value="On in player"
+          onValueChange={async (nextValue) => {
+            setAutoplayNext(nextValue);
+            await setAutoplayNextPreference(nextValue);
+          }}
+          value={autoplayNext}
         />
         <SettingsRow
-          detail="Adaptive streaming. Manual quality selection is not available yet."
+          detail="Adaptive streaming. Manual quality selection is not available in the current expo-video setup."
           label="Streaming Quality"
           value="Auto"
         />
@@ -89,117 +204,85 @@ export function SettingsScreen({ navigation }: Props) {
       <Card>
         <Label>Subtitles</Label>
         <SettingsRow
-          detail="The player remembers the last subtitle on/off choice locally."
-          label="Captions"
-          value={subtitlePreference?.enabled ? "ON" : "OFF"}
-        />
-        <SettingsRow
-          detail="Preferred language is matched on the next video when available."
-          label="Preferred language"
-          value={subtitlePreference?.preferredLanguageCode ?? "Unset"}
+          detail="Use the default subtitle language on future playback when available."
+          label="Default Language"
+          onPress={openSubtitleLanguagePicker}
+          value={formatSubtitleLanguage(subtitlePreference.preferredLanguageCode)}
         />
       </Card>
 
       <Card>
         <Label>Notifications</Label>
-        <SettingsRow
-          detail="Push permission and backend notification infrastructure are not wired in this build."
+        <SettingsToggleRow
+          detail="Stored locally for later push integration."
           label="New Releases"
-          value="Unavailable"
+          onValueChange={async (nextValue) => {
+            setNewReleaseNotifications(nextValue);
+            await setNewReleaseNotificationsPreference(nextValue);
+          }}
+          value={newReleaseNotifications}
         />
-        <SettingsRow
-          detail="Marketing consent must stay off by default; explicit opt-in is not saved yet."
+        <SettingsToggleRow
+          detail="Consent is stored locally and does not grant Android notification permission."
           label="Marketing"
-          value="OFF"
+          onValueChange={async (nextValue) => {
+            setMarketingNotifications(nextValue);
+            await setMarketingNotificationsPreference(nextValue);
+          }}
+          value={marketingNotifications}
         />
       </Card>
 
       <Card>
-        <Label>Privacy / Data</Label>
-        <Body>No Android Terms, Privacy, Help, or Grievance routes are wired yet.</Body>
-        {adMob.privacyOptionsRequired ? (
-          <Button accessibilityLabel="Open privacy choices" onPress={() => void adMob.showPrivacyChoices()}>
-            Privacy choices
-          </Button>
-        ) : null}
-        {__DEV__ ? (
-          <>
-            <Body>Development only: Google&apos;s TEST rewarded ad.</Body>
-            <Body>
-              {adMob.isInitialized
-                ? "Consent prep finished. The test rewarded ad can be requested."
-                : "Waiting for consent prep before requesting the test rewarded ad."}
-            </Body>
-            {rewardedTestAdError ? <ErrorText>{rewardedTestAdError}</ErrorText> : null}
-            <Body>
-              {rewardedTestAd.status === "failed"
-                ? rewardedTestAd.error ?? "The test rewarded ad could not be prepared."
-                : rewardedTestAd.lastEvent
-                  ? `Last ad event: ${rewardedTestAd.lastEvent}`
-                  : "No test ad event yet."}
-            </Body>
-            <Button
-              accessibilityLabel="Show rewarded test ad"
-              disabled={
-                !adMob.canRequestAds ||
-                !adMob.isInitialized ||
-                rewardedTestAd.status === "loading" ||
-                rewardedTestAd.status === "showing"
-              }
-              onPress={() => {
-                setRewardedTestAdError(null);
-                try {
-                  rewardedTestAd.show();
-                } catch (error) {
-                  setRewardedTestAdError(
-                    error instanceof Error ? error.message : "Unable to show rewarded test ad.",
-                  );
-                }
-              }}
-            >
-              {rewardedTestAd.status === "loading"
-                ? "Loading rewarded test ad"
-                : rewardedTestAd.status === "showing"
-                  ? "Rewarded test ad open"
-                  : rewardedTestAd.status === "failed"
-                    ? "Retry rewarded test ad"
-                    : "Show rewarded test ad"}
-            </Button>
-          </>
-        ) : null}
-        <Button
-          accessibilityLabel="Open parental controls"
-          onPress={() => {
-            rootNavigation?.navigate("ParentalControls", { mode: "manage" });
-          }}
-        >
-          Parental Controls
-        </Button>
-        <Button accessibilityLabel="Open device settings" onPress={() => void openDeviceSettings()}>
-          Data / Permissions
-        </Button>
-        {session?.access_token ? (
-          <Button
-            accessibilityLabel="Delete account"
-            onPress={() => navigation.navigate("DeleteAccount")}
-          >
-            Delete Account
-          </Button>
-        ) : (
-          <Body>Sign in to access account deletion.</Body>
-        )}
-        <Pressable
-          accessibilityLabel="Back to profile"
-          accessibilityRole="button"
-          onPress={() => navigation.goBack()}
-          style={({ pressed }) => [styles.textAction, pressed && styles.textActionPressed]}
-        >
-          <Text style={styles.textActionText}>Back</Text>
-        </Pressable>
+        <Label>Privacy</Label>
+        <SettingsRow
+          detail="Open Android app settings for app permissions and privacy controls."
+          label="Data / Permissions"
+          onPress={() => void handleOpenDeviceSettings()}
+          value="Open"
+        />
       </Card>
 
-      {adMob.bootstrapError ? <ErrorText>{adMob.bootstrapError}</ErrorText> : null}
-      {deviceSettingsError ? <ErrorText>{deviceSettingsError}</ErrorText> : null}
+      <Card>
+        <Label>Support & Legal</Label>
+        <SettingsRow
+          detail="MISSING / NOT PROVEN — no app destination was found in the repository."
+          label="Help & Support"
+          onPress={() => handleMissingDestination("Help & Support")}
+          value="MISSING"
+        />
+        <SettingsRow
+          detail="MISSING / NOT PROVEN — no content-issue destination was found in the repository."
+          label="Report a Content Issue"
+          onPress={() => handleMissingDestination("Report a Content Issue")}
+          value="MISSING"
+        />
+        <SettingsRow
+          detail="MISSING / NOT PROVEN — no grievance/contact destination was found in the repository."
+          label="Grievance / Contact"
+          onPress={() => handleMissingDestination("Grievance / Contact")}
+          value="MISSING"
+        />
+        <SettingsRow
+          detail="MISSING / NOT PROVEN — no legal terms destination was found in the repository."
+          label="Terms"
+          onPress={() => handleMissingDestination("Terms")}
+          value="MISSING"
+        />
+        <SettingsRow
+          detail="MISSING / NOT PROVEN — no privacy-policy destination was found in the repository."
+          label="Privacy Policy"
+          onPress={() => handleMissingDestination("Privacy Policy")}
+          value="MISSING"
+        />
+      </Card>
+
+      <Card>
+        <Label>App</Label>
+        <SettingsRow label="Version" value={appVersion} />
+      </Card>
+
+      {deviceSettingsError ? <Body>{deviceSettingsError}</Body> : null}
     </Screen>
   );
 }
@@ -207,12 +290,23 @@ export function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   row: {
     alignItems: "flex-start",
-    borderBottomColor: borders.color,
-    borderBottomWidth: borders.width,
     flexDirection: "row",
     gap: 12,
     justifyContent: "space-between",
     paddingVertical: 12,
+  },
+  rowPressable: {
+    borderBottomColor: borders.color,
+    borderBottomWidth: borders.width,
+    paddingVertical: 4,
+  },
+  staticRow: {
+    borderBottomColor: borders.color,
+    borderBottomWidth: borders.width,
+    paddingVertical: 12,
+  },
+  rowPressablePressed: {
+    opacity: 0.74,
   },
   rowText: {
     flex: 1,
@@ -235,18 +329,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: "uppercase",
   },
-  textAction: {
-    alignSelf: "flex-start",
-    marginTop: 8,
-    paddingVertical: 6,
-  },
-  textActionPressed: {
-    opacity: 0.72,
-  },
-  textActionText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
+  toggleRow: {
+    alignItems: "center",
+    borderBottomColor: borders.color,
+    borderBottomWidth: borders.width,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    paddingVertical: 12,
   },
 });

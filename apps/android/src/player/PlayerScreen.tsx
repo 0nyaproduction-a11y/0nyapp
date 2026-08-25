@@ -18,6 +18,7 @@ import {
   getPlaybackSpeedPreference,
   setPlaybackSpeedPreference,
 } from "../lib/playbackSpeed";
+import { getAutoplayNextPreference } from "../lib/settingsPreferences";
 import {
   getSubtitlePreference,
   getSubtitleTrackLabel,
@@ -151,6 +152,7 @@ export function PlayerScreen({
   const [chaiSubmitState, setChaiSubmitState] = useState<"idle" | "success" | "error">("idle");
   const [chaiError, setChaiError] = useState<string | null>(null);
   const [hasSentChai, setHasSentChai] = useState(false);
+  const [autoplayNextEnabled, setAutoplayNextEnabled] = useState(true);
   const [subtitlePreference, setSubtitlePreferenceState] = useState<SubtitlePreference>({
     enabled: false,
     preferredLanguageCode: null,
@@ -169,6 +171,7 @@ export function PlayerScreen({
 
   const advanceToNext = useCallback(() => {
     if (
+      !autoplayNextEnabled ||
       context.type !== "SERIES_EPISODE" ||
       !context.nextEpisode ||
       transitionStartedRef.current
@@ -185,7 +188,7 @@ export function PlayerScreen({
     transitionStartedRef.current = true;
     setIsAutoAdvancing(true);
     onAdvanceToNextRef.current?.(context.nextEpisode);
-  }, [context]);
+  }, [autoplayNextEnabled, context]);
 
   const handlePlaybackEnded = useCallback(
     (payload: PlaybackEndedPayload) => {
@@ -203,6 +206,7 @@ export function PlayerScreen({
       }
 
       if (
+        autoplayNextEnabled &&
         context.type === "SERIES_EPISODE" &&
         context.nextEpisode &&
         !transitionStartedRef.current
@@ -229,7 +233,7 @@ export function PlayerScreen({
         onEnded?.(payload);
       })();
     },
-    [context, isPreviewMode, onEnded],
+    [autoplayNextEnabled, context, isPreviewMode, onEnded],
   );
 
   const controller = usePlaybackController({
@@ -246,6 +250,15 @@ export function PlayerScreen({
     let cancelled = false;
 
     void (async () => {
+      if (!autoplayNextEnabled) {
+        if (!cancelled) {
+          setIsTransitionRequested(false);
+          seamlessTransitionRequestedRef.current = false;
+          seamlessTransitionQueuedRef.current = false;
+        }
+        return;
+      }
+
       autoNextActiveRef.current = true;
 
       await progressSyncRef.current.saveFinal();
@@ -269,7 +282,7 @@ export function PlayerScreen({
     return () => {
       cancelled = true;
     };
-  }, [advanceToNext, contextKey, isTransitionRequested]);
+  }, [advanceToNext, autoplayNextEnabled, contextKey, isTransitionRequested]);
   const player = controller.player;
   const playbackRate = controller.playbackRate;
   const sourceLoadCount = controller.sourceLoadCount;
@@ -305,17 +318,18 @@ export function PlayerScreen({
   useEffect(() => {
     let active = true;
 
-    void getPlaybackSpeedPreference()
-      .then((preferredPlaybackRate) => {
+    void Promise.all([getPlaybackSpeedPreference(), getAutoplayNextPreference()])
+      .then(([preferredPlaybackRate, nextAutoplayEnabled]) => {
         if (!active) {
           return;
         }
 
         selectedPlaybackRateRef.current = preferredPlaybackRate;
         setPlaybackRate(preferredPlaybackRate);
+        setAutoplayNextEnabled(nextAutoplayEnabled);
       })
       .catch(() => {
-        console.warn("Unable to load playback speed preference.");
+        console.warn("Unable to load playback preferences.");
       });
 
     return () => {
