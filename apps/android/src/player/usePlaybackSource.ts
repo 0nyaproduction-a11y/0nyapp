@@ -8,7 +8,6 @@ import {
   type PreviewPlaybackAuthorizationRequest,
 } from "../lib/api";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
-import { getDevelopmentPlaybackSource } from "./devSources";
 import type { PlaybackAuthorizationResponse, PreviewPlaybackAuthorizationResponse } from "../types/api";
 import type { PlaybackContext, PlaybackMode, PlaybackSource } from "./types";
 
@@ -118,10 +117,6 @@ function isShortFilmMuxProofPlaybackTarget(
   context: PlaybackContext,
 ): context is Extract<PlaybackContext, { type: "SHORT_FILM" }> {
   return context.type === "SHORT_FILM" && context.filmSlug === "mute-button";
-}
-
-function canFallbackToDevelopmentPlayback(status: PlaybackAuthorizationResponse["status"]) {
-  return status !== "ok" && (status === "media_not_ready" || status === "playback_unavailable");
 }
 
 async function resolvePreviewPlaybackSource(
@@ -252,8 +247,6 @@ export function usePlaybackSource(
             return;
           }
 
-          const shouldFallbackToDevelopmentSource = canFallbackToDevelopmentPlayback(response.status);
-
           console.info("[0nya series playback]", {
             authorizationRequested: true,
             authorizationSucceeded: response.status === "ok",
@@ -261,10 +254,9 @@ export function usePlaybackSource(
             contentType: "series_episode",
             episodeIdPresent: false,
             episodeNumber: context.episodeNumber,
-            fallbackReason: shouldFallbackToDevelopmentSource ? response.status : null,
             hasPlaybackUrl: response.status === "ok",
-            sourceAssigned: response.status === "ok" || shouldFallbackToDevelopmentSource,
-            sourceMode: response.status === "ok" ? "mux" : shouldFallbackToDevelopmentSource ? "development-hls" : "blocked",
+            sourceAssigned: response.status === "ok",
+            sourceMode: response.status === "ok" ? "mux" : "blocked",
           });
 
           if (response.status === "ok") {
@@ -273,17 +265,6 @@ export function usePlaybackSource(
               playbackMode: "full",
               previewSeconds: null,
               source: buildProductionPlaybackSource(context, response.playbackUrl),
-              status: "ok",
-            });
-            return;
-          }
-
-          if (shouldFallbackToDevelopmentSource) {
-            setState({
-              expiresAt: null,
-              playbackMode: "full",
-              previewSeconds: null,
-              source: getDevelopmentPlaybackSource(context),
               status: "ok",
             });
             return;
@@ -374,19 +355,6 @@ export function usePlaybackSource(
           });
           return;
         }
-
-        if (!isMounted) {
-          return;
-        }
-
-        setState({
-          expiresAt: null,
-          playbackMode: "full",
-          previewSeconds: null,
-          source: getDevelopmentPlaybackSource(context),
-          status: "ok",
-        });
-        return;
       }
 
       const response = await resolveFullPlaybackSource(context, session);
