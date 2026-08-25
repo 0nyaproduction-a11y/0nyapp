@@ -314,7 +314,7 @@ This replaces the old mandatory 'first three free' model.
 | Bottom action | Episodes is the only persistent bottom action (icon + Title Case label). No Share/Settings text or buttons at the bottom. |
 | Quick speed | Press-and-hold the right-side video area for temporary 1.5x; releasing restores the viewer's saved persistent speed without overwriting it. Center Play/Pause hides and a small transient "1.5x" indicator shows away from center while active. |
 | Auto-hide | Approx. 3 seconds of inactivity, respecting accessibility focus. |
-| Quality | Auto/adaptive only. Guest 720p / Plus 1440p ceilings are approved future policy, not yet server-enforced. No manual rendition selection. No 4K tier promise. |
+| Quality | Auto/adaptive only. Guest/free playback is ceilinged at max 720p; active 0nya Plus playback is ceilinged at max 1440p/2K where the asset rendition exists. Enforced server-side via the signed Mux playback token (`max_resolution` claim), never client-trusted. No manual rendition selection. No 4K tier promise. |
 | Subtitles | Toggle and remember preference; only shown when the source has real subtitle tracks. |
 | Resume | Save periodically, on pause/background, and on clean exit opportunities. |
 | Not in MVP | No Like/Comment, brightness/volume gestures, Previous/Next, fullscreen/landscape, wallet/coin badge, or Plus promotional overlay in the main player. |

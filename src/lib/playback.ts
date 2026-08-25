@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeContentDescriptors, normalizeContentRating, resolveContentClassification } from "@/lib/classification";
-import { canUserWatchEpisode } from "@/lib/entitlements";
+import { canUserWatchEpisode, resolvePlaybackMaxResolution } from "@/lib/entitlements";
 import {
   createMuxPreviewClip,
   createMuxSignedPlaybackUrl,
@@ -302,7 +302,12 @@ async function resolveEpisodePlayback(
    return { status: "playback_unavailable" };
   }
 
-  const signedPlayback = createMuxSignedPlaybackUrl(playbackReference, episode.duration_seconds);
+  const maxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
+  const signedPlayback = createMuxSignedPlaybackUrl(
+    playbackReference,
+    episode.duration_seconds,
+    maxResolution,
+  );
   let stillUrl: string | undefined;
 
   if (typeof stillAtSeconds === "number" && Number.isFinite(stillAtSeconds)) {
@@ -419,7 +424,12 @@ async function resolvePreviewPlayback(
     return { status: "preview_unavailable" };
   }
 
-  const signedPlayback = createMuxSignedPlaybackUrl(previewPlaybackReference, previewSeconds);
+  const previewMaxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
+  const signedPlayback = createMuxSignedPlaybackUrl(
+    previewPlaybackReference,
+    previewSeconds,
+    previewMaxResolution,
+  );
 
   return {
     expiresAt: signedPlayback.expiresAt,
@@ -505,7 +515,12 @@ async function resolveShortFilmPlayback(
     return { status: "playback_unavailable" };
   }
 
-  const signedPlayback = createMuxSignedPlaybackUrl(playbackReference, shortFilm.duration_seconds);
+  const shortFilmMaxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
+  const signedPlayback = createMuxSignedPlaybackUrl(
+    playbackReference,
+    shortFilm.duration_seconds,
+    shortFilmMaxResolution,
+  );
   let stillUrl: string | undefined;
 
   if (typeof stillAtSeconds === "number" && Number.isFinite(stillAtSeconds)) {

@@ -1157,9 +1157,15 @@ function uploadErrorsFromStatus(status: string | null | undefined) {
   ];
 }
 
+// Mux playback modifier claim. Must be part of the signed JWT payload itself
+// (never appended unsigned outside the token) so the resolution ceiling is
+// tamper-proof for signed playback IDs.
+export type MuxMaxResolution = "720p" | "1440p";
+
 export function createMuxSignedPlaybackUrl(
   playbackId: string,
   durationSeconds: number,
+  maxResolution: MuxMaxResolution,
   now = Date.now(),
 ): MuxSignedPlaybackResult {
   const normalizedPlaybackId = playbackId.trim();
@@ -1183,6 +1189,7 @@ export function createMuxSignedPlaybackUrl(
     {
       aud: "v",
       exp,
+      max_resolution: maxResolution,
       sub: normalizedPlaybackId,
     },
   );

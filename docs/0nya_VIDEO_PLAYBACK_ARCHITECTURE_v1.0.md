@@ -604,7 +604,7 @@ Not implemented:
 
 ## 12. Quality / streaming
 
-APPROVED FUTURE POLICY (not yet enforced):
+APPROVED POLICY (server-enforced):
 
 - Guest / non-Plus ceiling: max 720p
 - 0nya Plus ceiling: max 1440p / 2K
@@ -613,21 +613,36 @@ APPROVED FUTURE POLICY (not yet enforced):
 
 CURRENT IMPLEMENTATION STATUS:
 
-- tier-based resolution ceiling enforcement: MISSING / NOT PROVEN. Neither
-  `/api/v1/playback` nor `/api/v1/playback/preview` accept or apply a
-  resolution cap, and the current Mux signed-URL path
-  (`createMuxSignedPlaybackUrl` in `src/lib/mux/index.ts`) has no proven
-  max-resolution restriction wired in.
-- manual rendition selection: MISSING. Installed `expo-video` exposes
-  `availableVideoTracks`/`videoTrack` for read-only inspection, but no proven
-  JS setter for manual rendition selection was found.
-- current playback behavior: Auto ABR for all viewers regardless of tier.
+- tier-based resolution ceiling enforcement: IMPLEMENTED server-side. Both
+  `/api/v1/playback` and `/api/v1/playback/preview` resolve the viewer's
+  trusted maximum resolution via `resolvePlaybackMaxResolution` in
+  `src/lib/entitlements.ts` (guest/free → `"720p"`, active 0nya Plus →
+  `"1440p"`, fails closed to `"720p"` if subscription state cannot be proven
+  active) and pass it into `createMuxSignedPlaybackUrl` in
+  `src/lib/mux/index.ts`, which embeds it as the `max_resolution` claim
+  inside the signed Mux playback JWT (never appended unsigned, never accepted
+  from the Android client). Coin/rewarded/free episode access remains fully
+  independent of this quality ceiling: a coin-unlocked episode for a
+  non-Plus viewer still resolves to 720p.
+- manual rendition selection: MISSING (unchanged). Installed `expo-video`
+  exposes `availableVideoTracks`/`videoTrack` for read-only inspection, but
+  no proven JS setter for manual rendition selection was found. This remains
+  out of MVP scope by design.
+- current playback behavior: Auto ABR for all viewers, within the resolved
+  ceiling.
 - Android surfaces this truthfully: the Playback settings sheet
   (`PlayerMoreSheet.tsx`) shows "Quality: Auto" with a static "Adaptive
-  streaming" note. It does not display a detected-rendition diagnostic (a
-  portrait stream's height could be misread as a resolution label), does not
-  claim an enforced ceiling, and does not present selectable rendition
-  buttons.
+  streaming" note, unchanged by this work. It does not display a
+  detected-rendition diagnostic, does not claim a specific ceiling, and does
+  not present selectable rendition buttons.
+- development fallback: the `__DEV__` ImageKit source in
+  `apps/android/src/player/devSources.ts` remains a public/unsigned URL and
+  is explicitly NOT part of secure tier enforcement; production signed Mux
+  playback is the authoritative V02 enforcement path.
+- 1440p asset availability: not proven for all current content. If an asset
+  only contains renditions up to 1080p, an active Plus viewer receives the
+  highest available rendition below the 1440p ceiling; this is expected,
+  correct behavior for a maximum-only ceiling, not a bug.
 
 Evidence:
 
@@ -820,13 +835,13 @@ This section compares the implemented player architecture to the Product Bible v
 - Scope: Android / Content
 - Severity: Low (client implemented; content pipeline gap only)
 
-### Gap 9 — No tier-based quality ceiling enforcement; no manual rendition selection
+### Gap 9 — Manual rendition selection not implemented (tier-based ceiling now enforced)
 
-- Existing behavior: playback is Auto ABR for every viewer tier. Playback speed (0.75x–2x) is implemented and persisted via the Playback settings sheet. Quality is presented truthfully as read-only "Auto" / "Adaptive streaming"; no selectable rendition buttons and no technical rendition diagnostics exist because installed `expo-video` has no proven JS setter for manual rendition choice. Neither `/api/v1/playback` nor Mux signed-URL generation enforces a resolution ceiling.
-- Required behavior (approved future policy, not yet implemented): Guest/non-Plus playback capped at 720p, 0nya Plus playback capped at 1440p/2K, both ceilings only (real source rendition still wins), 4K out of MVP scope. Enforcement must be server/Mux-authoritative, never client-trusted.
-- Affected files: `apps/android/src/player/PlayerMoreSheet.tsx`, `src/app/api/v1/playback/route.ts`, `src/lib/mux/index.ts`
-- Scope: Android / Backend
-- Severity: Medium
+- Existing behavior: playback is Auto ABR for every viewer tier, now within a server-enforced maximum: guest/non-Plus 720p, active 0nya Plus 1440p/2K (real source rendition still wins). Playback speed (0.75x–2x) is implemented and persisted via the Playback settings sheet. Quality is presented truthfully as read-only "Auto" / "Adaptive streaming"; no selectable rendition buttons and no technical rendition diagnostics exist because installed `expo-video` has no proven JS setter for manual rendition choice. Both `/api/v1/playback` and `/api/v1/playback/preview` now resolve the ceiling via `resolvePlaybackMaxResolution` and embed it in the Mux signed-URL `max_resolution` claim.
+- Remaining gap: manual rendition selection is intentionally out of MVP scope. 1440p rendition availability is asset-dependent and not yet proven for all current content; the development ImageKit fallback remains public/unsigned and does not securely enforce any ceiling.
+- Affected files: `apps/android/src/player/PlayerMoreSheet.tsx`, `src/app/api/v1/playback/route.ts`, `src/app/api/v1/playback/preview/route.ts`, `src/lib/entitlements.ts`, `src/lib/mux/index.ts`
+- Scope: Backend (implemented) / Media (asset-dependent, deferred)
+- Severity: Low
 
 ### Gap 10 — No analytics events for player lifecycle
 

@@ -116,6 +116,26 @@ export async function hasActiveSubscription(
   );
 }
 
+export type PlaybackMaxResolution = "720p" | "1440p";
+
+// V02 quality entitlement: the single source of truth for the playback
+// resolution ceiling. Guests and any viewer whose active 0nya Plus status
+// cannot be proven always resolve to 720p; hasActiveSubscription already
+// fails closed (it returns false on any lookup error), so this never grants
+// 1440p unless an active subscription is positively confirmed server-side.
+// Coin/rewarded/free episode entitlements are unrelated to this ceiling.
+export async function resolvePlaybackMaxResolution(
+  userId: string | null,
+  supabase?: SupabaseClient<Database>,
+): Promise<PlaybackMaxResolution> {
+  if (!userId) {
+    return "720p";
+  }
+
+  const isPlus = await hasActiveSubscription(userId, supabase);
+  return isPlus ? "1440p" : "720p";
+}
+
 export async function hasValidEpisodeEntitlement(
   userId: string,
   episodeId: string,
