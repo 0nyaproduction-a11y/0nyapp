@@ -9,11 +9,16 @@ import {
   type StyleProp,
   type TextInputProps,
   type TextStyle,
+  type ViewStyle,
 } from "react-native";
 import { borders, colors, radii, spacing } from "../theme/tokens";
 
-export function Title({ children }: PropsWithChildren) {
-  return <Text style={styles.title}>{children}</Text>;
+type TextBlockProps = PropsWithChildren<{
+  style?: StyleProp<TextStyle>;
+}>;
+
+export function Title({ children, style }: TextBlockProps) {
+  return <Text style={[styles.title, style]}>{children}</Text>;
 }
 
 type BrandWordmarkProps = {
@@ -34,8 +39,8 @@ export function Label({ children }: PropsWithChildren) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
-export function Body({ children }: PropsWithChildren) {
-  return <Text style={styles.body}>{children}</Text>;
+export function Body({ children, style }: TextBlockProps) {
+  return <Text style={[styles.body, style]}>{children}</Text>;
 }
 
 export function Card({ children }: PropsWithChildren) {
@@ -73,9 +78,10 @@ type ButtonProps = PropsWithChildren<{
   accessibilityLabel: string;
   disabled?: boolean;
   onPress: () => void;
+  style?: StyleProp<ViewStyle>;
 }>;
 
-export function Button({ accessibilityLabel, children, disabled, onPress }: ButtonProps) {
+export function Button({ accessibilityLabel, children, disabled, onPress, style }: ButtonProps) {
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
@@ -86,6 +92,7 @@ export function Button({ accessibilityLabel, children, disabled, onPress }: Butt
         styles.button,
         disabled && styles.buttonDisabled,
         pressed && styles.buttonPressed,
+        style,
       ]}
     >
       <Text style={styles.buttonText}>{children}</Text>
@@ -130,6 +137,7 @@ type RecoveryStateProps = {
   onPrimaryAction: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
+  variant?: "card" | "cinematic";
   title: string;
 };
 
@@ -139,13 +147,18 @@ export function RecoveryState({
   onSecondaryAction,
   primaryActionLabel,
   secondaryActionLabel,
+  variant = "card",
   title,
 }: RecoveryStateProps) {
-  return (
-    <Card>
-      <Title>{title}</Title>
-      <Body>{body}</Body>
-      <Button accessibilityLabel={primaryActionLabel} onPress={onPrimaryAction}>
+  const content = (
+    <>
+      <Title style={variant === "cinematic" ? styles.recoveryTitleCinematic : undefined}>{title}</Title>
+      <Body style={variant === "cinematic" ? styles.recoveryBodyCinematic : undefined}>{body}</Body>
+      <Button
+        accessibilityLabel={primaryActionLabel}
+        onPress={onPrimaryAction}
+        style={variant === "cinematic" ? styles.recoveryButtonCinematic : undefined}
+      >
         {primaryActionLabel}
       </Button>
       {secondaryActionLabel && onSecondaryAction ? (
@@ -153,6 +166,16 @@ export function RecoveryState({
           {secondaryActionLabel}
         </Button>
       ) : null}
+    </>
+  );
+
+  if (variant === "cinematic") {
+    return <View style={styles.recoveryCinematic}>{content}</View>;
+  }
+
+  return (
+    <Card>
+      {content}
     </Card>
   );
 }
@@ -192,6 +215,27 @@ const styles = StyleSheet.create({
     borderWidth: borders.width,
     backgroundColor: colors.surface,
     padding: spacing.cardPadding,
+  },
+  recoveryCinematic: {
+    alignItems: "center",
+    flex: 1,
+    gap: 14,
+    justifyContent: "center",
+    maxWidth: 340,
+    alignSelf: "center",
+    paddingHorizontal: 24,
+  },
+  recoveryTitleCinematic: {
+    textAlign: "center",
+  },
+  recoveryBodyCinematic: {
+    maxWidth: 300,
+    textAlign: "center",
+  },
+  recoveryButtonCinematic: {
+    alignSelf: "stretch",
+    maxWidth: 240,
+    width: "100%",
   },
   navigationRow: {
     alignItems: "center",

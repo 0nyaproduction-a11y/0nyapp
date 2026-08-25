@@ -62,6 +62,22 @@ export class ApiError extends Error {
   }
 }
 
+export type RecoveryCopy = {
+  body: string;
+  title: string;
+};
+
+export function getRequestRecoveryCopy(error: unknown, fallback: RecoveryCopy): RecoveryCopy {
+  if (error instanceof ApiError && error.code === "network_error") {
+    return {
+      body: "Check your connection and try again.",
+      title: "No connection",
+    };
+  }
+
+  return fallback;
+}
+
 function normalizeCatalogResponse(payload: unknown): CatalogResponse {
   const candidate =
     payload && typeof payload === "object"

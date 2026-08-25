@@ -5,7 +5,7 @@ import { Image, Pressable, StyleSheet, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { Body, Button, Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { SeriesEpisodeTray } from "./SeriesEpisodeTray";
-import { getSeries } from "../lib/api";
+import { getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { useAuth } from "../lib/authContext";
 import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
@@ -32,7 +32,7 @@ export function SeriesScreen({ navigation, route }: Props) {
   const accessToken = session?.access_token;
   const [data, setData] = useState<SeriesResponse | null>(null);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isEpisodeTrayOpen, setIsEpisodeTrayOpen] = useState(false);
   const hasHydratedRef = useRef(false);
@@ -47,9 +47,14 @@ export function SeriesScreen({ navigation, route }: Props) {
           setError(null);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (isMounted) {
-          setError("We couldn't load this right now.");
+          setError(
+            getRequestRecoveryCopy(error, {
+              body: "Please try again.",
+              title: "We couldn't load this right now.",
+            }),
+          );
         }
       })
       .finally(() => {
@@ -197,9 +202,9 @@ export function SeriesScreen({ navigation, route }: Props) {
 
   if (!data) {
     return (
-      <Screen>
+      <Screen scroll={false}>
         <RecoveryState
-          body={error ?? "Please try again."}
+          body={error?.body ?? "Please try again."}
           onPrimaryAction={() => {
             setIsLoading(true);
             setData(null);
@@ -208,15 +213,21 @@ export function SeriesScreen({ navigation, route }: Props) {
               .then((seriesData) => {
                 setData(seriesData);
               })
-              .catch(() => {
-                setError("We couldn't load this right now.");
+              .catch((error) => {
+                setError(
+                  getRequestRecoveryCopy(error, {
+                    body: "Please try again.",
+                    title: "We couldn't load this right now.",
+                  }),
+                );
               })
               .finally(() => {
                 setIsLoading(false);
               });
           }}
           primaryActionLabel="Retry"
-          title="We couldn't load this right now."
+          variant="cinematic"
+          title={error?.title ?? "We couldn't load this right now."}
         />
       </Screen>
     );

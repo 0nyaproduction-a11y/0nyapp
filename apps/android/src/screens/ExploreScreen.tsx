@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getCatalog, getSeries } from "../lib/api";
+import { getCatalog, getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch } from "../lib/recentSearches";
 import { useAuth } from "../lib/authContext";
@@ -44,7 +44,7 @@ export function ExploreScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
   const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selectedFormat, setSelectedFormat] = useState<ExploreFormat>("all");
@@ -66,8 +66,13 @@ export function ExploreScreen({ navigation }: Props) {
 
     try {
       await loadCatalog();
-    } catch {
-      setError("We couldn't load this right now.");
+    } catch (error) {
+      setError(
+        getRequestRecoveryCopy(error, {
+          body: "Please try again.",
+          title: "We couldn't load this right now.",
+        }),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -87,12 +92,17 @@ export function ExploreScreen({ navigation }: Props) {
 
           setCatalog(data.catalog);
           setShortFilms(data.shortFilms);
-        } catch {
+        } catch (error) {
           if (!isMounted) {
             return;
           }
 
-          setError("We couldn't load this right now.");
+          setError(
+            getRequestRecoveryCopy(error, {
+              body: "Please try again.",
+              title: "We couldn't load this right now.",
+            }),
+          );
         } finally {
           if (isMounted) {
             setIsLoading(false);
@@ -254,12 +264,13 @@ export function ExploreScreen({ navigation }: Props) {
 
   if (error) {
     return (
-      <Screen>
+      <Screen scroll={false}>
         <RecoveryState
-          body={error}
+          body={error.body}
           onPrimaryAction={() => void reloadCatalog()}
           primaryActionLabel="Retry"
-          title="We couldn't load this right now."
+          variant="cinematic"
+          title={error.title}
         />
       </Screen>
     );

@@ -20,6 +20,27 @@ type UsePlaybackControllerOptions = {
 
 const INITIAL_STATUS: VideoPlayerStatus = "idle";
 
+function normalizeRetrySeekSeconds(position: number | null | undefined, duration?: number | null) {
+  if (position === null || position === undefined || !Number.isFinite(position) || position < 0) {
+    return null;
+  }
+
+  const flooredPosition = Math.floor(position);
+
+  if (duration === null || duration === undefined || !Number.isFinite(duration) || duration <= 0) {
+    return flooredPosition;
+  }
+
+  const flooredDuration = Math.floor(duration);
+  const clampedPosition = Math.min(flooredPosition, Math.max(0, flooredDuration - 1));
+
+  if (flooredDuration - clampedPosition <= 5) {
+    return Math.max(0, flooredDuration - 5);
+  }
+
+  return clampedPosition;
+}
+
 export function usePlaybackController({
   context,
   playbackLimitSeconds,
@@ -42,6 +63,7 @@ export function usePlaybackController({
   const isMountedRef = useRef(true);
   const userPausedRef = useRef(false);
   const endedRef = useRef(false);
+  const pendingRetrySeekRef = useRef<number | null>(null);
   const playbackLimit =
     typeof playbackLimitSeconds === "number" && Number.isFinite(playbackLimitSeconds) && playbackLimitSeconds > 0
       ? playbackLimitSeconds
@@ -168,13 +190,26 @@ export function usePlaybackController({
     [player],
   );
 
-  const retry = useCallback(async () => {
+  const retry = useCallback(async (seekSeconds?: number | null) => {
     userPausedRef.current = false;
     endedRef.current = false;
     setHasEnded(false);
-    setCurrentTime(0);
+    pendingRetrySeekRef.current = normalizeRetrySeekSeconds(seekSeconds);
+    setCurrentTime(pendingRetrySeekRef.current ?? 0);
     setDuration(0);
-    await player.replaceAsync(source);
+    try {
+      await player.replaceAsync(source);
+    } catch (error) {
+      pendingRetrySeekRef.current = null;
+      throw error;
+    }
+    if (pendingRetrySeekRef.current !== null) {
+      const retryPosition = pendingRetrySeekRef.current;
+      pendingRetrySeekRef.current = null;
+      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
+      player.currentTime = retryPosition;
+      setCurrentTime(retryPosition);
+    }
     if (isMountedRef.current && !userPausedRef.current) {
       player.play();
     }
@@ -193,6 +228,7 @@ export function usePlaybackController({
     setStatus(INITIAL_STATUS);
     // A new player instance always constructs with subtitleTrack: null (expo-video default).
     setSubtitleTrack(null);
+    pendingRetrySeekRef.current = null;
     player.play();
   }, [player]);
 
@@ -218,6 +254,17 @@ export function usePlaybackController({
     setDuration(payload.duration);
     setSubtitleTracks(payload.availableSubtitleTracks);
     setSourceLoadCount((count) => count + 1);
+    if (pendingRetrySeekRef.current !== null) {
+      const retryPosition = normalizeRetrySeekSeconds(pendingRetrySeekRef.current, payload.duration);
+
+      pendingRetrySeekRef.current = null;
+
+      if (retryPosition !== null) {
+        // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
+        player.currentTime = retryPosition;
+        setCurrentTime(retryPosition);
+      }
+    }
   });
 
   useEventListener(player, "availableSubtitleTracksChange", (payload) => {

@@ -52,7 +52,6 @@ type PlayerScreenProps = {
   ) => void;
   onSelectEpisode?: (episodeNumber: number) => void;
   onSeeOptions?: () => void;
-  onRetryPlayback?: () => void;
   isProgressResolved?: boolean;
   initialSeekSeconds?: number | null;
   playbackMode?: PlaybackMode;
@@ -84,6 +83,39 @@ function isInChaiRevealWindow(duration: number, currentTime: number) {
   return Number.isFinite(remaining) && remaining > 0 && remaining <= CHAI_REVEAL_FINAL_SECONDS;
 }
 
+function getRetrySeekSeconds(options: {
+  currentTime: number;
+  duration: number;
+  initialSeekSeconds?: number | null;
+  savedProgress?: WatchProgressItem;
+}) {
+  const livePosition = Number.isFinite(options.currentTime) && options.currentTime > 0 ? options.currentTime : null;
+  const fallbackPosition =
+    livePosition ??
+    (typeof options.initialSeekSeconds === "number"
+      ? options.initialSeekSeconds
+      : getResumePositionSeconds(options.savedProgress, options.duration));
+
+  if (fallbackPosition === null || !Number.isFinite(fallbackPosition) || fallbackPosition < 0) {
+    return null;
+  }
+
+  const flooredPosition = Math.floor(fallbackPosition);
+
+  if (!Number.isFinite(options.duration) || options.duration <= 0) {
+    return flooredPosition;
+  }
+
+  const flooredDuration = Math.floor(options.duration);
+  const clampedPosition = Math.min(flooredPosition, Math.max(0, flooredDuration - 1));
+
+  if (flooredDuration - clampedPosition <= 5) {
+    return Math.max(0, flooredDuration - 5);
+  }
+
+  return clampedPosition;
+}
+
 export function PlayerScreen({
   context,
   episodeAccess,
@@ -93,7 +125,6 @@ export function PlayerScreen({
   onEnded,
   onSelectEpisode,
   onSeeOptions,
-  onRetryPlayback,
   initialSeekSeconds,
   playbackMode = "full",
   previewSeconds,
@@ -966,24 +997,26 @@ export function PlayerScreen({
 
                 {controller.status === "error" ? (
                   <View style={styles.errorPanel}>
-                    <Text style={styles.errorTitle}>Playback is unavailable</Text>
+                    <Text style={styles.errorTitle}>Playback interrupted</Text>
                     <Text style={styles.errorBody}>
-                      We couldn&apos;t play this right now. Try again.
+                      We couldn&apos;t continue this video.
                     </Text>
                     <Pressable
-                      accessibilityLabel="Retry video playback"
+                      accessibilityLabel="Try again"
                       accessibilityRole="button"
                       onPress={() => {
-                        if (onRetryPlayback) {
-                          onRetryPlayback();
-                          return;
-                        }
-
-                        void controller.retry();
+                        void controller.retry(
+                          getRetrySeekSeconds({
+                            currentTime: controller.currentTime,
+                            duration: controller.duration,
+                            initialSeekSeconds,
+                            savedProgress,
+                          }),
+                        );
                       }}
                       style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
                     >
-                      <Text style={styles.retryText}>Retry</Text>
+                      <Text style={styles.retryText}>Try Again</Text>
                     </Pressable>
                     <Pressable
                       accessibilityLabel="Exit video player"
@@ -996,7 +1029,7 @@ export function PlayerScreen({
                   </View>
                 ) : null}
 
-                {areControlsVisible && !controller.hasEnded ? (
+                {areControlsVisible && !controller.hasEnded && controller.status !== "error" ? (
                   <PlayerControls
                     bufferedPosition={controller.bufferedPosition}
                     currentTime={controller.currentTime}
@@ -1449,9 +1482,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   errorPanel: {
-    flex: 1,
     alignItems: "center",
     gap: 16,
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(5, 5, 5, 0.88)",
     justifyContent: "center",
     padding: 24,
   },
@@ -1465,6 +1499,7 @@ const styles = StyleSheet.create({
     color: "#A8B9B6",
     fontSize: 15,
     lineHeight: 22,
+    maxWidth: 290,
     textAlign: "center",
   },
   retryButton: {
@@ -1480,7 +1515,7 @@ const styles = StyleSheet.create({
     color: "#050A0A",
     fontSize: 13,
     fontWeight: "900",
-    textTransform: "uppercase",
+    letterSpacing: 0.2,
   },
   secondaryButton: {
     alignItems: "center",
@@ -1492,7 +1527,7 @@ const styles = StyleSheet.create({
     color: "#D8EDE9",
     fontSize: 13,
     fontWeight: "800",
-    textTransform: "uppercase",
+    letterSpacing: 0.2,
   },
   pressed: {
     opacity: 0.78,

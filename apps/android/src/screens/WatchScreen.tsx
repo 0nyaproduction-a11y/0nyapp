@@ -611,7 +611,6 @@ export function WatchScreen({ navigation, route }: Props) {
       onSelectEpisode={(episodeNumber) => {
         activateTargetFromEpisode(episodeNumber);
       }}
-      onRetryPlayback={() => playback.refresh()}
       playbackMode={playback.playbackMode}
       previewSeconds={playback.previewSeconds}
       savedProgress={targetEpisode ? progressByEpisode[targetEpisode.number] : undefined}

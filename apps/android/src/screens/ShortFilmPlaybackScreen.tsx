@@ -310,7 +310,6 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       key={playback.source.playbackUri}
       context={context!}
       onEnded={handleEnded}
-      onRetryPlayback={() => playback.refresh()}
       savedProgress={savedProgress}
       session={session}
       shortFilm={shortFilm}

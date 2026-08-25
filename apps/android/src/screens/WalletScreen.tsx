@@ -11,7 +11,7 @@ import {
   RecoveryState,
   Title,
 } from "../components/ui";
-import { getMe, getWallet } from "../lib/api";
+import { getMe, getRequestRecoveryCopy, getWallet, type RecoveryCopy } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse, WalletResponse } from "../types/api";
@@ -45,7 +45,7 @@ export function WalletScreen() {
   const { session } = useAuth();
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const token = session?.access_token;
 
@@ -68,7 +68,12 @@ export function WalletScreen() {
         setError(null);
       } else {
         setWallet(null);
-        setError("We couldn't load this right now.");
+        setError(
+          getRequestRecoveryCopy(walletResult.reason, {
+            body: "Please try again.",
+            title: "We couldn't load this right now.",
+          }),
+        );
       }
 
       if (meResult.status === "fulfilled") {
@@ -113,12 +118,15 @@ export function WalletScreen() {
     <Screen>
       {isLoading && !wallet && !error ? <LoadingState /> : null}
       {error ? (
-        <RecoveryState
-          body={error}
-          onPrimaryAction={() => void loadWallet()}
-          primaryActionLabel="Retry"
-          title="We couldn't load this right now."
-        />
+        <Screen scroll={false}>
+          <RecoveryState
+            body={error.body}
+            onPrimaryAction={() => void loadWallet()}
+            primaryActionLabel="Retry"
+            variant="cinematic"
+            title={error.title}
+          />
+        </Screen>
       ) : null}
       {wallet ? (
         <View style={styles.stack}>

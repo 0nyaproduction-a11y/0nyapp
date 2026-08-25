@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Screen } from "../components/Screen";
 import { RecoveryState } from "../components/ui";
-import { ApiError, authorizePlayback, getCatalog, getSeries, getWallet } from "../lib/api";
+import {
+  ApiError,
+  authorizePlayback,
+  getCatalog,
+  getRequestRecoveryCopy,
+  getSeries,
+  getWallet,
+  type RecoveryCopy,
+} from "../lib/api";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
 import { useAuth } from "../lib/authContext";
@@ -332,7 +340,7 @@ export function HomeScreen({ navigation }: Props) {
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
   const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   const hasHydratedRef = useRef(false);
@@ -623,7 +631,12 @@ export function HomeScreen({ navigation }: Props) {
         error instanceof Error ? error.message : String(error),
         error instanceof Error ? error.stack : undefined,
       );
-      setError("We couldn't load this right now.");
+      setError(
+        getRequestRecoveryCopy(error, {
+          body: "Please try again.",
+          title: "We couldn't load this right now.",
+        }),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -661,7 +674,12 @@ export function HomeScreen({ navigation }: Props) {
           error instanceof Error ? error.stack : undefined,
         );
         if (isMounted) {
-          setError("We couldn't load this right now.");
+          setError(
+            getRequestRecoveryCopy(error, {
+              body: "Please try again.",
+              title: "We couldn't load this right now.",
+            }),
+          );
         }
       })
       .finally(() => {
@@ -846,10 +864,11 @@ export function HomeScreen({ navigation }: Props) {
     return (
       <Screen scroll={false}>
         <RecoveryState
-          body={error}
+          body={error.body}
           onPrimaryAction={() => void reloadHome()}
           primaryActionLabel="Retry"
-          title="We couldn't load this right now."
+          variant="cinematic"
+          title={error.title}
         />
       </Screen>
     );
