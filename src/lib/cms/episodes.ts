@@ -9,6 +9,7 @@ import {
 import {
   EPISODE_STATUSES,
   REWARDED_ACCESS_MODES,
+  type SeriesRow,
   type EpisodeRow,
   type EpisodeStatus,
   type RewardedAccessMode,
@@ -45,6 +46,25 @@ export type EpisodeValidationError = { field: string; message: string };
 export type EpisodeActionResult =
   | { success: true; episode: EpisodeRow }
   | { success: false; errors: EpisodeValidationError[] };
+
+export type EpisodeDeletePreview = {
+  blockers: string[];
+  episode: EpisodeRow | null;
+};
+
+export type EpisodeDeleteResult =
+  | { success: true; episodeId: string; seriesId: string; seriesSlug: string; episodeNumber: number }
+  | { success: false; message: string; blockers?: string[] };
+
+export type SeriesEpisodesDeletePreview = {
+  blockers: string[];
+  episodeCount: number;
+  series: Pick<SeriesRow, "id" | "slug" | "status"> | null;
+};
+
+export type SeriesEpisodesDeleteResult =
+  | { success: true; seriesId: string; seriesSlug: string; deletedCount: number }
+  | { success: false; message: string; blockers?: string[] };
 
 function getAdminClient() {
   return createAdminClient();
@@ -318,4 +338,190 @@ export async function resolveEpisodeMediaReadiness(episode: EpisodeRow) {
   ]);
 
   return { video, preview };
+}
+
+async function inspectEpisodeDeletion(episode: EpisodeRow, seriesSlug: string): Promise<EpisodeDeletePreview> {
+  const supabase = getAdminClient();
+  const blockers: string[] = [];
+
+  if (episode.status === "published") {
+    blockers.push("Archive this episode before deleting it.");
+  }
+
+  const [watchProgressResult, entitlementsResult, rewardedAttemptsResult, coinTransactionsResult] =
+    await Promise.all([
+      supabase
+        .from("watch_progress")
+        .select("id")
+        .eq("series_slug", seriesSlug)
+        .eq("episode_number", episode.episode_number)
+        .limit(1),
+      supabase.from("episode_entitlements").select("id").eq("episode_id", episode.id).limit(1),
+      supabase.from("rewarded_ad_attempts").select("id").eq("episode_id", episode.id).limit(1),
+      supabase.from("coin_transactions").select("id").eq("episode_id", episode.id).limit(1),
+    ]);
+
+  if (watchProgressResult.error || entitlementsResult.error || rewardedAttemptsResult.error || coinTransactionsResult.error) {
+    blockers.push("Unable to inspect episode dependencies right now.");
+    return { blockers, episode };
+  }
+
+  if ((watchProgressResult.data ?? []).length > 0) {
+    blockers.push("Viewer watch progress exists for this episode.");
+  }
+
+  if ((entitlementsResult.data ?? []).length > 0) {
+    blockers.push("Viewer entitlements exist for this episode.");
+  }
+
+  if ((rewardedAttemptsResult.data ?? []).length > 0) {
+    blockers.push("Rewarded-ad history exists for this episode.");
+  }
+
+  if ((coinTransactionsResult.data ?? []).length > 0) {
+    blockers.push("Coin purchase history exists for this episode.");
+  }
+
+  return { blockers, episode };
+}
+
+export async function getEpisodeDeletePreview(episode: EpisodeRow, seriesSlug: string) {
+  return inspectEpisodeDeletion(episode, seriesSlug);
+}
+
+export async function deleteEpisode(episode: EpisodeRow, seriesSlug: string): Promise<EpisodeDeleteResult> {
+  const preview = await inspectEpisodeDeletion(episode, seriesSlug);
+
+  if (preview.blockers.length > 0) {
+    return { success: false, message: "Resolve the blockers before deleting this episode.", blockers: preview.blockers };
+  }
+
+  const supabase = getAdminClient();
+  const { error } = await supabase.from("episodes").delete().eq("id", episode.id);
+
+  if (error) {
+    return { success: false, message: "Unable to delete episode." };
+  }
+
+  return {
+    success: true,
+    episodeId: episode.id,
+    episodeNumber: episode.episode_number,
+    seriesId: episode.series_id,
+    seriesSlug,
+  };
+}
+
+async function inspectSeriesEpisodesDeletion(seriesId: string): Promise<SeriesEpisodesDeletePreview> {
+  const supabase = getAdminClient();
+  const blockers: string[] = [];
+
+  const [seriesResult, episodesResult] = await Promise.all([
+    supabase.from("series").select("id,slug,status").eq("id", seriesId).maybeSingle(),
+    supabase
+      .from("episodes")
+      .select("id,episode_number,status")
+      .eq("series_id", seriesId)
+      .order("episode_number", { ascending: true }),
+  ]);
+
+  if (seriesResult.error || !seriesResult.data) {
+    return { blockers: ["Series not found."], episodeCount: 0, series: null };
+  }
+
+  const series = seriesResult.data;
+  const episodes = episodesResult.data ?? [];
+  const episodeCount = episodes.length;
+
+  if (series.status === "published") {
+    blockers.push("Archive this series before deleting episodes.");
+  }
+
+  const publishedEpisodeNumbers = episodes
+    .filter((episode) => episode.status === "published")
+    .map((episode) => episode.episode_number);
+
+  if (publishedEpisodeNumbers.length > 0) {
+    const previewNumbers = publishedEpisodeNumbers.slice(0, 3).join(", ");
+    const suffix = publishedEpisodeNumbers.length > 3 ? ", ..." : "";
+    blockers.push(`Archive the published episodes first (${previewNumbers}${suffix}).`);
+  }
+
+  if (episodeCount > 0) {
+    const [watchProgressResult, entitlementsResult, rewardedAttemptsResult, coinTransactionsResult] =
+      await Promise.all([
+        supabase
+          .from("watch_progress")
+          .select("id")
+          .eq("series_slug", series.slug)
+          .limit(1),
+        supabase.from("episode_entitlements").select("id").in("episode_id", episodes.map((episode) => episode.id)).limit(1),
+        supabase.from("rewarded_ad_attempts").select("id").in("episode_id", episodes.map((episode) => episode.id)).limit(1),
+        supabase.from("coin_transactions").select("id").in("episode_id", episodes.map((episode) => episode.id)).limit(1),
+      ]);
+
+    if (watchProgressResult.error || entitlementsResult.error || rewardedAttemptsResult.error || coinTransactionsResult.error) {
+      blockers.push("Unable to inspect series-episode dependencies right now.");
+      return { blockers, episodeCount, series };
+    }
+
+    if ((watchProgressResult.data ?? []).length > 0) {
+      blockers.push("Viewer watch progress exists for this series.");
+    }
+
+    if ((entitlementsResult.data ?? []).length > 0) {
+      blockers.push("Viewer entitlements exist for one or more episodes in this series.");
+    }
+
+    if ((rewardedAttemptsResult.data ?? []).length > 0) {
+      blockers.push("Rewarded-ad history exists for one or more episodes in this series.");
+    }
+
+    if ((coinTransactionsResult.data ?? []).length > 0) {
+      blockers.push("Coin purchase history exists for one or more episodes in this series.");
+    }
+  }
+
+  return { blockers, episodeCount, series };
+}
+
+export async function getSeriesEpisodesDeletePreview(seriesId: string) {
+  return inspectSeriesEpisodesDeletion(seriesId);
+}
+
+export async function deleteAllEpisodesForSeries(seriesId: string): Promise<SeriesEpisodesDeleteResult> {
+  const preview = await inspectSeriesEpisodesDeletion(seriesId);
+
+  if (!preview.series) {
+    return { success: false, message: "Series not found." };
+  }
+
+  if (preview.episodeCount === 0) {
+    return { success: false, message: "No episodes exist for this series." };
+  }
+
+  if (preview.blockers.length > 0) {
+    return {
+      success: false,
+      message: "Resolve the blockers before deleting all episodes.",
+      blockers: preview.blockers,
+    };
+  }
+
+  const supabase = getAdminClient();
+  const { error, count } = await supabase
+    .from("episodes")
+    .delete({ count: "exact" })
+    .eq("series_id", seriesId);
+
+  if (error) {
+    return { success: false, message: "Unable to delete all episodes for this series." };
+  }
+
+  return {
+    success: true,
+    seriesId,
+    seriesSlug: preview.series.slug,
+    deletedCount: count ?? preview.episodeCount,
+  };
 }

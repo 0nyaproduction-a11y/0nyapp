@@ -1,13 +1,17 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { EpisodeMetadataForm } from "@/components/cms/EpisodeMetadataForm";
 import { Button } from "@/components/ui/Button";
 import { EpisodeMediaAssignmentForm } from "@/components/cms/EpisodeMediaAssignmentForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   EPISODE_STATUSES,
+  deleteEpisode,
+  getEpisodeDeletePreview,
   getEpisodeForAdminById,
   persistEpisodeThumbnail,
   resolveEpisodeMediaReadiness,
@@ -18,7 +22,7 @@ import {
 import { errorsToRecord, parseEpisodeFormData, type EpisodeFormState } from "@/lib/cms/episode-form";
 import { assignEpisodeMediaAsset, listReadyMediaAssetsForAdmin, type MediaAssetFormState } from "@/lib/cms/media";
 import { getSeriesForAdminById } from "@/lib/cms/series";
-import { episodeEditPath, seriesEditPath } from "@/lib/routes";
+import { episodeEditPath, seriesEditPath, seriesListPath, seriesPath, purchaseEpisodePath, watchEpisodePath } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -51,8 +55,12 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     notFound();
   }
 
-  const mediaReadiness = await resolveEpisodeMediaReadiness(episode);
+  const currentSeries = series;
+  const currentEpisode = episode;
+
+  const mediaReadiness = await resolveEpisodeMediaReadiness(currentEpisode);
   const readyMediaAssets = await listReadyMediaAssetsForAdmin();
+  const deletePreview = await getEpisodeDeletePreview(currentEpisode, currentSeries.slug);
 
   async function updateEpisodeAction(
     _prevState: EpisodeFormState,
@@ -172,6 +180,39 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     }
   }
 
+  async function deleteEpisodeAction(
+    _prevState: DeleteFormState,
+    formData: FormData,
+  ): Promise<DeleteFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(episodeEditPath(seriesId, episodeId));
+
+    if (guard.status === "forbidden") {
+      return { error: "You are not authorized to manage content." };
+    }
+
+    const confirmation = String(formData.get("confirmation") ?? "").trim();
+    const confirmationValue = `${currentSeries.slug}#${currentEpisode.episode_number}`;
+
+    if (confirmation !== confirmationValue) {
+      return { error: `Type ${confirmationValue} exactly to confirm deletion.` };
+    }
+
+    const result = await deleteEpisode(currentEpisode, currentSeries.slug);
+
+    if (!result.success) {
+      return { error: result.message, blockers: result.blockers };
+    }
+
+    revalidatePath(seriesEditPath(seriesId));
+    revalidatePath(seriesPath(currentSeries.slug));
+    revalidatePath(watchEpisodePath(currentSeries.slug, currentEpisode.episode_number));
+    revalidatePath(purchaseEpisodePath(currentSeries.slug, currentEpisode.episode_number));
+    revalidatePath(seriesListPath);
+    redirect(seriesEditPath(seriesId));
+  }
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-3xl space-y-10">
@@ -242,6 +283,17 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
           <div className="mt-3">
             <EpisodeMetadataForm action={updateEpisodeAction} episode={episode} submitLabel="Save changes" />
           </div>
+        </section>
+
+        <section>
+          <DangerZoneDeleteForm
+            action={deleteEpisodeAction}
+            blockers={deletePreview.blockers}
+            confirmationValue={`${currentSeries.slug}#${currentEpisode.episode_number}`}
+            description="This permanently removes the episode and its linked playback/editorial records."
+            submitLabel="Delete episode permanently"
+            title="Danger zone"
+          />
         </section>
       </div>
     </main>

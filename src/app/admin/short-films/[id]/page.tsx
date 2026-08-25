@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { MediaAssetAssignmentForm } from "@/components/cms/MediaAssetAssignmentForm";
 import { ShortFilmChaiConfigForm } from "@/components/cms/ShortFilmChaiConfigForm";
 import { ShortFilmMetadataForm } from "@/components/cms/ShortFilmMetadataForm";
@@ -18,14 +20,20 @@ import {
   updateShortFilmChaiEnabled,
 } from "@/lib/cms/chai";
 import { getShortFilmChaiDetails } from "@/lib/chai";
-import { getShortFilmForAdminById, persistShortFilmArtwork, updateShortFilm } from "@/lib/cms/short-films";
 import {
   errorsToRecord,
   parseShortFilmFormData,
   type ShortFilmFormState,
 } from "@/lib/cms/short-film-form";
 import { resolveMediaAssetState } from "@/lib/media";
-import { shortFilmEditPath, shortFilmListPath } from "@/lib/routes";
+import { homeListPath, shortFilmEditPath, shortFilmListPath, shortFilmPath } from "@/lib/routes";
+import {
+  deleteShortFilm,
+  getShortFilmDeletePreview,
+  getShortFilmForAdminById,
+  persistShortFilmArtwork,
+  updateShortFilm,
+} from "@/lib/cms/short-films";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
@@ -61,12 +69,15 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
     notFound();
   }
 
+  const currentShortFilm = shortFilm;
+
   const [mediaReadiness, readyMediaAssets, chaiDetails] = await Promise.all([
     resolveMediaAssetState({ type: "SHORT_FILM", slug: shortFilm.slug }),
     listReadyMediaAssetsForAdmin(),
     getShortFilmChaiDetails(shortFilm.slug),
   ]);
   const chaiAllowedCoinAmounts = await listChaiAllowedCoinAmountsForAdmin();
+  const deletePreview = await getShortFilmDeletePreview(id);
 
   async function updateShortFilmAction(
     _prevState: ShortFilmFormState,
@@ -262,6 +273,37 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
     return { errors: {}, message: "Chai config saved." };
   }
 
+  async function deleteShortFilmAction(
+    _prevState: DeleteFormState,
+    formData: FormData,
+  ): Promise<DeleteFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(shortFilmEditPath(id));
+
+    if (guard.status === "forbidden") {
+      return { error: "You are not authorized to manage content." };
+    }
+
+    const confirmation = String(formData.get("confirmation") ?? "").trim();
+
+    if (confirmation !== currentShortFilm.slug) {
+      return { error: `Type ${currentShortFilm.slug} exactly to confirm deletion.` };
+    }
+
+    const result = await deleteShortFilm(id);
+
+    if (!result.success) {
+      return { error: result.message, blockers: result.blockers };
+    }
+
+    revalidatePath(shortFilmListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath(shortFilmPath(result.slug));
+    redirect(shortFilmListPath);
+  }
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-4xl space-y-10">
@@ -354,6 +396,17 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
             <p>Updated: <span className="text-bone">{formatDate(shortFilm.updated_at)}</span></p>
             <p>Playback reference: <span className="text-bone">{shortFilm.playback_reference ?? "—"}</span></p>
           </div>
+        </section>
+
+        <section>
+          <DangerZoneDeleteForm
+            action={deleteShortFilmAction}
+            blockers={deletePreview.blockers}
+            confirmationValue={currentShortFilm.slug}
+            description="This permanently removes the short film and any linked editorial/home placements."
+            submitLabel="Delete short film permanently"
+            title="Danger zone"
+          />
         </section>
       </div>
     </main>

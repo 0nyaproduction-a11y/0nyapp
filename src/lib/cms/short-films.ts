@@ -37,6 +37,15 @@ export type ShortFilmActionResult =
   | { success: true; shortFilm: ShortFilmRow }
   | { success: false; errors: ShortFilmValidationError[] };
 
+export type ShortFilmDeletePreview = {
+  blockers: string[];
+  shortFilm: ShortFilmRow | null;
+};
+
+export type ShortFilmDeleteResult =
+  | { success: true; shortFilmId: string; slug: string }
+  | { success: false; message: string; blockers?: string[] };
+
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SHORT_FILM_STATUSES: ShortFilmStatus[] = ["draft", "published", "archived"];
 
@@ -228,4 +237,74 @@ export async function persistShortFilmArtwork(
   }
 
   return { success: true, shortFilm: data };
+}
+
+async function inspectShortFilmDeletion(id: string): Promise<ShortFilmDeletePreview> {
+  const supabase = getAdminClient();
+  const blockers: string[] = [];
+
+  const [shortFilmResult, ledgerEntriesResult, tipRequestsResult, coinTransactionsResult] = await Promise.all([
+    supabase.from("short_films").select("*").eq("id", id).maybeSingle(),
+    supabase.from("chai_ledger_entries").select("id").eq("short_film_id", id).limit(1),
+    supabase.from("chai_tip_requests").select("id").eq("short_film_id", id).limit(1),
+    supabase.from("coin_transactions").select("id").eq("short_film_id", id).limit(1),
+  ]);
+
+  if (shortFilmResult.error || !shortFilmResult.data) {
+    return { blockers: ["Short film not found."], shortFilm: null };
+  }
+
+  const shortFilm = shortFilmResult.data;
+
+  if (shortFilm.status === "published") {
+    blockers.push("Archive this short film before deleting it.");
+  }
+
+  if (ledgerEntriesResult.error || tipRequestsResult.error || coinTransactionsResult.error) {
+    blockers.push("Unable to inspect short-film dependencies right now.");
+    return { blockers, shortFilm };
+  }
+
+  if ((ledgerEntriesResult.data ?? []).length > 0) {
+    blockers.push("Chai ledger history exists for this short film.");
+  }
+
+  if ((tipRequestsResult.data ?? []).length > 0) {
+    blockers.push("Chai tip requests exist for this short film.");
+  }
+
+  if ((coinTransactionsResult.data ?? []).length > 0) {
+    blockers.push("Coin transaction history exists for this short film.");
+  }
+
+  return { blockers, shortFilm };
+}
+
+export async function getShortFilmDeletePreview(id: string) {
+  return inspectShortFilmDeletion(id);
+}
+
+export async function deleteShortFilm(id: string): Promise<ShortFilmDeleteResult> {
+  const preview = await inspectShortFilmDeletion(id);
+
+  if (!preview.shortFilm) {
+    return { success: false, message: "Short film not found." };
+  }
+
+  if (preview.blockers.length > 0) {
+    return {
+      success: false,
+      message: "Resolve the blockers before deleting this short film.",
+      blockers: preview.blockers,
+    };
+  }
+
+  const supabase = getAdminClient();
+  const { error } = await supabase.from("short_films").delete().eq("id", id);
+
+  if (error) {
+    return { success: false, message: "Unable to delete short film." };
+  }
+
+  return { success: true, shortFilmId: id, slug: preview.shortFilm.slug };
 }

@@ -1,13 +1,21 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
-import { listEpisodesForSeries } from "@/lib/cms/episodes";
+import {
+  deleteAllEpisodesForSeries,
+  getSeriesEpisodesDeletePreview,
+  listEpisodesForSeries,
+} from "@/lib/cms/episodes";
 import {
   getSeriesForAdminById,
+  deleteSeries,
+  getSeriesDeletePreview,
   persistSeriesArtwork,
   SERIES_STATUSES,
   updateSeries,
@@ -15,7 +23,7 @@ import {
   type SeriesStatus,
 } from "@/lib/cms/series";
 import { errorsToRecord, parseSeriesFormData, type SeriesFormState } from "@/lib/cms/series-form";
-import { episodeEditPath, episodeNewPath, seriesEditPath } from "@/lib/routes";
+import { homeListPath, episodeEditPath, episodeNewPath, seriesEditPath, seriesListPath, seriesPath } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -51,7 +59,11 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
     notFound();
   }
 
+  const currentSeries = series;
+
   const episodes = await listEpisodesForSeries(id);
+  const deleteEpisodesPreview = await getSeriesEpisodesDeletePreview(id);
+  const deletePreview = await getSeriesDeletePreview(id);
 
   async function updateSeriesAction(
     _prevState: SeriesFormState,
@@ -174,6 +186,70 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
     return { success: true as const };
   }
 
+  async function deleteSeriesAction(
+    _prevState: DeleteFormState,
+    formData: FormData,
+  ): Promise<DeleteFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(seriesEditPath(id));
+
+    if (guard.status === "forbidden") {
+      return { error: "You are not authorized to manage content." };
+    }
+
+    const confirmation = String(formData.get("confirmation") ?? "").trim();
+
+    if (confirmation !== currentSeries.slug) {
+      return { error: `Type ${currentSeries.slug} exactly to confirm deletion.` };
+    }
+
+    const result = await deleteSeries(id);
+
+    if (!result.success) {
+      return { error: result.message, blockers: result.blockers };
+    }
+
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath(seriesPath(result.slug));
+    redirect(seriesListPath);
+  }
+
+  async function deleteAllEpisodesAction(
+    _prevState: DeleteFormState,
+    formData: FormData,
+  ): Promise<DeleteFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(seriesEditPath(id));
+
+    if (guard.status === "forbidden") {
+      return { error: "You are not authorized to manage content." };
+    }
+
+    const confirmation = String(formData.get("confirmation") ?? "").trim();
+    const confirmationValue = `DELETE ALL EPISODES ${currentSeries.slug}`;
+
+    if (confirmation !== confirmationValue) {
+      return { error: `Type ${confirmationValue} exactly to confirm deletion.` };
+    }
+
+    const result = await deleteAllEpisodesForSeries(id);
+
+    if (!result.success) {
+      return { error: result.message, blockers: result.blockers };
+    }
+
+    revalidatePath(seriesEditPath(id));
+    revalidatePath(seriesPath(currentSeries.slug));
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    return { message: `Deleted ${result.deletedCount} episodes.` };
+  }
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-3xl space-y-10">
@@ -270,6 +346,28 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
               </Link>
             ))}
           </div>
+        </section>
+
+        <section>
+          <DangerZoneDeleteForm
+            action={deleteAllEpisodesAction}
+            blockers={deleteEpisodesPreview.blockers}
+            confirmationValue={`DELETE ALL EPISODES ${currentSeries.slug}`}
+            description="This permanently removes every episode in the series and leaves the series record intact."
+            submitLabel="Delete all episodes permanently"
+            title="Danger zone · Episodes"
+          />
+        </section>
+
+        <section>
+          <DangerZoneDeleteForm
+            action={deleteSeriesAction}
+            blockers={deletePreview.blockers}
+            confirmationValue={currentSeries.slug}
+            description="This permanently removes the series after all episodes are gone. Linked home-row placements are cleaned up automatically."
+            submitLabel="Delete series permanently"
+            title="Danger zone"
+          />
         </section>
       </div>
     </main>

@@ -816,6 +816,17 @@ does not invent policy
 
 ---
 
+# 26A. DESTRUCTIVE CONTENT MANAGEMENT
+
+- Archive/unpublish remains the normal editorial workflow.
+- Authorized CMS admins may permanently delete eligible editorial records.
+- Exact confirmation is required for every destructive action.
+- Protected entitlement, commerce, accounting, and history dependencies must block deletion.
+- Series-level "Delete All Episodes" is supported for operational cleanup.
+- Content deletion does not imply Mux/CDN/cloud asset deletion.
+
+---
+
 # 27. CMS EFFECTIVE ACCESS EXAMPLE
 
 CMS may store:

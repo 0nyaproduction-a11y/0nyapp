@@ -41,6 +41,15 @@ export type SeriesActionResult =
   | { success: true; series: SeriesRow }
   | { success: false; errors: SeriesValidationError[] };
 
+export type SeriesDeletePreview = {
+  blockers: string[];
+  series: SeriesRow | null;
+};
+
+export type SeriesDeleteResult =
+  | { success: true; seriesId: string; slug: string }
+  | { success: false; message: string; blockers?: string[] };
+
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function getAdminClient() {
@@ -240,4 +249,56 @@ export async function persistSeriesArtwork(
   }
 
   return { success: true, series: data };
+}
+
+async function inspectSeriesDeletion(id: string): Promise<SeriesDeletePreview> {
+  const supabase = getAdminClient();
+  const blockers: string[] = [];
+
+  const [seriesResult, episodesResult] = await Promise.all([
+    supabase.from("series").select("*").eq("id", id).maybeSingle(),
+    supabase.from("episodes").select("id,episode_number,status").eq("series_id", id).order("episode_number", { ascending: true }),
+  ]);
+
+  if (seriesResult.error || !seriesResult.data) {
+    return { blockers: ["Series not found."], series: null };
+  }
+
+  const series = seriesResult.data;
+  const episodes = episodesResult.data ?? [];
+
+  if (series.status === "published") {
+   blockers.push("Archive this series before deleting it.");
+  }
+
+  if (episodes.length > 0) {
+   blockers.push("Delete all episodes first.");
+  }
+
+  return { blockers, series };
+}
+
+export async function getSeriesDeletePreview(id: string) {
+  return inspectSeriesDeletion(id);
+}
+
+export async function deleteSeries(id: string): Promise<SeriesDeleteResult> {
+  const preview = await inspectSeriesDeletion(id);
+
+  if (!preview.series) {
+    return { success: false, message: "Series not found." };
+  }
+
+  if (preview.blockers.length > 0) {
+    return { success: false, message: "Resolve the blockers before deleting this series.", blockers: preview.blockers };
+  }
+
+  const supabase = getAdminClient();
+  const { error } = await supabase.from("series").delete().eq("id", id);
+
+  if (error) {
+    return { success: false, message: "Unable to delete series." };
+  }
+
+  return { success: true, seriesId: id, slug: preview.series.slug };
 }
