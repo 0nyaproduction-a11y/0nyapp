@@ -26,6 +26,7 @@ export const seriesNewPath = "/admin/series/new";
 export const mediaListPath = "/admin/media";
 export const shortFilmListPath = "/admin/short-films";
 export const shortFilmNewPath = "/admin/short-films/new";
+export const homeListPath = "/admin/home";
 
 export function seriesEditPath(seriesId: string) {
   return `/admin/series/${seriesId}`;
