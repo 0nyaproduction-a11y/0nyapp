@@ -184,7 +184,7 @@ export function AuthForm({
               </Button>
             </form>
             <p className="mt-5 text-sm leading-6 text-muted">
-              Browse freely. Episodes 1, 2 and 3 stay open without signing in.
+              Browse as a guest. Sign in when you need account-based access or purchases.
             </p>
             <Link
               href={deleteAccountPath}
