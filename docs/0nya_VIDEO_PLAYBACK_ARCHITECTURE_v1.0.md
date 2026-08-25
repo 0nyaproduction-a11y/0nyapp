@@ -643,6 +643,14 @@ CURRENT IMPLEMENTATION STATUS:
   only contains renditions up to 1080p, an active Plus viewer receives the
   highest available rendition below the 1440p ceiling; this is expected,
   correct behavior for a maximum-only ceiling, not a bug.
+- 1440p ingest configuration: the dev/operator-only direct-upload helper
+  (`createMuxDirectUpload` in `src/lib/mux/index.ts`) now requests
+  `max_resolution_tier: "1440p"` for future assets it creates, and the
+  dev/operator reconciliation response surfaces the resulting `resolution_tier`
+  / `max_resolution_tier` diagnostically. This does not manufacture 1440p
+  detail from a lower-resolution source, does not affect existing assets, and
+  is not a production CMS ingest path — a real production ingest route is
+  still missing and remains a separate, unbuilt track.
 
 Evidence:
 

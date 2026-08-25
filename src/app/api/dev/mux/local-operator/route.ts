@@ -170,12 +170,14 @@ async function uploadFileToMux(uploadUrl: string, filePath: string) {
 function buildEpisodePayload(input: {
   directUploadResult: "created" | "skipped";
   episodeAssociation: string;
+  maxResolutionTier: string | null;
   mediaAssetId: string;
   mediaAssetsStatus: string;
   mediaRowCreationResult: "created" | "reused";
   muxAssetState: string;
   muxUploadState: string;
   reconciliationResult: string;
+  resolutionTier: string | null;
   signedPlaybackAuthorization: string;
   status: string;
   securityCheck: string;
@@ -195,12 +197,14 @@ function buildEpisodePayload(input: {
 
 function buildShortFilmPayload(input: {
   directUploadResult: "created" | "skipped";
+  maxResolutionTier: string | null;
   mediaAssetId: string;
   mediaAssetsStatus: string;
   mediaRowCreationResult: "created" | "reused";
   muxAssetState: string;
   muxUploadState: string;
   reconciliationResult: string;
+  resolutionTier: string | null;
   signedPlaybackAuthorization: string;
   shortFilmAssociation: string;
   shortFilmPlaybackReady: boolean;
@@ -403,6 +407,7 @@ export async function POST(request: Request) {
       return jsonResponse(
         buildShortFilmPayload({
           directUploadResult: uploadResult.directUploadResult,
+          maxResolutionTier: reconciliation.maxResolutionTier ?? null,
           mediaAssetId: uploadResult.mediaAssetId,
           mediaAssetsStatus: reconciliation.mediaStatus,
           mediaRowCreationResult: uploadResult.mediaRowCreationResult,
@@ -410,6 +415,7 @@ export async function POST(request: Request) {
           muxUploadState: reconciliation.muxUploadStatus ?? "unknown",
           nextAction: "Re-run with mediaAssetId to reconcile later.",
           reconciliationResult: "PROCESSING",
+          resolutionTier: reconciliation.resolutionTier ?? null,
           securityCheck: "server-only; no raw secrets logged; RLS unchanged",
           shortFilmAssociation: attachmentStatus,
           shortFilmPlaybackReady: false,
@@ -452,6 +458,7 @@ export async function POST(request: Request) {
     return jsonResponse(
       buildShortFilmPayload({
         directUploadResult: uploadResult.directUploadResult,
+        maxResolutionTier: reconciliation.status === "updated" ? reconciliation.maxResolutionTier ?? null : null,
         mediaAssetId: uploadResult.mediaAssetId,
         mediaAssetsStatus: reconciliation.status === "updated" ? reconciliation.mediaStatus : "unknown",
         mediaRowCreationResult: uploadResult.mediaRowCreationResult,
@@ -460,6 +467,7 @@ export async function POST(request: Request) {
         nextAction: playbackAuthorization.status === "ok" ? "None." : "Investigate the authorization status.",
         reconciliationResult:
           reconciliation.status === "updated" ? reconciliation.mediaStatus.toUpperCase() : "NOT_FOUND",
+        resolutionTier: reconciliation.status === "updated" ? reconciliation.resolutionTier ?? null : null,
         securityCheck: "server-only; no raw secrets logged; RLS unchanged",
         shortFilmAssociation: attachmentStatus,
         shortFilmPlaybackReady: Boolean(providerPlaybackReference),
@@ -530,6 +538,7 @@ export async function POST(request: Request) {
       buildEpisodePayload({
         directUploadResult: uploadResult.directUploadResult,
         episodeAssociation: attachmentStatus,
+        maxResolutionTier: reconciliation.maxResolutionTier ?? null,
         mediaAssetId: uploadResult.mediaAssetId,
         mediaAssetsStatus: reconciliation.mediaStatus,
         mediaRowCreationResult: uploadResult.mediaRowCreationResult,
@@ -537,6 +546,7 @@ export async function POST(request: Request) {
         muxUploadState: reconciliation.muxUploadStatus ?? "unknown",
         nextAction: "Re-run with mediaAssetId to reconcile later.",
         reconciliationResult: "PROCESSING",
+        resolutionTier: reconciliation.resolutionTier ?? null,
         securityCheck: "server-only; no raw secrets logged; RLS unchanged",
         signedPlaybackAuthorization: "skipped",
         status: "processing",
@@ -564,6 +574,7 @@ export async function POST(request: Request) {
     buildEpisodePayload({
       directUploadResult: uploadResult.directUploadResult,
       episodeAssociation: attachmentStatus,
+      maxResolutionTier: reconciliation.status === "updated" ? reconciliation.maxResolutionTier ?? null : null,
       mediaAssetId: uploadResult.mediaAssetId,
       mediaAssetsStatus: reconciliation.status === "updated" ? reconciliation.mediaStatus : "unknown",
       mediaRowCreationResult: uploadResult.mediaRowCreationResult,
@@ -571,6 +582,7 @@ export async function POST(request: Request) {
       muxUploadState: reconciliation.status === "updated" ? reconciliation.muxUploadStatus ?? "unknown" : "unknown",
       nextAction: playbackAuthorization.status === "ok" ? "None." : "Investigate the authorization status.",
       reconciliationResult: reconciliation.status === "updated" ? reconciliation.mediaStatus.toUpperCase() : "NOT_FOUND",
+      resolutionTier: reconciliation.status === "updated" ? reconciliation.resolutionTier ?? null : null,
       securityCheck: "server-only; no raw secrets logged; RLS unchanged",
       signedPlaybackAuthorization,
       status: playbackAuthorization.status === "ok" ? "done" : "done",

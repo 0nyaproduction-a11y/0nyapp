@@ -114,7 +114,12 @@ type MuxAssetRecord = {
     type?: string | null;
   }> | null;
   id?: string;
+  // Diagnostic-only fields (read-only): the tier Mux actually ingested/can
+  // deliver at, and the ceiling that was configured for the asset. Exact Mux
+  // API field names; see https://www.mux.com/docs/api-reference/video.
+  max_resolution_tier?: string | null;
   playback_ids?: MuxPlaybackId[] | null;
+  resolution_tier?: string | null;
   status?: string | null;
 };
 
@@ -386,6 +391,11 @@ export async function createMuxDirectUpload(
     body: JSON.stringify({
       ...(resolvedCorsOrigin ? { cors_origin: resolvedCorsOrigin } : {}),
       new_asset_settings: {
+        // Future 0nya VOD asset infrastructure policy: without this field Mux
+        // defaults new assets to a 1080p maximum. This does not manufacture
+        // 1440p detail from a lower-resolution source and is not a
+        // client-selectable value.
+        max_resolution_tier: "1440p",
         playback_policies: ["signed"],
         passthrough: normalizedMediaAssetId,
       },
@@ -527,11 +537,15 @@ export async function processMuxWebhookEvent(
 export type MuxMediaAssetReconciliationResult =
   | {
       mediaAssetId: string;
+      // Diagnostic-only: the tier Mux reports for this asset, not used for
+      // authorization/playback decisions.
+      maxResolutionTier: string | null;
       muxAssetStatus: string | null;
       muxUploadStatus: string | null;
       providerAssetReference: string | null;
       providerPlaybackReference: string | null;
       providerUploadReference: string | null;
+      resolutionTier: string | null;
       status: "updated";
       mediaStatus: Database["public"]["Tables"]["media_assets"]["Row"]["status"];
     }
@@ -659,11 +673,13 @@ export async function reconcileMuxMediaAssetState(
 
   return {
     mediaAssetId: normalizedMediaAssetId,
+    maxResolutionTier: muxAsset?.max_resolution_tier ?? null,
     muxAssetStatus,
     muxUploadStatus,
     providerAssetReference,
     providerPlaybackReference,
     providerUploadReference,
+    resolutionTier: muxAsset?.resolution_tier ?? null,
     status: "updated",
     mediaStatus,
   };
