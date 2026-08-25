@@ -202,6 +202,7 @@ Decision recorded from the current repo slice:
 - Playback policy for production video: signed
 - Artwork/posters/thumbnails: Supabase Storage (`content-artwork`, public read, server-controlled writes)
 - Subtitle source files: private Supabase Storage (`content-subtitles`, server-controlled writes/reads)
+- CMS delete flows reclaim exclusively owned Mux assets after content deletion and preserve shared assets.
 - Android playback library: `expo-video` preserved
 - CMS/admin upload UI: still missing
 - Production integration: partial until upload creation, webhook processing, and signed playback delivery are all proven end to end

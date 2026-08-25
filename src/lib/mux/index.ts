@@ -65,6 +65,11 @@ export type MuxSignedThumbnailResult = {
   thumbnailUrl: string;
 };
 
+export type MuxAssetDeleteResult = {
+  assetId: string;
+  alreadyMissing: boolean;
+};
+
 export type MuxPreviewClipInput = {
   endTime: number;
   sourceAssetId: string;
@@ -212,6 +217,31 @@ async function fetchMuxResource<T>(path: string) {
   };
 
   return payload.data ?? null;
+}
+
+export async function deleteMuxAsset(assetId: string): Promise<MuxAssetDeleteResult> {
+  const normalizedAssetId = assetId.trim();
+
+  if (!normalizedAssetId) {
+    throw new Error("Mux asset ID is required.");
+  }
+
+  const response = await fetch(`https://api.mux.com/video/v1/assets/${encodeURIComponent(normalizedAssetId)}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: buildBasicAuthHeader(),
+    },
+  });
+
+  if (response.status === 404) {
+    return { assetId: normalizedAssetId, alreadyMissing: true };
+  }
+
+  if (!response.ok) {
+    throw new Error(`Mux asset deletion failed with status ${response.status}.`);
+  }
+
+  return { assetId: normalizedAssetId, alreadyMissing: false };
 }
 
 async function fetchMuxCollection<T>(path: string) {

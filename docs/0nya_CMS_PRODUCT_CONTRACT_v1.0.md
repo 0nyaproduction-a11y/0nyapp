@@ -822,8 +822,10 @@ does not invent policy
 - Authorized CMS admins may permanently delete eligible editorial records.
 - Exact confirmation is required for every destructive action.
 - Protected entitlement, commerce, accounting, and history dependencies must block deletion.
-- Series-level "Delete All Episodes" is supported for operational cleanup.
-- Content deletion does not imply Mux/CDN/cloud asset deletion.
+- Series-level "Delete All Episodes" and "Delete Series + All Episodes" are supported for operational cleanup.
+- Content deletion may also remove exclusively owned Mux assets and their orphaned `media_assets` rows after the editorial records are gone.
+- Shared Mux/media assets must be preserved.
+- If provider cleanup fails after content deletion, the media asset row must be preserved for retry.
 
 ---
 

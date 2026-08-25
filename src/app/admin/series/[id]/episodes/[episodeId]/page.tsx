@@ -31,6 +31,12 @@ type EpisodeEditPageProps = {
   params: Promise<{ id: string; episodeId: string }>;
 };
 
+function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
+  const params = new URLSearchParams();
+  params.set(kind, message);
+  return `${path}?${params.toString()}`;
+}
+
 export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) {
   const { id: seriesId, episodeId } = await params;
   const context = await requireCmsAdmin(episodeEditPath(seriesId, episodeId));
@@ -224,7 +230,11 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     revalidatePath(watchEpisodePath(currentSeries.slug, currentEpisode.episode_number));
     revalidatePath(purchaseEpisodePath(currentSeries.slug, currentEpisode.episode_number));
     revalidatePath(seriesListPath);
-    redirect(seriesEditPath(seriesId));
+    const message =
+      result.cleanupWarnings.length > 0
+        ? `Deleted episode ${currentEpisode.episode_number}, but ${result.cleanupWarnings.join(" ")}`
+        : `Deleted episode ${currentEpisode.episode_number}.`;
+    redirect(buildFlashUrl(seriesEditPath(seriesId), result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
   return (
@@ -304,7 +314,7 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
             action={deleteEpisodeAction}
             blockers={deletePreview.blockers}
             confirmationValue={`${currentSeries.slug}#${currentEpisode.episode_number}`}
-            description="This permanently removes the episode and its linked playback/editorial records."
+            description="This permanently removes the episode and any exclusively owned Mux media."
             submitLabel="Delete episode permanently"
             title="Danger zone"
           />

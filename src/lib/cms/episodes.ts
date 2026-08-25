@@ -14,6 +14,7 @@ import {
   type EpisodeStatus,
   type RewardedAccessMode,
 } from "@/lib/cms/constants";
+import { cleanupMediaAssetsAfterContentDeletion } from "@/lib/cms/media";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type { EpisodeRow, EpisodeStatus, RewardedAccessMode };
@@ -53,7 +54,14 @@ export type EpisodeDeletePreview = {
 };
 
 export type EpisodeDeleteResult =
-  | { success: true; episodeId: string; seriesId: string; seriesSlug: string; episodeNumber: number }
+  | {
+      success: true;
+      episodeId: string;
+      seriesId: string;
+      seriesSlug: string;
+      episodeNumber: number;
+      cleanupWarnings: string[];
+    }
   | { success: false; message: string; blockers?: string[] };
 
 export type SeriesEpisodesDeletePreview = {
@@ -63,7 +71,7 @@ export type SeriesEpisodesDeletePreview = {
 };
 
 export type SeriesEpisodesDeleteResult =
-  | { success: true; seriesId: string; seriesSlug: string; deletedCount: number }
+  | { success: true; seriesId: string; seriesSlug: string; deletedCount: number; cleanupWarnings: string[] }
   | { success: false; message: string; blockers?: string[] };
 
 function getAdminClient() {
@@ -403,12 +411,18 @@ export async function deleteEpisode(episode: EpisodeRow, seriesSlug: string): Pr
     return { success: false, message: "Unable to delete episode." };
   }
 
+  const cleanupWarnings = await cleanupMediaAssetsAfterContentDeletion([
+    episode.media_asset_id ?? "",
+    episode.preview_media_asset_id ?? "",
+  ]);
+
   return {
     success: true,
     episodeId: episode.id,
     episodeNumber: episode.episode_number,
     seriesId: episode.series_id,
     seriesSlug,
+    cleanupWarnings,
   };
 }
 
@@ -420,7 +434,7 @@ async function inspectSeriesEpisodesDeletion(seriesId: string): Promise<SeriesEp
     supabase.from("series").select("id,slug,status").eq("id", seriesId).maybeSingle(),
     supabase
       .from("episodes")
-      .select("id,episode_number,status")
+      .select("id,episode_number,status,media_asset_id,preview_media_asset_id")
       .eq("series_id", seriesId)
       .order("episode_number", { ascending: true }),
   ]);
@@ -509,6 +523,15 @@ export async function deleteAllEpisodesForSeries(seriesId: string): Promise<Seri
   }
 
   const supabase = getAdminClient();
+  const { data: episodesForCleanup, error: cleanupQueryError } = await supabase
+    .from("episodes")
+    .select("media_asset_id,preview_media_asset_id")
+    .eq("series_id", seriesId);
+
+  if (cleanupQueryError || !episodesForCleanup) {
+    return { success: false, message: "Unable to inspect episode media assets for this series." };
+  }
+
   const { error, count } = await supabase
     .from("episodes")
     .delete({ count: "exact" })
@@ -518,10 +541,15 @@ export async function deleteAllEpisodesForSeries(seriesId: string): Promise<Seri
     return { success: false, message: "Unable to delete all episodes for this series." };
   }
 
+  const cleanupWarnings = await cleanupMediaAssetsAfterContentDeletion(
+    episodesForCleanup.flatMap((episode) => [episode.media_asset_id ?? "", episode.preview_media_asset_id ?? ""]),
+  );
+
   return {
     success: true,
     seriesId,
     seriesSlug: preview.series.slug,
     deletedCount: count ?? preview.episodeCount,
+    cleanupWarnings,
   };
 }

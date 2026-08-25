@@ -39,7 +39,14 @@ const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 type AdminShortFilmEditPageProps = {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string }>;
 };
+
+function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
+  const params = new URLSearchParams();
+  params.set(kind, message);
+  return `${path}?${params.toString()}`;
+}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
@@ -48,8 +55,9 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export default async function AdminShortFilmEditPage({ params }: AdminShortFilmEditPageProps) {
+export default async function AdminShortFilmEditPage({ params, searchParams }: AdminShortFilmEditPageProps) {
   const { id } = await params;
+  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string }>({}));
   const context = await requireCmsAdmin(shortFilmEditPath(id));
 
   if (context.status === "forbidden") {
@@ -70,6 +78,8 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
   }
 
   const currentShortFilm = shortFilm;
+  const flashMessage = typeof query.flash === "string" ? query.flash : null;
+  const errorMessage = typeof query.error === "string" ? query.error : null;
 
   const [mediaReadiness, readyMediaAssets, chaiDetails] = await Promise.all([
     resolveMediaAssetState({ type: "SHORT_FILM", slug: shortFilm.slug }),
@@ -301,7 +311,11 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath(shortFilmPath(result.slug));
-    redirect(shortFilmListPath);
+    const message =
+      result.cleanupWarnings.length > 0
+        ? `Deleted the short film, but ${result.cleanupWarnings.join(" ")}`
+        : "Deleted short film.";
+    redirect(buildFlashUrl(shortFilmListPath, result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
   return (
@@ -317,6 +331,18 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
             ← Back to short films
           </Link>
         </div>
+
+        {flashMessage && (
+          <div className="border border-teal/30 bg-teal/10 px-4 py-3 text-sm text-teal">
+            {flashMessage}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {errorMessage}
+          </div>
+        )}
 
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Artwork</h2>
@@ -403,7 +429,7 @@ export default async function AdminShortFilmEditPage({ params }: AdminShortFilmE
             action={deleteShortFilmAction}
             blockers={deletePreview.blockers}
             confirmationValue={currentShortFilm.slug}
-            description="This permanently removes the short film and any linked editorial/home placements."
+            description="This permanently removes the short film and any exclusively owned Mux media."
             submitLabel="Delete short film permanently"
             title="Danger zone"
           />

@@ -23,7 +23,7 @@ import {
   type SeriesStatus,
 } from "@/lib/cms/series";
 import { errorsToRecord, parseSeriesFormData, type SeriesFormState } from "@/lib/cms/series-form";
-import { homeListPath, episodeEditPath, episodeNewPath, seriesEditPath, seriesListPath, seriesPath } from "@/lib/routes";
+import { homeListPath, episodeBulkUploadPath, episodeEditPath, episodeNewPath, seriesEditPath, seriesListPath, seriesPath } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -36,10 +36,18 @@ const EPISODE_STATUS_STYLES: Record<string, string> = {
 
 type AdminSeriesEditPageProps = {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string }>;
 };
 
-export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPageProps) {
+function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
+  const params = new URLSearchParams();
+  params.set(kind, message);
+  return `${path}?${params.toString()}`;
+}
+
+export default async function AdminSeriesEditPage({ params, searchParams }: AdminSeriesEditPageProps) {
   const { id } = await params;
+  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string }>({}));
   const context = await requireCmsAdmin(seriesEditPath(id));
 
   if (context.status === "forbidden") {
@@ -60,6 +68,8 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
   }
 
   const currentSeries = series;
+  const flashMessage = typeof query.flash === "string" ? query.flash : null;
+  const errorMessage = typeof query.error === "string" ? query.error : null;
 
   const episodes = await listEpisodesForSeries(id);
   const deleteEpisodesPreview = await getSeriesEpisodesDeletePreview(id);
@@ -225,7 +235,7 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath(seriesPath(result.slug));
-    redirect(seriesListPath);
+    redirect(buildFlashUrl(seriesListPath, "flash", "Deleted series."));
   }
 
   async function deleteAllEpisodesAction(
@@ -258,7 +268,59 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
     revalidatePath(seriesListPath);
     revalidatePath(homeListPath);
     revalidatePath("/");
-    return { message: `Deleted ${result.deletedCount} episodes.` };
+    const message =
+      result.cleanupWarnings.length > 0
+        ? `Deleted ${result.deletedCount} episodes, but ${result.cleanupWarnings.join(" ")}`
+        : `Deleted ${result.deletedCount} episodes.`;
+    redirect(buildFlashUrl(seriesEditPath(id), result.cleanupWarnings.length > 0 ? "error" : "flash", message));
+  }
+
+  async function deleteSeriesAndEpisodesAction(
+    _prevState: DeleteFormState,
+    formData: FormData,
+  ): Promise<DeleteFormState> {
+    "use server";
+
+    const guard = await requireCmsAdmin(seriesEditPath(id));
+
+    if (guard.status === "forbidden") {
+      return { error: "You are not authorized to manage content." };
+    }
+
+    const confirmation = String(formData.get("confirmation") ?? "").trim();
+    const confirmationValue = `DELETE SERIES AND EPISODES ${currentSeries.slug}`;
+
+    if (confirmation !== confirmationValue) {
+      return { error: `Type ${confirmationValue} exactly to confirm deletion.` };
+    }
+
+    const episodesResult = await deleteAllEpisodesForSeries(id);
+
+    if (!episodesResult.success) {
+      return { error: episodesResult.message, blockers: episodesResult.blockers };
+    }
+
+    revalidatePath(seriesEditPath(id));
+    revalidatePath(seriesPath(currentSeries.slug));
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+
+    const seriesResult = await deleteSeries(id);
+
+    if (!seriesResult.success) {
+      return { error: seriesResult.message, blockers: seriesResult.blockers };
+    }
+
+    revalidatePath(seriesListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+
+    const message =
+      episodesResult.cleanupWarnings.length > 0
+        ? `Deleted the series and episodes, but ${episodesResult.cleanupWarnings.join(" ")}`
+        : "Deleted the series and episodes.";
+    redirect(buildFlashUrl(seriesListPath, episodesResult.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
   return (
@@ -271,6 +333,18 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
           <h1 className="mt-2 text-2xl font-semibold">{series.title}</h1>
           <p className="mt-1 text-sm text-bone/50">/{series.slug}</p>
         </div>
+
+        {flashMessage && (
+          <div className="border border-teal/30 bg-teal/10 px-4 py-3 text-sm text-teal">
+            {flashMessage}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {errorMessage}
+          </div>
+        )}
 
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
@@ -324,9 +398,14 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
         <section>
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Episodes</h2>
-            <ButtonLink href={episodeNewPath(id)} variant="secondary">
-              Add episode
-            </ButtonLink>
+            <div className="flex flex-wrap gap-2">
+              <ButtonLink href={episodeBulkUploadPath(id)} variant="secondary">
+                Bulk upload episodes
+              </ButtonLink>
+              <ButtonLink href={episodeNewPath(id)} variant="secondary">
+                Add episode
+              </ButtonLink>
+            </div>
           </div>
 
           <div className="mt-3 divide-y divide-bone/10 border border-bone/10">
@@ -364,9 +443,20 @@ export default async function AdminSeriesEditPage({ params }: AdminSeriesEditPag
             action={deleteAllEpisodesAction}
             blockers={deleteEpisodesPreview.blockers}
             confirmationValue={`DELETE ALL EPISODES ${currentSeries.slug}`}
-            description="This permanently removes every episode in the series and leaves the series record intact."
+            description="This permanently removes every episode in the series and cleans up any exclusively owned Mux media."
             submitLabel="Delete all episodes permanently"
             title="Danger zone · Episodes"
+          />
+        </section>
+
+        <section>
+          <DangerZoneDeleteForm
+            action={deleteSeriesAndEpisodesAction}
+            blockers={deleteEpisodesPreview.episodeCount === 0 ? ["No episodes exist for this series."] : deleteEpisodesPreview.blockers}
+            confirmationValue={`DELETE SERIES AND EPISODES ${currentSeries.slug}`}
+            description="This permanently removes every episode in the series, then deletes the series record and any exclusively owned Mux media."
+            submitLabel="Delete series and episodes permanently"
+            title="Danger zone · Series + episodes"
           />
         </section>
 

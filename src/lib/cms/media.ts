@@ -1,6 +1,11 @@
 import "server-only";
 
-import { createMuxDirectUpload, reconcileMuxMediaAssetState, type MuxDirectUploadResult } from "@/lib/mux";
+import {
+  createMuxDirectUpload,
+  deleteMuxAsset,
+  reconcileMuxMediaAssetState,
+  type MuxDirectUploadResult,
+} from "@/lib/mux";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
@@ -13,6 +18,10 @@ export type MediaAssetFormState = {
 };
 
 export type MediaUploadIntent = Pick<MuxDirectUploadResult, "corsOrigin" | "mediaAssetId" | "uploadUrl">;
+export type MediaAssetCleanupResult = {
+  mediaAssetId: string;
+  warning: string | null;
+};
 
 function getAdminClient() {
   return createAdminClient();
@@ -20,6 +29,119 @@ function getAdminClient() {
 
 function isVideoMimeType(mimeType: string) {
   return mimeType.trim().startsWith("video/");
+}
+
+function normalizeMediaAssetIds(mediaAssetIds: string[]) {
+  return Array.from(
+    new Set(
+      mediaAssetIds
+        .map((mediaAssetId) => mediaAssetId.trim())
+        .filter((mediaAssetId) => Boolean(mediaAssetId)),
+    ),
+  );
+}
+
+async function mediaAssetHasRemainingReferences(mediaAssetId: string) {
+  const supabase = getAdminClient();
+  const [episodeMediaResult, episodePreviewResult, shortFilmResult, derivedAssetResult] = await Promise.all([
+    supabase.from("episodes").select("id").eq("media_asset_id", mediaAssetId).limit(1),
+    supabase.from("episodes").select("id").eq("preview_media_asset_id", mediaAssetId).limit(1),
+    supabase.from("short_films").select("id").eq("media_asset_id", mediaAssetId).limit(1),
+    supabase.from("media_assets").select("id").eq("source_media_asset_id", mediaAssetId).limit(1),
+  ]);
+
+  if (
+    episodeMediaResult.error ||
+    episodePreviewResult.error ||
+    shortFilmResult.error ||
+    derivedAssetResult.error
+  ) {
+    return { error: true as const, referenced: false };
+  }
+
+  return {
+    error: false as const,
+    referenced:
+      (episodeMediaResult.data ?? []).length > 0 ||
+      (episodePreviewResult.data ?? []).length > 0 ||
+      (shortFilmResult.data ?? []).length > 0 ||
+      (derivedAssetResult.data ?? []).length > 0,
+  };
+}
+
+async function cleanupMediaAsset(mediaAssetId: string): Promise<MediaAssetCleanupResult> {
+  const supabase = getAdminClient();
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  if (!normalizedMediaAssetId) {
+    return { mediaAssetId: normalizedMediaAssetId, warning: null };
+  }
+
+  const { data: mediaAsset, error: mediaAssetError } = await supabase
+    .from("media_assets")
+    .select("id,provider_asset_reference")
+    .eq("id", normalizedMediaAssetId)
+    .maybeSingle();
+
+  if (mediaAssetError) {
+    return {
+      mediaAssetId: normalizedMediaAssetId,
+      warning: `Unable to inspect media asset ${normalizedMediaAssetId} for cleanup; the row was preserved.`,
+    };
+  }
+
+  if (!mediaAsset) {
+    return { mediaAssetId: normalizedMediaAssetId, warning: null };
+  }
+
+  const referenceState = await mediaAssetHasRemainingReferences(normalizedMediaAssetId);
+
+  if (referenceState.error) {
+    return {
+      mediaAssetId: normalizedMediaAssetId,
+      warning: `Unable to verify whether media asset ${normalizedMediaAssetId} is shared; the row was preserved.`,
+    };
+  }
+
+  if (referenceState.referenced) {
+    return { mediaAssetId: normalizedMediaAssetId, warning: null };
+  }
+
+  if (mediaAsset.provider_asset_reference) {
+    try {
+      await deleteMuxAsset(mediaAsset.provider_asset_reference);
+    } catch {
+      return {
+        mediaAssetId: normalizedMediaAssetId,
+        warning: `Mux cleanup failed for media asset ${normalizedMediaAssetId}; the row was preserved for retry.`,
+      };
+    }
+  }
+
+  const { error: deleteError } = await supabase.from("media_assets").delete().eq("id", normalizedMediaAssetId);
+
+  if (deleteError) {
+    return {
+      mediaAssetId: normalizedMediaAssetId,
+      warning: `Unable to remove media asset ${normalizedMediaAssetId}; the row was preserved for retry.`,
+    };
+  }
+
+  return { mediaAssetId: normalizedMediaAssetId, warning: null };
+}
+
+export async function cleanupMediaAssetsAfterContentDeletion(mediaAssetIds: string[]) {
+  const warnings: string[] = [];
+
+  for (const mediaAssetId of normalizeMediaAssetIds(mediaAssetIds)) {
+    const cleanupResult = await cleanupMediaAsset(mediaAssetId);
+
+    if (cleanupResult.warning) {
+      warnings.push(cleanupResult.warning);
+    }
+  }
+
+  return warnings;
 }
 
 export async function listMediaAssetsForAdmin(): Promise<MediaAssetRow[]> {
@@ -51,7 +173,10 @@ export async function listReadyMediaAssetsForAdmin(): Promise<MediaAssetRow[]> {
   return data;
 }
 
-export async function createMediaUploadIntent(mimeType: string): Promise<MediaUploadIntent> {
+export async function createMediaUploadIntent(
+  mimeType: string,
+  corsOriginOverride?: string | null,
+): Promise<MediaUploadIntent> {
   const normalizedMimeType = mimeType.trim().toLowerCase();
 
   if (!isVideoMimeType(normalizedMimeType)) {
@@ -73,7 +198,7 @@ export async function createMediaUploadIntent(mimeType: string): Promise<MediaUp
   }
 
   try {
-    const directUpload = await createMuxDirectUpload(createdMediaAsset.id, supabase);
+    const directUpload = await createMuxDirectUpload(createdMediaAsset.id, supabase, corsOriginOverride);
     return {
       corsOrigin: directUpload.corsOrigin,
       mediaAssetId: directUpload.mediaAssetId,
