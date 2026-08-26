@@ -122,9 +122,9 @@ flowchart TD
     T02 --> LEDGER[Debit Viewer + Credit Creator Ledger]
     LEDGER --> RELATED
 
-    L01 --> GATE{Rating / Parental Gate?}
-    GATE -- Yes --> G02[G01/G02/G03 Compliance Gate]
-    GATE -- No --> LINKTYPE{Target type}
+    L01 --> GATE{Rating / configured parental / age gate?}
+    GATE -- Applicable configured gate --> G02[G01/G02/G03 Compliance Gate]
+    GATE -- No applicable gate --> LINKTYPE{Target type}
     G02 --> LINKTYPE
 
     LINKTYPE -- Micro Drama --> ACCESS
@@ -609,7 +609,7 @@ flowchart TD
 A deep link cannot bypass:
 
 - content rating
-- parental control
+- parental control when restrictions are ON and the configured threshold applies
 - age verification when applicable
 - release state
 - entitlement/access rules
@@ -679,7 +679,11 @@ Never dump the user at Home after a recoverable error unless Home is explicitly 
 | L01 | Deep Link Router |
 | Q01 | Delete Account |
 
-G02 is verification only for applicable/configured parental-control users.
+G02 is verification only when parental restrictions are ON, the effective rating
+meets or exceeds the configured U/A 13+ or U/A 16+ threshold, and no valid
+parental unlock session exists. A stored PIN alone does not enable restrictions.
+After successful PIN verification, resume the exact requested content/access
+flow; episode entitlement/paywall logic still runs separately.
 Parental setup remains a separate Settings action and must not be forced from
 the content-access flow when no PIN exists.
 

@@ -838,14 +838,25 @@ Relevant files:
 - `src/app/login/actions.ts`
 - `src/lib/profiles.ts`
 - `src/lib/account.ts`
+- `src/lib/parental-controls.ts`
+- `src/app/api/v1/account/parental-controls/route.ts`
+- `src/lib/playback.ts`
+- `apps/android/src/screens/SettingsScreen.tsx`
+- `apps/android/src/lib/parentalControls.ts`
 - `supabase/001_profiles_watch_progress.sql`
+- `supabase/migrations/20260827090000_parental_controls_opt_in.sql`
 
 Actual behavior:
 
 - User profile is stored in `public.profiles`.
 - Account page displays wallet, plan, and continue watching.
 - Auth form supports phone OTP UI in the front-end (UI wiring), but a production OTP flow is not fully implemented in the actual repo state.
-- There is no settings screen with notifications, logout + guest reset, delete account, or privacy links.
+- Android Settings includes playback, subtitle, notification, privacy/legal, app version, and Parental Controls surfaces.
+- Parental restriction state is server-authoritative: `user_parental_controls.restrictions_enabled` and nullable `restriction_threshold`.
+- Existing/migrated parental PIN rows default to restrictions OFF; PIN existence is separate from active restrictions.
+- Supported parental thresholds are `U/A 13+` and `U/A 16+`.
+- Backend playback authorization reads server parental state and applies the same effective policy for Series and Short Films.
+- The parental unlock session remains account-scoped and shared across Series and Short Films until expiry or Lock Now.
 - `signOut` exists in account actions but there is no full account deletion flow.
 
 Status: `PARTIALLY IMPLEMENTED`

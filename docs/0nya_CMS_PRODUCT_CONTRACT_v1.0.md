@@ -632,6 +632,12 @@ parental_lock_required
 age_verification_required
 ```
 
+CMS is authoritative for content rating, descriptors, and episode overrides.
+Account parental restriction settings are not CMS content configuration.
+Assigning U/A 13+ or U/A 16+ makes parental restrictions available, but does
+not automatically force a PIN gate unless the viewer has explicitly enabled
+restrictions and the configured account threshold applies.
+
 For A-rated content:
 
 > Do not publish in MVP until reliable approved age verification exists.

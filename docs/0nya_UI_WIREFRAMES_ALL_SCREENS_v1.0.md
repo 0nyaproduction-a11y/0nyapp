@@ -1217,6 +1217,12 @@ Plus does not remove coins or permanent unlocks.
 │ New Releases              [OFF]      │
 │ Marketing                 [OFF]      │
 │                                      │
+│ Parental Controls                    │
+│ Parental restrictions      [OFF]     │
+│ Restrict                  U/A 13+    │
+│ Set PIN / Change PIN                 │
+│ Lock Now                             │
+│                                      │
 │ Privacy                              │
 │ Data / Permissions                   │
 └──────────────────────────────────────┘
@@ -1225,6 +1231,11 @@ Plus does not remove coins or permanent unlocks.
 Marketing notifications require explicit opt-in.
 
 Default off.
+
+Parental restrictions are opt-in. When OFF, U/A 13+ and U/A 16+ titles play
+normally. When ON, the Restrict value is either U/A 13+ and above or U/A 16+
+and above. Setting/changing a PIN does not enable restrictions by itself, and
+disabling restrictions does not delete the PIN.
 
 ---
 
@@ -1324,8 +1335,11 @@ Use where required by product/policy flow.
 └──────────────────────────────────────┘
 ```
 
-For U/A 13+ and above where configured/required.
+G02 appears only when parental restrictions are ON, the effective rating meets
+or exceeds the configured U/A 13+ or U/A 16+ threshold, and no valid parental
+unlock session exists. It must not appear merely because a title is U/A 13+.
 Settings/setup remains separate; the content gate is verification only.
+Successful verification resumes the exact requested content/access flow.
 
 ---
 

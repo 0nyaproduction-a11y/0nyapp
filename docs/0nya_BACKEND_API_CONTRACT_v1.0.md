@@ -232,7 +232,48 @@ These surfaces provide a wallet summary and recent payment order records, but th
 
 ---
 
-## 12. overall verdict
+## 12. parental controls opt-in contract
+
+Status: `IMPLEMENTED`
+
+Endpoint:
+
+- `GET /api/v1/account/parental-controls`
+- `POST /api/v1/account/parental-controls`
+
+GET response fields:
+
+- `hasPin`
+- `failedAttempts`
+- `lockedUntil`
+- `restrictionsEnabled`
+- `restrictionThreshold`
+
+Supported `restrictionThreshold` values:
+
+- `U/A 13+`
+- `U/A 16+`
+
+POST modes:
+
+- `mode: "set"` sets or changes the parental PIN.
+- `mode: "verify"` verifies the parental PIN and issues an opaque parental session token.
+- `mode: "settings"` updates `restrictionsEnabled` and `restrictionThreshold` through the existing parental-controls route.
+
+Important invariants:
+
+- A PIN may exist while `restrictionsEnabled=false`.
+- Setting or changing a PIN does not enable restrictions by itself.
+- Enabling restrictions requires a configured PIN and a valid threshold.
+- Disabling restrictions preserves the PIN.
+- Invalid thresholds are rejected.
+- The database rejects `restrictions_enabled=true` with null/invalid `restriction_threshold`.
+- Backend playback authorization reads server parental state and enforces the same opt-in policy for Series and Short Films.
+- Android is not authoritative for restriction state or threshold.
+
+---
+
+## 13. overall verdict
 
 | Area | Status |
 | --- | --- |
@@ -245,6 +286,7 @@ These surfaces provide a wallet summary and recent payment order records, but th
 | Restore/sync purchases | `MISSING` / `UNKNOWN / NOT FOUND` |
 | Subscription cancellation/refund handling | `UNKNOWN / NOT FOUND` |
 | Product catalog mapping | `IMPLEMENTED` |
+| Parental controls opt-in contract | `IMPLEMENTED` |
 
 ### Final conclusion
 

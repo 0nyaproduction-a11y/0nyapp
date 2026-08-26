@@ -647,6 +647,11 @@ A-rated:
 reliable age verification mechanism
 ```
 
+0nya implements U/A parental controls as an opt-in account restriction. U/A
+13+ and U/A 16+ titles play normally unless parental restrictions are enabled
+and the configured server-side threshold applies. A stored PIN alone does not
+activate restrictions.
+
 A-rated content should remain unpublished in the MVP until reliable approved age verification exists.
 
 Reference:
@@ -1213,10 +1218,10 @@ No Play Data Safety declaration, app privacy route, or app-level data inventory 
 ### Content classification / rating / parental controls
 
 ```text
-Status: MISSING / NOT PROVEN
+Status: PARTIALLY IMPLEMENTED
 ```
 
-The SQL content seed includes titles and episode metadata but no content-rating metadata, parental gate, age-verification mechanism, or India OTT classification workflow. That means the app cannot claim rating compliance or reliable age gating at this time.
+The repository now includes content-rating/descriptors for Series, Episodes, and Short Films, plus opt-in parental restrictions for U/A 13+ and U/A 16+ content. The parental restriction state and threshold are server-authoritative, and playback authorization enforces the configured policy. A-rated content still requires reliable age verification and should remain unpublished in the MVP until that mechanism is implemented and approved.
 
 ### Grievance / India OTT compliance
 
@@ -1254,7 +1259,7 @@ missing public legal surfaces (Privacy / Terms / Delete Account / Grievance)
 no Google Play Billing implementation in code
 no verified Play org / D-U-N-S / billing setup evidence
 no Data Safety / Play policy completion
-no content rating / parental gate implementation evidence
+reliable A-rated age verification not implemented/approved
 no production CDN / signed-URL playback architecture
 ```
 
@@ -1424,6 +1429,8 @@ Status: PARTIALLY IMPLEMENTED
 - Registered parental PIN verification now issues an opaque server parental session.
 - Guest parental PIN flows now use a pseudonymous server record plus an in-memory session proof on Android.
 - Guest SecureStore keeps only the opaque guest credential; legacy guest hash storage is transitional only.
-- Setup and verification are separate flows: `hasPin=false` means no content gate is required, while `hasPin=true` requires a valid parental session before protected playback.
+- Setup and verification are separate flows: `hasPin=true` does not enable restrictions by itself.
+- Server-authoritative `restrictions_enabled` and `restriction_threshold` decide whether U/A 13+ or U/A 16+ content requires parental access.
+- Successful PIN verification issues a shared account-scoped parental session for Series and Short Films; Lock Now clears that app-session proof.
 - Maximum parental-session lifetime is 8 hours.
 - The playback boundary still needs the future signed-playback enforcement route.

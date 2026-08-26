@@ -601,12 +601,13 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 | --- | --- |
 | Classification fields | Series/film rating + content descriptors; episode override if needed. |
 | Display | Show rating/descriptors clearly before viewing and in relevant detail/metadata surfaces. |
-| U/A 13+ and higher | Support parental lock/access-control mechanism. |
-| Parental setup | Separate Settings/setup action; do not force PIN creation from the content-access flow. |
-| G02 | Verification gate only for applicable/configured parental-control users with an existing PIN/session. |
+| U/A 13+ / U/A 16+ | Support opt-in parental restrictions. Normal playback is not interrupted unless parental restrictions are ON and the configured threshold applies. |
+| Parental Controls settings | User can turn restrictions ON/OFF, choose U/A 13+ and above or U/A 16+ and above, set/change PIN, and Lock Now. |
+| PIN vs restrictions | Setting/changing a PIN does not enable restrictions by itself. Disabling restrictions preserves the PIN. |
+| G02 | Verification gate only when parental restrictions are ON, effective rating meets/exceeds the configured threshold, and no valid parental unlock session exists. |
 | A-rated content | Requires reliable age verification before view. |
 | MVP cost rule | Do not publish A-rated content until reliable age verification has been built and approved. |
-| Deep links | Cannot bypass classification/access gates. |
+| Deep links | Cannot bypass an applicable configured parental/access/age gate. |
 | Promotional surfaces | Where feasible, include the classification on promotional/content detail surfaces. |
 
 
@@ -887,9 +888,13 @@ Frame names must use these IDs and state suffixes.
 ### GP-10 Policy Gates
 
 - Rating/descriptors display before viewing.
-- U/A 13+ or higher path supports parental lock.
+- Restrictions OFF -> U/A 13+ and U/A 16+ play normally.
+- Restrictions ON + U/A 13+ threshold -> U/A 13+ and U/A 16+ require parental access when the session is locked.
+- Restrictions ON + U/A 16+ threshold -> U/A 13+ plays normally; U/A 16+ requires parental access when the session is locked.
+- Successful parental PIN verification shares the account-scoped unlock across Series and Short Films while valid.
+- Lock Now re-locks parental access so the next applicable title requires PIN again.
 - A-rated content cannot publish to MVP unless age verification feature is enabled/approved.
-- Deep link cannot bypass gate.
+- Deep link cannot bypass an applicable configured gate.
 
 ### GP-11 Commerce Failure
 
