@@ -106,7 +106,7 @@ export type ShortFilmChaiAvailability = {
 
 export type EpisodeAccess = {
   canWatch: boolean;
-  kind: "free" | "owned" | "included" | "locked";
+  kind: "free" | "owned" | "included" | "subscription" | "locked";
   label: string;
 };
 

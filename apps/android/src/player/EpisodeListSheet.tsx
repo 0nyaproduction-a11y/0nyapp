@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
+import {
+  buildEpisodeRanges,
+  EPISODE_RANGE_SIZE,
+  getEpisodesInRange,
+  getInitialEpisodeRangeStart,
+} from "../lib/episodeRanges";
+import { borders, colors } from "../theme/tokens";
 import type { ApiEpisode, EpisodeAccess } from "../types/api";
 
 type EpisodeListSheetProps = {
@@ -11,7 +19,11 @@ type EpisodeListSheetProps = {
   seriesTitle: string;
 };
 
-const RANGE_SIZE = 50;
+const GRID_GAP = 8;
+const SHEET_HORIZONTAL_PADDING = 16;
+const TOUCH_TARGET_MIN = 48;
+const MIN_COLUMNS = 3;
+const PREFERRED_COLUMNS = 5;
 
 export function EpisodeListSheet({
   currentEpisodeNumber,
@@ -22,17 +34,29 @@ export function EpisodeListSheet({
   seriesTitle,
 }: EpisodeListSheetProps) {
   const { width } = useWindowDimensions();
-  const columns = width >= 420 ? 6 : 5;
-  const cellSize = Math.floor((width - 36 - (columns - 1) * 8) / columns);
-  const ranges = useMemo(() => chunkRanges(episodes.length, RANGE_SIZE), [episodes.length]);
-  const [selectedRangeStart, setSelectedRangeStart] = useState(() =>
-    getRangeStartForEpisode(currentEpisodeNumber),
+  const columns = useMemo(() => getColumnsForWidth(width), [width]);
+  const cellSize = Math.max(
+    TOUCH_TARGET_MIN,
+    Math.floor(
+      (width - SHEET_HORIZONTAL_PADDING * 2 - (columns - 1) * GRID_GAP) / columns,
+    ),
   );
+  const ranges = useMemo(() => buildEpisodeRanges(episodes, EPISODE_RANGE_SIZE), [episodes]);
+  const initialRangeStart = useMemo(
+    () => getInitialEpisodeRangeStart(episodes, currentEpisodeNumber),
+    [currentEpisodeNumber, episodes],
+  );
+  const [selectedRangeStart, setSelectedRangeStart] = useState<number | null>(null);
+  const activeRangeStart =
+    ranges.some((range) => range.start === selectedRangeStart)
+      ? selectedRangeStart
+      : initialRangeStart;
+  const selectedRange =
+    ranges.find((range) => range.start === activeRangeStart) ?? ranges[0];
 
   const visibleEpisodes = useMemo(() => {
-    const startIndex = Math.max(0, selectedRangeStart - 1);
-    return episodes.slice(startIndex, startIndex + RANGE_SIZE);
-  }, [episodes, selectedRangeStart]);
+    return getEpisodesInRange(episodes, selectedRange);
+  }, [episodes, selectedRange]);
 
   return (
     <View pointerEvents="auto" style={styles.backdrop}>
@@ -60,7 +84,7 @@ export function EpisodeListSheet({
             contentContainerStyle={styles.rangeRow}
           >
             {ranges.map((range) => {
-              const isSelected = range.start === selectedRangeStart;
+              const isSelected = range.start === activeRangeStart;
 
               return (
                 <Pressable
@@ -88,40 +112,34 @@ export function EpisodeListSheet({
           contentContainerStyle={styles.grid}
           data={visibleEpisodes}
           keyExtractor={(episode) => String(episode.number)}
+          key={columns}
           numColumns={columns}
-          renderItem={({ item }) => {
+          renderItem={({ index, item }) => {
             const access = episodeAccess[String(item.number)];
             const isPlaying = item.number === currentEpisodeNumber;
-            const isPlayable = access?.canWatch === true;
-            const isLocked = !isPlayable;
-            const coinLabel =
-              item.coinUnlockEnabled && item.coinPrice > 0 ? `${item.coinPrice}` : null;
+            const accessDisplay = getEpisodeAccessDisplay(item, access);
 
             return (
               <Pressable
-                accessibilityLabel={buildEpisodeA11yLabel(item, access, isPlaying)}
+                accessibilityLabel={buildEpisodeA11yLabel(item, accessDisplay.label, isPlaying)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isPlaying }}
                 onPress={() => onSelectEpisode(item.number)}
                 style={({ pressed }) => [
                   styles.cell,
-                  { height: cellSize, width: cellSize },
+                  {
+                    height: cellSize,
+                    marginRight: (index + 1) % columns === 0 ? 0 : GRID_GAP,
+                    width: cellSize,
+                  },
                   isPlaying && styles.cellPlaying,
-                  isLocked && styles.cellLocked,
                   pressed && styles.pressed,
                 ]}
               >
                 <Text style={[styles.cellNumber, isPlaying && styles.cellNumberPlaying]}>
                   {item.number}
                 </Text>
-                {isLocked ? (
-                  <Text style={styles.cellMeta}>
-                    {coinLabel ? `${coinLabel} coins` : "Locked"}
-                  </Text>
-                ) : (
-                  <Text style={styles.cellMeta}>{access?.label ?? "Playable"}</Text>
-                )}
-                {coinLabel && isLocked ? <Text style={styles.coinPill}>{coinLabel}</Text> : null}
+                {renderAccessMarkers(accessDisplay, isPlaying)}
               </Pressable>
             );
           }}
@@ -131,30 +149,71 @@ export function EpisodeListSheet({
   );
 }
 
-function chunkRanges(total: number, size: number) {
-  const ranges: { start: number; end: number }[] = [];
+function getColumnsForWidth(width: number) {
+  const availableWidth = width - SHEET_HORIZONTAL_PADDING * 2;
+  const preferredCellSize = Math.floor(
+    (availableWidth - (PREFERRED_COLUMNS - 1) * GRID_GAP) / PREFERRED_COLUMNS,
+  );
 
-  for (let start = 1; start <= total; start += size) {
-    ranges.push({ start, end: Math.min(total, start + size - 1) });
+  if (preferredCellSize >= TOUCH_TARGET_MIN) {
+    return PREFERRED_COLUMNS;
   }
 
-  return ranges;
+  for (let columns = PREFERRED_COLUMNS - 1; columns >= MIN_COLUMNS; columns -= 1) {
+    const cellSize = Math.floor((availableWidth - (columns - 1) * GRID_GAP) / columns);
+    if (cellSize >= TOUCH_TARGET_MIN) {
+      return columns;
+    }
+  }
+
+  return MIN_COLUMNS;
 }
 
-function getRangeStartForEpisode(episodeNumber: number) {
-  return Math.floor((Math.max(1, episodeNumber) - 1) / RANGE_SIZE) * RANGE_SIZE + 1;
+function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boolean) {
+  return (
+    <View style={styles.markerRow}>
+      {accessDisplay.markers.map((marker) => (
+        <View
+          key={`${marker.label}-${marker.accessibilityLabel}`}
+          style={[
+            styles.marker,
+            marker.tone === "available" && styles.markerAvailable,
+            marker.tone === "locked" && styles.markerLocked,
+            isCurrent && styles.markerCurrent,
+          ]}
+        >
+          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.cellMeta,
+              marker.tone === "available" && styles.cellMetaAvailable,
+              marker.tone === "locked" && styles.cellMetaLocked,
+              isCurrent && styles.cellMetaCurrent,
+            ]}
+          >
+            {marker.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CoinGlyph({ color }: { color: string }) {
+  return (
+    <View style={[styles.coinGlyph, { borderColor: color }]}>
+      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
+    </View>
+  );
 }
 
 function buildEpisodeA11yLabel(
   episode: ApiEpisode,
-  access: EpisodeAccess | undefined,
+  accessLabel: string,
   isPlaying: boolean,
 ) {
-  const status = access?.label ?? "Locked";
-  const coinText =
-    episode.coinUnlockEnabled && episode.coinPrice > 0 ? ` Unlock with ${episode.coinPrice} coins.` : "";
-
-  return `Episode ${episode.number}: ${episode.title}. ${status}.${isPlaying ? " Now playing." : ""}${coinText}`;
+  return `Episode ${episode.number}: ${episode.title}. ${accessLabel}.${isPlaying ? " Now playing." : ""}`;
 }
 
 const styles = StyleSheet.create({
@@ -164,12 +223,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "rgba(5, 10, 10, 0.98)",
-    borderColor: "rgba(244, 255, 253, 0.14)",
-    borderTopWidth: 1,
+    backgroundColor: colors.background,
+    borderColor: borders.color,
+    borderTopWidth: borders.width,
     maxHeight: "46%",
     paddingBottom: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: SHEET_HORIZONTAL_PADDING,
     paddingTop: 14,
   },
   header: {
@@ -178,7 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   headerTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 17,
     fontWeight: "800",
   },
@@ -190,7 +249,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   closeText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -198,11 +257,10 @@ const styles = StyleSheet.create({
     opacity: 0.78,
   },
   seriesTitle: {
-    color: "#A8B9B6",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 2,
-    textTransform: "uppercase",
   },
   rangeRow: {
     gap: 8,
@@ -211,62 +269,92 @@ const styles = StyleSheet.create({
   },
   rangeChip: {
     alignItems: "center",
-    borderColor: "rgba(244, 255, 253, 0.12)",
-    borderWidth: 1,
+    borderColor: borders.color,
+    borderRadius: 6,
+    borderWidth: borders.width,
     justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: 12,
   },
   rangeChipSelected: {
-    backgroundColor: "rgba(0, 229, 204, 0.12)",
-    borderColor: "#00E5CC",
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
   },
   rangeText: {
-    color: "#A8B9B6",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "700",
   },
   rangeTextSelected: {
-    color: "#00E5CC",
+    color: colors.accent,
   },
   grid: {
-    gap: 8,
     paddingBottom: 6,
   },
   cell: {
     alignItems: "center",
-    borderColor: "rgba(244, 255, 253, 0.12)",
-    borderWidth: 1,
+    borderColor: borders.color,
+    borderRadius: 6,
+    borderWidth: borders.width,
     justifyContent: "center",
-    marginRight: 8,
-    marginBottom: 8,
+    marginBottom: GRID_GAP,
+    paddingHorizontal: 3,
   },
   cellPlaying: {
-    backgroundColor: "rgba(0, 229, 204, 0.12)",
-    borderColor: "#00E5CC",
-  },
-  cellLocked: {
-    opacity: 0.55,
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
   },
   cellNumber: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "800",
   },
   cellNumberPlaying: {
-    color: "#00E5CC",
+    color: colors.accent,
+  },
+  markerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+    justifyContent: "center",
+    marginTop: 3,
   },
   cellMeta: {
-    color: "#A8B9B6",
-    fontSize: 10,
+    color: colors.muted,
+    fontSize: 9,
     fontWeight: "700",
-    marginTop: 3,
-    textTransform: "uppercase",
+    lineHeight: 11,
+    textAlign: "center",
   },
-  coinPill: {
-    color: "#00E5CC",
-    fontSize: 10,
-    fontWeight: "800",
-    marginTop: 4,
+  cellMetaAvailable: {
+    color: colors.text,
+  },
+  cellMetaLocked: {
+    color: colors.muted,
+  },
+  cellMetaCurrent: {
+    color: colors.accent,
+  },
+  marker: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
+  },
+  markerAvailable: {},
+  markerLocked: {},
+  markerCurrent: {},
+  coinGlyph: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1.3,
+    height: 8,
+    justifyContent: "center",
+    width: 8,
+  },
+  coinGlyphInner: {
+    borderRadius: 999,
+    height: 2.5,
+    width: 2.5,
   },
 });

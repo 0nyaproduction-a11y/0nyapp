@@ -130,6 +130,24 @@ export function WatchScreen({ navigation, route }: Props) {
     [],
   );
 
+  const openEpisodeAccessOptionsFor = useCallback(
+    (episode: ApiEpisode, access: EpisodeAccess, resumeAtSeconds?: number | null) => {
+      if (!targetSeries) {
+        return;
+      }
+
+      navigation.navigate("EpisodeAccessOptions", {
+        access,
+        episode,
+        episodeAccess: targetEpisodeAccess,
+        resumeAtSeconds,
+        seriesSlug: targetSeries.slug,
+        seriesTitle: targetSeries.title,
+      });
+    },
+    [navigation, targetEpisodeAccess, targetSeries],
+  );
+
   const activateTargetFromEpisode = useCallback(
     (episodeNumber: number) => {
       if (!targetSeries) {
@@ -145,6 +163,44 @@ export function WatchScreen({ navigation, route }: Props) {
 
       const nextClassification = resolveEffectiveEpisodeClassification(targetSeries, episode);
       const hasLockedPreview = !access.canWatch && episode.lockedPreviewSeconds > 0;
+      const requiresNextParentalGate = Boolean(
+        nextClassification.parentalLockRequired &&
+          hasConfiguredParentalLock &&
+          !isParentalSessionUnlocked(parentalScope),
+      );
+
+      if (nextClassification.ageVerificationRequired) {
+        activateTarget({
+          access,
+          episode,
+          episodeAccess: targetEpisodeAccess,
+          series: targetSeries,
+        });
+        return;
+      }
+
+      if (!access.canWatch && !hasLockedPreview) {
+        if (requiresNextParentalGate) {
+          navigation.navigate("ParentalControls", {
+            mode: "unlock",
+            target: {
+              params: {
+                access,
+                episode,
+                episodeAccess: targetEpisodeAccess,
+                resumeAtSeconds: undefined,
+                seriesSlug: targetSeries.slug,
+                seriesTitle: targetSeries.title,
+              },
+              screen: "EpisodeAccessOptions",
+            },
+          });
+          return;
+        }
+
+        openEpisodeAccessOptionsFor(episode, access, undefined);
+        return;
+      }
 
       if (nextClassification.contentRating) {
         activateTarget({
@@ -156,18 +212,6 @@ export function WatchScreen({ navigation, route }: Props) {
         return;
       }
 
-      if (!access.canWatch && !hasLockedPreview) {
-        navigation.replace("EpisodeAccessOptions", {
-          access,
-          episode,
-          episodeAccess: targetEpisodeAccess,
-          resumeAtSeconds: undefined,
-          seriesSlug: targetSeries.slug,
-          seriesTitle: targetSeries.title,
-        });
-        return;
-      }
-
       activateTarget({
         access,
         episode,
@@ -175,7 +219,15 @@ export function WatchScreen({ navigation, route }: Props) {
         series: targetSeries,
       });
     },
-    [activateTarget, navigation, targetEpisodeAccess, targetSeries],
+    [
+      activateTarget,
+      hasConfiguredParentalLock,
+      navigation,
+      openEpisodeAccessOptionsFor,
+      parentalScope,
+      targetEpisodeAccess,
+      targetSeries,
+    ],
   );
 
   const openEpisodeAccessOptions = useCallback(() => {
@@ -183,7 +235,7 @@ export function WatchScreen({ navigation, route }: Props) {
       return;
     }
 
-    navigation.replace("EpisodeAccessOptions", {
+    navigation.navigate("EpisodeAccessOptions", {
       access: targetAccess,
       episode: targetEpisode,
       episodeAccess: targetEpisodeAccess,

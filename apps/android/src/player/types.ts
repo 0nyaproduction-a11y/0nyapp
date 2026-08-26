@@ -1,4 +1,5 @@
 import type { VideoSourceObject } from "expo-video";
+import type { EpisodeAccess } from "../types/api";
 
 export type SeriesEpisodePlaybackContext = {
   type: "SERIES_EPISODE";
@@ -6,12 +7,12 @@ export type SeriesEpisodePlaybackContext = {
   seriesTitle: string;
   episodeNumber: number;
   episodeTitle: string;
-  accessKind: "free" | "owned" | "included" | "locked";
+  accessKind: EpisodeAccess["kind"];
   accessLabel: string;
   nextEpisode?: {
     episodeNumber: number;
     episodeTitle: string;
-    accessKind: "free" | "owned" | "included" | "locked";
+    accessKind: EpisodeAccess["kind"];
     accessLabel: string;
   };
   hasLockedNextEpisode: boolean;

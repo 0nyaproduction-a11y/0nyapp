@@ -1,10 +1,17 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { useAuth } from "../lib/authContext";
+import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
 import { getSeries } from "../lib/api";
+import {
+  buildEpisodeRanges,
+  EPISODE_RANGE_SIZE,
+  getEpisodesInRange,
+  getInitialEpisodeRangeStart,
+} from "../lib/episodeRanges";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { findResumeEpisode } from "../lib/seriesPlayback";
 import type { RootStackParamList } from "../navigation/types";
@@ -13,22 +20,15 @@ import { borders, colors } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SeriesEpisodes">;
 
-const RANGE_SIZE = 25;
-
-function buildRanges(totalEpisodes: number, rangeSize: number) {
-  const ranges: { end: number; start: number }[] = [];
-  for (let start = 1; start <= totalEpisodes; start += rangeSize) {
-    ranges.push({ start, end: Math.min(totalEpisodes, start + rangeSize - 1) });
-  }
-  return ranges;
-}
-
-function getRangeStartForEpisode(episodeNumber: number, totalEpisodes: number) {
-  const boundedEpisodeNumber = Math.min(Math.max(1, episodeNumber), totalEpisodes || 1);
-  return Math.floor((boundedEpisodeNumber - 1) / RANGE_SIZE) * RANGE_SIZE + 1;
-}
+const EMPTY_EPISODES: ApiEpisode[] = [];
+const GRID_GAP = 8;
+const SCREEN_HORIZONTAL_PADDING = 16;
+const TOUCH_TARGET_MIN = 48;
+const MIN_COLUMNS = 3;
+const PREFERRED_COLUMNS = 5;
 
 export function SeriesEpisodesScreen({ navigation, route }: Props) {
+  const { width } = useWindowDimensions();
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const routedSeries = route.params.series;
@@ -76,14 +76,16 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
   }, [accessToken, routedSeriesSlug, shouldFetchSeries]);
 
   const series = resolvedSeries ?? routedSeries ?? null;
+  const episodes = useMemo(() => series?.episodes ?? EMPTY_EPISODES, [series]);
   const episodeAccess = resolvedEpisodeAccess;
-  const totalEpisodes = series
-    ? Math.max(
-        series.episodeCount > 0 ? series.episodeCount : series.episodes.length,
-        series.episodes.length,
-      )
-    : 0;
-  const ranges = useMemo(() => buildRanges(totalEpisodes, RANGE_SIZE), [totalEpisodes]);
+  const ranges = useMemo(() => buildEpisodeRanges(episodes, EPISODE_RANGE_SIZE), [episodes]);
+  const columns = useMemo(() => getColumnsForWidth(width), [width]);
+  const cellSize = Math.max(
+    TOUCH_TARGET_MIN,
+    Math.floor(
+      (width - SCREEN_HORIZONTAL_PADDING * 2 - (columns - 1) * GRID_GAP) / columns,
+    ),
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -117,19 +119,18 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
 
   const [selectedRangeStart, setSelectedRangeStart] = useState<number | null>(null);
   const initialRangeStart = useMemo(
-    () => getRangeStartForEpisode(resumeEpisode?.number ?? 1, totalEpisodes),
-    [resumeEpisode, totalEpisodes],
+    () => getInitialEpisodeRangeStart(episodes, resumeEpisode?.number),
+    [episodes, resumeEpisode],
   );
-  const activeRangeStart = selectedRangeStart ?? initialRangeStart;
+  const activeRangeStart =
+    ranges.some((range) => range.start === selectedRangeStart)
+      ? selectedRangeStart
+      : initialRangeStart;
+  const selectedRange = ranges.find((range) => range.start === activeRangeStart) ?? ranges[0];
 
   const visibleEpisodes = useMemo(() => {
-    if (!series) {
-      return [];
-    }
-
-    const startIndex = Math.max(0, activeRangeStart - 1);
-    return series.episodes.slice(startIndex, startIndex + RANGE_SIZE);
-  }, [activeRangeStart, series]);
+    return getEpisodesInRange(episodes, selectedRange);
+  }, [episodes, selectedRange]);
 
   const handleEpisodePress = (episode: ApiEpisode) => {
     if (!series) {
@@ -160,20 +161,6 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
       seriesTitle: series.title,
     });
   };
-
-  const resumeRangeIndex = useMemo(() => {
-    if (!resumeEpisode) {
-      return undefined;
-    }
-
-    const minNumber = activeRangeStart;
-    const maxNumber = activeRangeStart + RANGE_SIZE - 1;
-    if (resumeEpisode.number < minNumber || resumeEpisode.number > maxNumber) {
-      return undefined;
-    }
-
-    return resumeEpisode.number - minNumber;
-  }, [activeRangeStart, resumeEpisode]);
 
   if (isSeriesLoading) {
     return (
@@ -270,47 +257,110 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
         ) : null}
 
         <FlatList
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.gridContent}
           data={visibleEpisodes}
-          getItemLayout={(_, index) => ({
-            index,
-            length: 68,
-            offset: index * 68,
-          })}
-          initialScrollIndex={resumeRangeIndex}
+          key={columns}
           keyExtractor={(episode) => String(episode.number)}
-          renderItem={({ item }) => {
+          numColumns={columns}
+          renderItem={({ index, item }) => {
             const access = episodeAccess[String(item.number)] ?? {
               canWatch: false,
               kind: "locked" as const,
               label: "Locked" as const,
             };
+            const accessDisplay = getEpisodeAccessDisplay(item, access);
+            const isCurrent = item.number === resumeEpisode?.number;
 
             return (
               <Pressable
-                accessibilityLabel={`Episode ${item.number}: ${item.title}`}
+                accessibilityLabel={`Episode ${item.number}: ${item.title}. ${accessDisplay.accessibilityLabel}${
+                  isCurrent ? ". Current episode." : ""
+                }`}
                 accessibilityRole="button"
+                accessibilityState={{ selected: isCurrent }}
                 onPress={() => handleEpisodePress(item)}
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                style={({ pressed }) => [
+                  styles.cell,
+                  {
+                    height: cellSize,
+                    marginRight: (index + 1) % columns === 0 ? 0 : GRID_GAP,
+                    width: cellSize,
+                  },
+                  isCurrent && styles.cellCurrent,
+                  pressed && styles.pressed,
+                ]}
               >
-                <View style={styles.rowMain}>
-                  <Text style={styles.episodeNumber}>Ep {item.number}</Text>
-                  <View style={styles.textWrap}>
-                    <Text numberOfLines={1} style={styles.episodeTitle}>
-                      {item.title || `Episode ${item.number}`}
-                    </Text>
-                    {item.runtime ? <Text style={styles.episodeMeta}>{item.runtime}</Text> : null}
-                  </View>
-                </View>
-                <Text style={styles.accessLabel}>{access.label}</Text>
+                <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
+                  {item.number}
+                </Text>
+                {renderAccessMarkers(accessDisplay, isCurrent)}
               </Pressable>
             );
           }}
           showsVerticalScrollIndicator={false}
-          style={styles.list}
+          style={styles.gridList}
         />
       </View>
     </Screen>
+  );
+}
+
+function getColumnsForWidth(width: number) {
+  const availableWidth = width - SCREEN_HORIZONTAL_PADDING * 2;
+  const preferredCellSize = Math.floor(
+    (availableWidth - (PREFERRED_COLUMNS - 1) * GRID_GAP) / PREFERRED_COLUMNS,
+  );
+
+  if (preferredCellSize >= TOUCH_TARGET_MIN) {
+    return PREFERRED_COLUMNS;
+  }
+
+  for (let columns = PREFERRED_COLUMNS - 1; columns >= MIN_COLUMNS; columns -= 1) {
+    const cellSize = Math.floor((availableWidth - (columns - 1) * GRID_GAP) / columns);
+    if (cellSize >= TOUCH_TARGET_MIN) {
+      return columns;
+    }
+  }
+
+  return MIN_COLUMNS;
+}
+
+function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boolean) {
+  return (
+    <View style={styles.markerRow}>
+      {accessDisplay.markers.map((marker) => (
+        <View
+          key={`${marker.label}-${marker.accessibilityLabel}`}
+          style={[
+            styles.marker,
+            marker.tone === "available" && styles.markerAvailable,
+            marker.tone === "locked" && styles.markerLocked,
+            isCurrent && styles.markerCurrent,
+          ]}
+        >
+          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.cellAccessLabel,
+              marker.tone === "available" && styles.cellAccessLabelAvailable,
+              marker.tone === "locked" && styles.cellAccessLabelLocked,
+              isCurrent && styles.cellAccessLabelCurrent,
+            ]}
+          >
+            {marker.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CoinGlyph({ color }: { color: string }) {
+  return (
+    <View style={[styles.coinGlyph, { borderColor: color }]}>
+      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
+    </View>
   );
 }
 
@@ -319,7 +369,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 12,
     paddingBottom: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
     paddingTop: 12,
   },
   headerRow: {
@@ -355,54 +405,79 @@ const styles = StyleSheet.create({
   rangeTextSelected: {
     color: colors.accent,
   },
-  list: {
+  gridList: {
     flex: 1,
   },
-  listContent: {
-    gap: 8,
+  gridContent: {
     paddingBottom: 20,
   },
-  row: {
+  cell: {
     alignItems: "center",
-    borderBottomColor: borders.color,
-    borderBottomWidth: borders.width,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 64,
-    paddingVertical: 10,
+    borderColor: borders.color,
+    borderRadius: 6,
+    borderWidth: borders.width,
+    justifyContent: "center",
+    marginBottom: GRID_GAP,
+    paddingHorizontal: 3,
   },
-  rowPressed: {
+  cellCurrent: {
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
+  },
+  pressed: {
     opacity: 0.8,
   },
-  rowMain: {
-    flex: 1,
-    flexDirection: "row",
-    gap: 12,
-  },
-  episodeNumber: {
+  cellNumber: {
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    width: 54,
+    fontSize: 18,
+    fontWeight: "800",
   },
-  textWrap: {
-    flex: 1,
+  cellNumberCurrent: {
+    color: colors.accent,
+  },
+  markerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+    justifyContent: "center",
+    marginTop: 3,
+  },
+  cellAccessLabel: {
+    color: colors.muted,
+    fontSize: 9,
+    fontWeight: "700",
+    lineHeight: 11,
+    textAlign: "center",
+  },
+  cellAccessLabelAvailable: {
+    color: colors.text,
+  },
+  cellAccessLabelLocked: {
+    color: colors.muted,
+  },
+  cellAccessLabelCurrent: {
+    color: colors.accent,
+  },
+  marker: {
+    alignItems: "center",
+    flexDirection: "row",
     gap: 2,
   },
-  episodeTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "600",
+  markerAvailable: {},
+  markerLocked: {},
+  markerCurrent: {},
+  coinGlyph: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1.3,
+    height: 8,
+    justifyContent: "center",
+    width: 8,
   },
-  episodeMeta: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  accessLabel: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "700",
-    textAlign: "right",
-    textTransform: "uppercase",
+  coinGlyphInner: {
+    borderRadius: 999,
+    height: 2.5,
+    width: 2.5,
   },
 });

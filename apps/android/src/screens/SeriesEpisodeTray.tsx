@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
+import {
+  buildEpisodeRanges,
+  EPISODE_RANGE_SIZE,
+  getEpisodesInRange,
+  getInitialEpisodeRangeStart,
+} from "../lib/episodeRanges";
 import type { ApiEpisode, EpisodeAccess } from "../types/api";
 import { borders, colors } from "../theme/tokens";
 
@@ -13,13 +20,11 @@ type SeriesEpisodeTrayProps = {
   seriesTitle: string;
 };
 
-const RANGE_SIZE = 25;
 const SHEET_HORIZONTAL_PADDING = 16;
 const GRID_GAP = 6;
-const TOUCH_TARGET_MIN = 44;
-const TOUCH_TARGET_MAX = 48;
-const MIN_COLUMNS = 5;
-const MAX_COLUMNS = 7;
+const TOUCH_TARGET_MIN = 48;
+const MIN_COLUMNS = 3;
+const PREFERRED_COLUMNS = 5;
 const TRAY_HEIGHT_RATIO = 0.4;
 const SHEET_TOP_PADDING = 14;
 // Chrome block heights below mirror the actual style values used for those
@@ -34,25 +39,19 @@ const GRID_VERTICAL_PADDING = 6;
 // never clipped.
 const CHROME_SAFETY_MARGIN = 12;
 
-function buildRanges(totalEpisodes: number, rangeSize: number) {
-  const ranges: { end: number; start: number }[] = [];
-  for (let start = 1; start <= totalEpisodes; start += rangeSize) {
-    ranges.push({ start, end: Math.min(totalEpisodes, start + rangeSize - 1) });
-  }
-  return ranges;
-}
-
-function getRangeStartForEpisode(episodeNumber: number, totalEpisodes: number) {
-  const boundedEpisodeNumber = Math.min(Math.max(1, episodeNumber), totalEpisodes || 1);
-  return Math.floor((boundedEpisodeNumber - 1) / RANGE_SIZE) * RANGE_SIZE + 1;
-}
-
-// Picks the densest column count (7..5) whose resulting cell still clears the
-// minimum accessible touch target, so the grid never clips on narrow phones.
+// Keeps the normal-phone layout at five columns, then backs off on narrow
+// widths so every cell still clears the minimum accessible touch target.
 function getColumnsForWidth(width: number) {
   const availableWidth = width - SHEET_HORIZONTAL_PADDING * 2;
+  const preferredCellSize = Math.floor(
+    (availableWidth - (PREFERRED_COLUMNS - 1) * GRID_GAP) / PREFERRED_COLUMNS,
+  );
 
-  for (let columns = MAX_COLUMNS; columns >= MIN_COLUMNS; columns -= 1) {
+  if (preferredCellSize >= TOUCH_TARGET_MIN) {
+    return PREFERRED_COLUMNS;
+  }
+
+  for (let columns = PREFERRED_COLUMNS - 1; columns >= MIN_COLUMNS; columns -= 1) {
     const cellSize = Math.floor((availableWidth - (columns - 1) * GRID_GAP) / columns);
     if (cellSize >= TOUCH_TARGET_MIN) {
       return columns;
@@ -60,15 +59,6 @@ function getColumnsForWidth(width: number) {
   }
 
   return MIN_COLUMNS;
-}
-
-function LockGlyph({ color }: { color: string }) {
-  return (
-    <View style={styles.lockGlyph}>
-      <View style={[styles.lockShackle, { borderColor: color }]} />
-      <View style={[styles.lockBody, { backgroundColor: color }]} />
-    </View>
-  );
 }
 
 export function SeriesEpisodeTray({
@@ -85,22 +75,29 @@ export function SeriesEpisodeTray({
   const cellOuterSize = Math.floor(
     (width - SHEET_HORIZONTAL_PADDING * 2 - (columns - 1) * GRID_GAP) / columns,
   );
-  const cellVisualSize = Math.max(28, Math.min(TOUCH_TARGET_MAX - 8, cellOuterSize - 10));
+  const cellVisualSize = Math.max(TOUCH_TARGET_MIN, cellOuterSize);
   const maxTrayHeight = Math.round(windowHeight * TRAY_HEIGHT_RATIO);
   const sheetBottomPadding = Math.max(20, insets.bottom + 12);
 
   // Published episodes are the ONLY grid source. episodeAccess is looked up
   // per-episode below purely for the lock/current visual — it never filters
   // or shortens this list.
-  const ranges = useMemo(() => buildRanges(episodes.length, RANGE_SIZE), [episodes.length]);
-  const [selectedRangeStart, setSelectedRangeStart] = useState(() =>
-    getRangeStartForEpisode(currentEpisodeNumber ?? 1, episodes.length),
+  const ranges = useMemo(() => buildEpisodeRanges(episodes, EPISODE_RANGE_SIZE), [episodes]);
+  const initialRangeStart = useMemo(
+    () => getInitialEpisodeRangeStart(episodes, currentEpisodeNumber),
+    [currentEpisodeNumber, episodes],
   );
+  const [selectedRangeStart, setSelectedRangeStart] = useState<number | null>(null);
+  const activeRangeStart =
+    ranges.some((range) => range.start === selectedRangeStart)
+      ? selectedRangeStart
+      : initialRangeStart;
+  const selectedRange =
+    ranges.find((range) => range.start === activeRangeStart) ?? ranges[0];
 
   const visibleEpisodes = useMemo(() => {
-    const startIndex = Math.max(0, selectedRangeStart - 1);
-    return episodes.slice(startIndex, startIndex + RANGE_SIZE);
-  }, [episodes, selectedRangeStart]);
+    return getEpisodesInRange(episodes, selectedRange);
+  }, [episodes, selectedRange]);
 
   // FlatList/ScrollView are given a definite (numeric) parent height so they
   // lay out and virtualize predictably on Android, rather than relying on
@@ -153,7 +150,7 @@ export function SeriesEpisodeTray({
             contentContainerStyle={styles.rangeRow}
           >
             {ranges.map((range) => {
-              const isSelected = range.start === selectedRangeStart;
+              const isSelected = range.start === activeRangeStart;
 
               return (
                 <Pressable
@@ -188,11 +185,11 @@ export function SeriesEpisodeTray({
           renderItem={({ item }) => {
             const access = episodeAccess[String(item.number)];
             const isCurrent = item.number === currentEpisodeNumber;
-            const isLocked = !access?.canWatch;
+            const accessDisplay = getEpisodeAccessDisplay(item, access);
 
             return (
               <Pressable
-                accessibilityLabel={`Episode ${item.number}${isLocked ? ", locked" : ""}${
+                accessibilityLabel={`Episode ${item.number}, ${accessDisplay.accessibilityLabel}${
                   isCurrent ? ", current episode" : ""
                 }`}
                 accessibilityRole="button"
@@ -214,13 +211,52 @@ export function SeriesEpisodeTray({
                   <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
                     {item.number}
                   </Text>
-                  {isLocked ? <LockGlyph color={colors.muted} /> : null}
+                  {renderAccessMarkers(accessDisplay, isCurrent)}
                 </View>
               </Pressable>
             );
           }}
         />
       </View>
+    </View>
+  );
+}
+
+function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boolean) {
+  return (
+    <View style={styles.markerRow}>
+      {accessDisplay.markers.map((marker) => (
+        <View
+          key={`${marker.label}-${marker.accessibilityLabel}`}
+          style={[
+            styles.marker,
+            marker.tone === "available" && styles.markerAvailable,
+            marker.tone === "locked" && styles.markerLocked,
+            isCurrent && styles.markerCurrent,
+          ]}
+        >
+          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.cellAccessLabel,
+              marker.tone === "available" && styles.cellAccessLabelAvailable,
+              marker.tone === "locked" && styles.cellAccessLabelLocked,
+              isCurrent && styles.cellAccessLabelCurrent,
+            ]}
+          >
+            {marker.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CoinGlyph({ color }: { color: string }) {
+  return (
+    <View style={[styles.coinGlyph, { borderColor: color }]}>
+      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
     </View>
   );
 }
@@ -322,36 +358,65 @@ const styles = StyleSheet.create({
     borderColor: borders.color,
     borderRadius: 6,
     borderWidth: borders.width,
+    gap: 1,
     justifyContent: "center",
+    paddingHorizontal: 3,
   },
   cellCurrent: {
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
     borderColor: colors.accent,
   },
   cellNumber: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "800",
   },
   cellNumberCurrent: {
     color: colors.accent,
   },
-  lockGlyph: {
+  markerRow: {
     alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    justifyContent: "center",
     marginTop: 2,
   },
-  lockShackle: {
-    borderRadius: 2,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    height: 3,
-    width: 5,
+  cellAccessLabel: {
+    color: colors.muted,
+    fontSize: 7,
+    fontWeight: "700",
+    lineHeight: 9,
+    textAlign: "center",
   },
-  lockBody: {
-    borderRadius: 1,
-    height: 4,
-    marginTop: -1,
+  cellAccessLabelAvailable: {
+    color: colors.text,
+  },
+  cellAccessLabelLocked: {
+    color: colors.muted,
+  },
+  cellAccessLabelCurrent: {
+    color: colors.accent,
+  },
+  marker: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
+  },
+  markerAvailable: {},
+  markerLocked: {},
+  markerCurrent: {},
+  coinGlyph: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1.2,
+    height: 7,
+    justifyContent: "center",
     width: 7,
+  },
+  coinGlyphInner: {
+    borderRadius: 999,
+    height: 2,
+    width: 2,
   },
 });
