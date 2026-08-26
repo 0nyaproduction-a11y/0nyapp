@@ -81,9 +81,22 @@ export function WatchScreen({ navigation, route }: Props) {
   const accessTokenReady = !accessToken || loadedProgressToken === accessToken;
   const isSlateAcknowledged = currentTargetKey ? acknowledgedTargetKey === currentTargetKey : false;
   const isBlockedTarget = currentTargetKey ? blockedTargetKey === currentTargetKey : false;
+  const hasConfiguredParentalLock = parentalControlState?.hasPin ?? false;
+  // A content_rating/descriptor value alone is display-only classification, not
+  // proof a blocking gate is required. This mirrors the authoritative backend
+  // truth in src/lib/playback.ts loadEpisodePlaybackContext(): age verification
+  // always blocks, while a parental lock only blocks when one is actually
+  // configured for this account/guest and not already unlocked this session.
+  const requiresComplianceGate = Boolean(
+    classification &&
+      (classification.ageVerificationRequired ||
+        (classification.parentalLockRequired &&
+          hasConfiguredParentalLock &&
+          !isParentalSessionUnlocked(parentalScope))),
+  );
   const shouldShowSlate = Boolean(
     loadState === "ready" &&
-      classification?.contentRating &&
+      requiresComplianceGate &&
       !isSlateAcknowledged &&
       !isBlockedTarget,
   );
@@ -308,7 +321,6 @@ export function WatchScreen({ navigation, route }: Props) {
   const playback = usePlaybackSource(context, session, {
     playbackMode: shouldUsePreview ? "preview" : "full",
   });
-  const hasConfiguredParentalLock = parentalControlState?.hasPin ?? false;
 
   useEffect(() => {
     if (!targetSeries || !targetEpisode || !targetAccess || !playback.status) {
@@ -353,7 +365,7 @@ export function WatchScreen({ navigation, route }: Props) {
       !targetSeries ||
       !targetEpisode ||
       !targetAccess ||
-      classification?.contentRating ||
+      requiresComplianceGate ||
       targetAccess.canWatch ||
       shouldUsePreview
     ) {
@@ -362,7 +374,7 @@ export function WatchScreen({ navigation, route }: Props) {
 
     openEpisodeAccessOptions();
   }, [
-    classification?.contentRating,
+    requiresComplianceGate,
     loadState,
     openEpisodeAccessOptions,
     shouldUsePreview,

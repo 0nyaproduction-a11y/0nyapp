@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     return dataResponse(status);
   }
 
-  const status = await getParentalControlStatus(auth.user.id, auth.supabase);
+  const status = await getParentalControlStatus(auth.user.id);
 
   return dataResponse(status);
 }
@@ -42,11 +42,11 @@ export async function POST(request: Request) {
 
   if (auth.user) {
     if (mode === "verify") {
-      const result = await verifyRegisteredParentalPin(auth.user.id, body.pin, auth.supabase);
+      const result = await verifyRegisteredParentalPin(auth.user.id, body.pin);
       return dataResponse(result);
     }
 
-    const result = await setRegisteredParentalPin(auth.user, body.pin, body.currentPin, auth.supabase);
+    const result = await setRegisteredParentalPin(auth.user, body.pin, body.currentPin);
     return dataResponse(result);
   }
 

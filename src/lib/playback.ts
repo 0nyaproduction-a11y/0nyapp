@@ -121,7 +121,7 @@ function resolveEpisodeClassification(series: SeriesRow, episode: EpisodeRow) {
 
 async function hasConfiguredParentalLock(auth: PlaybackAuthContext) {
   if (auth.userId) {
-    const status = await getParentalControlStatus(auth.userId, auth.supabase);
+    const status = await getParentalControlStatus(auth.userId);
     return status.hasPin;
   }
 
@@ -129,7 +129,7 @@ async function hasConfiguredParentalLock(auth: PlaybackAuthContext) {
     return false;
   }
 
-  const status = await getGuestParentalControlStatus(auth.guestCredential, auth.supabase);
+  const status = await getGuestParentalControlStatus(auth.guestCredential);
   return status.hasPin;
 }
 
@@ -191,7 +191,6 @@ async function loadEpisodePlaybackContext(
       const parentalProofValid = await validateParentalSessionProof({
         guestCredential: auth.guestCredential,
         parentalSessionToken: auth.parentalSessionToken,
-        supabase,
         userId: auth.userId,
       });
 

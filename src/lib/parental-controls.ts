@@ -1,6 +1,6 @@
 import crypto, { pbkdf2Sync, randomBytes } from "node:crypto";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
 const HASH_ITERATIONS = 310_000;
@@ -40,7 +40,7 @@ export type ParentalControlMutationResult = ParentalControlStatus & {
 };
 
 async function getSupabase(supabase?: SupabaseClient<Database>) {
-  return supabase ?? (await createClient());
+  return supabase ?? createAdminClient();
 }
 
 function normalizePin(pin: string) {
