@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   addHomeRowItem,
@@ -442,27 +443,25 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                     <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
                       Content
                     </span>
-                    <select
+                    <CmsSelect
                       name="contentRef"
-                      className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
                       defaultValue=""
-                    >
-                      <option value="">Choose existing content</option>
-                      <optgroup label="Series">
-                        {seriesChoices.map((choice) => (
-                          <option key={choice.value} value={choice.value}>
-                            {choice.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Short films">
-                        {shortFilmChoices.map((choice) => (
-                          <option key={choice.value} value={choice.value}>
-                            {choice.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
+                      className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+                      placeholderLabel="Choose existing content"
+                      options={[
+                        { label: "Choose existing content", value: "" },
+                        ...seriesChoices.map((choice) => ({
+                          group: "Series",
+                          label: choice.label,
+                          value: choice.value,
+                        })),
+                        ...shortFilmChoices.map((choice) => ({
+                          group: "Short films",
+                          label: choice.label,
+                          value: choice.value,
+                        })),
+                      ]}
+                    />
                   </label>
                   <label className="block space-y-1.5">
                     <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">

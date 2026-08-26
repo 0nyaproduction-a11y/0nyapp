@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import type { MediaAssetRow, MediaAssetFormState } from "@/lib/cms/media";
 
 type MediaAssetAssignmentFormProps = {
@@ -32,19 +33,20 @@ export function MediaAssetAssignmentForm({
         <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
           Ready media asset
         </span>
-        <select
+        <CmsSelect
           name="mediaAssetId"
           defaultValue={currentMediaAssetId ?? ""}
           disabled={readyMediaAssets.length === 0 || pending}
           className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-        >
-          <option value="">Choose a ready media asset</option>
-          {readyMediaAssets.map((mediaAsset) => (
-            <option key={mediaAsset.id} value={mediaAsset.id}>
-              {mediaAsset.id} · {mediaAsset.provider_name ?? "mux"} · {mediaAsset.created_at}
-            </option>
-          ))}
-        </select>
+          placeholderLabel="Choose a ready media asset"
+          options={[
+            { label: "Choose a ready media asset", value: "" },
+            ...readyMediaAssets.map((mediaAsset) => ({
+              label: `${mediaAsset.id} · ${mediaAsset.provider_name ?? "mux"} · ${mediaAsset.created_at}`,
+              value: mediaAsset.id,
+            })),
+          ]}
+        />
       </label>
 
       <div className="flex items-center gap-3">

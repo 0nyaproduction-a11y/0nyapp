@@ -2,12 +2,13 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import type { EpisodeRow } from "@/lib/cms/constants";
 import type { EpisodeFormState } from "@/lib/cms/episode-form";
 
 const inputClassName =
-  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal";
+  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
 const labelClassName = "font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50";
 const checkboxClassName = "h-4 w-4 border border-bone/20 bg-bone/[0.03]";
 
@@ -103,14 +104,15 @@ export function EpisodeMetadataForm({ action, episode, submitLabel }: EpisodeMet
             Rewarded-ad unlock enabled
           </label>
           <Field label="Rewarded access mode" error={errors.rewardedAccessMode}>
-            <select
+            <CmsSelect
               className={inputClassName}
               name="rewardedAccessMode"
               defaultValue={episode?.rewarded_access_mode ?? "permanent"}
-            >
-              <option value="permanent">Permanent</option>
-              <option value="session">Session</option>
-            </select>
+              options={[
+                { label: "Permanent", value: "permanent" },
+                { label: "Session", value: "session" },
+              ]}
+            />
           </Field>
         </div>
 
@@ -139,18 +141,16 @@ export function EpisodeMetadataForm({ action, episode, submitLabel }: EpisodeMet
       <fieldset className="space-y-3 border border-bone/10 p-4">
         <legend className={labelClassName}>Classification override</legend>
         <Field label="Content rating override" error={errors.contentRatingOverride}>
-          <select
+          <CmsSelect
             className={inputClassName}
             name="contentRatingOverride"
             defaultValue={episode?.content_rating_override ?? ""}
-          >
-            <option value="">Inherit from series</option>
-            {CONTENT_RATINGS.map((rating) => (
-              <option key={rating} value={rating}>
-                {rating}
-              </option>
-            ))}
-          </select>
+            placeholderLabel="Inherit from series"
+            options={[
+              { label: "Inherit from series", value: "" },
+              ...CONTENT_RATINGS.map((rating) => ({ label: rating, value: rating })),
+            ]}
+          />
         </Field>
 
         <div>

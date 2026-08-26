@@ -2,12 +2,13 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import type { ShortFilmRow } from "@/lib/cms/short-films";
 import type { ShortFilmFormState } from "@/lib/cms/short-film-form";
 
 const inputClassName =
-  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal";
+  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
 const labelClassName = "font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50";
 const checkboxClassName = "h-4 w-4 border border-bone/20 bg-bone/[0.03]";
 
@@ -86,11 +87,16 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Status" error={errors.status}>
-          <select className={inputClassName} name="status" defaultValue={shortFilm?.status ?? "draft"}>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-            <option value="archived">Archived</option>
-          </select>
+          <CmsSelect
+            className={inputClassName}
+            name="status"
+            defaultValue={shortFilm?.status ?? "draft"}
+            options={[
+              { label: "Draft", value: "draft" },
+              { label: "Published", value: "published" },
+              { label: "Archived", value: "archived" },
+            ]}
+          />
         </Field>
         <Field label="Publish at" error={errors.publishAt}>
           <input
@@ -115,18 +121,16 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
         <legend className={labelClassName}>Classification</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Content rating" error={errors.contentRating}>
-            <select
+            <CmsSelect
               className={inputClassName}
               name="contentRating"
               defaultValue={shortFilm?.content_rating ?? ""}
-            >
-              <option value="">Unrated</option>
-              {CONTENT_RATINGS.map((rating) => (
-                <option key={rating} value={rating}>
-                  {rating}
-                </option>
-              ))}
-            </select>
+              placeholderLabel="Unrated"
+              options={[
+                { label: "Unrated", value: "" },
+                ...CONTENT_RATINGS.map((rating) => ({ label: rating, value: rating })),
+              ]}
+            />
           </Field>
         </div>
 

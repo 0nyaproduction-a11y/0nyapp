@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { EpisodeMetadataForm } from "@/components/cms/EpisodeMetadataForm";
 import { Button } from "@/components/ui/Button";
@@ -253,17 +254,12 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
           <form action={updateStatusAction} className="mt-3 flex items-center gap-3">
-            <select
+            <CmsSelect
               name="status"
               defaultValue={episode.status}
-              className="border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-            >
-              {EPISODE_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
+              className="w-40 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+              options={EPISODE_STATUSES.map((status) => ({ label: status, value: status }))}
+            />
             <Button type="submit" variant="secondary">
               Update status
             </Button>

@@ -2,12 +2,13 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import { SERIES_FORMATS, type SeriesRow } from "@/lib/cms/constants";
 import type { SeriesFormState } from "@/lib/cms/series-form";
 
 const inputClassName =
-  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal";
+  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
 const labelClassName = "font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50";
 
 type SeriesMetadataFormProps = {
@@ -59,14 +60,16 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           <input className={inputClassName} name="language" defaultValue={series?.language ?? ""} />
         </Field>
         <Field label="Format" error={errors.format}>
-          <select className={inputClassName} name="format" defaultValue={series?.format ?? ""}>
-            <option value="">Unset</option>
-            {SERIES_FORMATS.map((format) => (
-              <option key={format} value={format}>
-                {format}
-              </option>
-            ))}
-          </select>
+          <CmsSelect
+            className={inputClassName}
+            name="format"
+            defaultValue={series?.format ?? ""}
+            placeholderLabel="Unset"
+            options={[
+              { label: "Unset", value: "" },
+              ...SERIES_FORMATS.map((format) => ({ label: format, value: format })),
+            ]}
+          />
         </Field>
       </div>
 
@@ -100,18 +103,16 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Content rating" error={errors.contentRating}>
-          <select
+          <CmsSelect
             className={inputClassName}
             name="contentRating"
             defaultValue={series?.content_rating ?? ""}
-          >
-            <option value="">Unrated</option>
-            {CONTENT_RATINGS.map((rating) => (
-              <option key={rating} value={rating}>
-                {rating}
-              </option>
-            ))}
-          </select>
+            placeholderLabel="Unrated"
+            options={[
+              { label: "Unrated", value: "" },
+              ...CONTENT_RATINGS.map((rating) => ({ label: rating, value: rating })),
+            ]}
+          />
         </Field>
 
         <label className="flex items-center gap-2 self-end pb-2 text-sm text-bone/80">

@@ -3,6 +3,7 @@
 import { useMemo, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS, type ContentRating } from "@/lib/classification";
 import { episodeEditPath } from "@/lib/routes";
 import type { MediaUploadIntent } from "@/components/cms/MediaDirectUploadField";
@@ -54,7 +55,7 @@ type BulkEpisodeRow = {
 };
 
 const inputClassName =
-  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal";
+  "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
 const labelClassName = "font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50";
 
 const DEFAULT_DEFAULTS: BulkEpisodeDefaults = {
@@ -726,20 +727,21 @@ export function BulkEpisodeUploadForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block space-y-1.5">
               <span className={labelClassName}>Rewarded access mode</span>
-              <select
+              <CmsSelect
                 className={inputClassName}
                 value={batchDefaults.rewardedAccessMode}
-                onChange={(event) =>
+                onChange={(newValue) =>
                   setBatchDefaults((current) => ({
                     ...current,
-                    rewardedAccessMode: event.target.value === "session" ? "session" : "permanent",
+                    rewardedAccessMode: newValue === "session" ? "session" : "permanent",
                   }))
                 }
                 disabled={isRunning}
-              >
-                <option value="permanent">Permanent</option>
-                <option value="session">Session</option>
-              </select>
+                options={[
+                  { label: "Permanent", value: "permanent" },
+                  { label: "Session", value: "session" },
+                ]}
+              />
             </label>
 
             <label className="flex items-center gap-2 text-sm text-bone/80">
@@ -779,24 +781,22 @@ export function BulkEpisodeUploadForm({
 
             <label className="block space-y-1.5">
               <span className={labelClassName}>Content rating override</span>
-              <select
+              <CmsSelect
                 className={inputClassName}
                 value={batchDefaults.contentRatingOverride ?? ""}
-                onChange={(event) =>
+                onChange={(newValue) =>
                   setBatchDefaults((current) => ({
                     ...current,
-                    contentRatingOverride: event.target.value ? (event.target.value as ContentRating) : null,
+                    contentRatingOverride: newValue ? (newValue as ContentRating) : null,
                   }))
                 }
                 disabled={isRunning}
-              >
-                <option value="">Inherit from series</option>
-                {CONTENT_RATINGS.map((rating) => (
-                  <option key={rating} value={rating}>
-                    {rating}
-                  </option>
-                ))}
-              </select>
+                placeholderLabel="Inherit from series"
+                options={[
+                  { label: "Inherit from series", value: "" },
+                  ...CONTENT_RATINGS.map((rating) => ({ label: rating, value: rating })),
+                ]}
+              />
             </label>
           </div>
 

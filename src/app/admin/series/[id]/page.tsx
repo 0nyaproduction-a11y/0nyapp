@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { CmsSelect } from "@/components/cms/CmsSelect";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
@@ -349,17 +350,12 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
           <form action={updateStatusAction} className="mt-3 flex items-center gap-3">
-            <select
+            <CmsSelect
               name="status"
               defaultValue={series.status}
-              className="border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-            >
-              {SERIES_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
+              className="w-40 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+              options={SERIES_STATUSES.map((status) => ({ label: status, value: status }))}
+            />
             <Button type="submit" variant="secondary">
               Update status
             </Button>

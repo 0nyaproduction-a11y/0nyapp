@@ -10,7 +10,7 @@ export type MediaUploadIntent = {
 };
 
 type MediaDirectUploadFieldProps = {
-  requestUploadAction: (mimeType: string) => Promise<MediaUploadIntent | { error: string }>;
+  requestUploadAction: (mimeType: string, corsOrigin?: string | null) => Promise<MediaUploadIntent | { error: string }>;
 };
 
 export function MediaDirectUploadField({ requestUploadAction }: MediaDirectUploadFieldProps) {
@@ -65,7 +65,7 @@ export function MediaDirectUploadField({ requestUploadAction }: MediaDirectUploa
     setIsUploading(true);
 
     try {
-      const intent = await requestUploadAction(file.type || "video/mp4");
+      const intent = await requestUploadAction(file.type || "video/mp4", window.location.origin);
 
       if ("error" in intent) {
         setError(intent.error);

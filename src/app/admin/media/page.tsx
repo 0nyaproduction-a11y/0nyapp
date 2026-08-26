@@ -34,7 +34,7 @@ export default async function AdminMediaPage() {
 
   const mediaAssets = await listMediaAssetsForAdmin();
 
-  async function requestMediaUploadAction(mimeType: string) {
+  async function requestMediaUploadAction(mimeType: string, corsOriginOverride?: string | null) {
     "use server";
 
     const guard = await requireCmsAdmin(mediaListPath);
@@ -44,7 +44,7 @@ export default async function AdminMediaPage() {
     }
 
     try {
-      const intent = await createMediaUploadIntent(mimeType);
+      const intent = await createMediaUploadIntent(mimeType, corsOriginOverride);
       revalidatePath(mediaListPath);
       return intent;
     } catch (error) {
