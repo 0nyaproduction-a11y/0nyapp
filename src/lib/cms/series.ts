@@ -39,7 +39,7 @@ export type SeriesValidationError = { field: string; message: string };
 
 export type SeriesActionResult =
   | { success: true; series: SeriesRow }
-  | { success: false; errors: SeriesValidationError[] };
+  | { success: false; errors: SeriesValidationError[]; blockers?: string[]; message?: string };
 
 export type SeriesDeletePreview = {
   blockers: string[];
@@ -216,6 +216,40 @@ export async function updateSeriesStatus(
   }
 
   const supabase = getAdminClient();
+
+  if (status === "published") {
+    const { data: publishData, error: publishError } = await supabase.rpc("publish_series_with_episodes", {
+      p_series_id: id,
+    });
+    const publishResult = publishData?.[0];
+
+    if (publishError || !publishResult) {
+      return { success: false, errors: [{ field: "status", message: "Unable to publish series." }] };
+    }
+
+    if (!publishResult.success) {
+      return {
+        success: false,
+        errors: [
+          {
+            field: "status",
+            message: publishResult.message || "Unable to publish series.",
+          },
+        ],
+        blockers: publishResult.blockers ?? [],
+        message: publishResult.message ?? "Unable to publish series.",
+      };
+    }
+
+    const { data, error } = await supabase.from("series").select("*").eq("id", id).maybeSingle();
+
+    if (error || !data) {
+      return { success: false, errors: [{ field: "status", message: "Unable to update status." }] };
+    }
+
+    return { success: true, series: data };
+  }
+
   const { data, error } = await supabase
     .from("series")
     .update({ status })

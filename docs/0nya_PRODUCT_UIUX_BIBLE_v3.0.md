@@ -553,6 +553,8 @@ D02 CTA state uses the shared resume/completion rule:
 | Chai | Never show on series or episodes. |
 | Related | Editorial related series. |
 
+Publishing a Series is an explicit bulk publication action that publishes the Series and all child Episodes after existing publish validation succeeds. Episode access configuration remains independently controlled and unchanged.
+
 > **LOCKED** — The same-screen Episode Tray is the approved MVP behavior. It is generated from the current series' published episode collection, supports dynamic ranges without hardcoding totals and keeps D01 visible beneath a dim scrim. Do not reintroduce a separate full-screen V03 Episode Browser for MVP.
 
 

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
-import { CmsSelect } from "@/components/cms/CmsSelect";
+import { SeriesStatusForm, type SeriesStatusFormState } from "@/components/cms/SeriesStatusForm";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
@@ -108,25 +108,32 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     return { errors: {} };
   }
 
-  async function updateStatusAction(formData: FormData) {
+  async function updateStatusAction(
+    _prevState: SeriesStatusFormState,
+    formData: FormData,
+  ): Promise<SeriesStatusFormState> {
     "use server";
 
     const guard = await requireCmsAdmin(seriesEditPath(id));
 
     if (guard.status !== "authorized") {
-      return;
+      return { error: "You are not authorized to manage content." };
     }
 
     const status = String(formData.get("status"));
 
     if (!SERIES_STATUSES.includes(status as SeriesStatus)) {
-      return;
+      return { error: "Unsupported status." };
     }
 
     const result = await updateSeriesStatus(id, status as SeriesStatus);
 
     if (!result.success) {
-      return;
+      const blockerMessage =
+        result.blockers && result.blockers.length > 0
+          ? result.blockers.join(" ")
+          : result.errors[0]?.message ?? "Unable to update series status.";
+      return { error: blockerMessage };
     }
 
     revalidatePath(seriesEditPath(id));
@@ -135,6 +142,17 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     revalidatePath("/");
     revalidatePath(seriesPath(result.series.slug));
     revalidatePath("/api/v1/catalog");
+
+    if (status === "published") {
+      const refreshedEpisodes = await listEpisodesForSeries(id);
+
+      for (const episode of refreshedEpisodes) {
+        revalidatePath(episodeEditPath(id, episode.id));
+        revalidatePath(watchEpisodePath(result.series.slug, episode.episode_number));
+        revalidatePath(purchaseEpisodePath(result.series.slug, episode.episode_number));
+      }
+    }
+
     redirect(seriesEditPath(id));
   }
 
@@ -349,17 +367,7 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
 
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
-          <form action={updateStatusAction} className="mt-3 flex items-center gap-3">
-            <CmsSelect
-              name="status"
-              defaultValue={series.status}
-              className="w-40 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-              options={SERIES_STATUSES.map((status) => ({ label: status, value: status }))}
-            />
-            <Button type="submit" variant="secondary">
-              Update status
-            </Button>
-          </form>
+          <SeriesStatusForm action={updateStatusAction} defaultValue={series.status} />
         </section>
 
         <section>
@@ -417,11 +425,11 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
                 <div>
                   <p className="font-medium">
                     Episode {episode.episode_number}
-                    {episode.title ? ` — ${episode.title}` : ""}
+                    {episode.title ? ` � ${episode.title}` : ""}
                   </p>
                   <p className="text-xs text-bone/50">
                     {episode.is_free ? "Free" : `${episode.coin_price} coins`}
-                    {episode.plus_access ? " · Plus" : ""}
+                    {episode.plus_access ? " � Plus" : ""}
                   </p>
                 </div>
                 <span
@@ -441,7 +449,7 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
             confirmationValue={`DELETE ALL EPISODES ${currentSeries.slug}`}
             description="This permanently removes every episode in the series and cleans up any exclusively owned Mux media."
             submitLabel="Delete all episodes permanently"
-            title="Danger zone · Episodes"
+            title="Danger zone � Episodes"
           />
         </section>
 
@@ -452,7 +460,7 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
             confirmationValue={`DELETE SERIES AND EPISODES ${currentSeries.slug}`}
             description="This permanently removes every episode in the series, then deletes the series record and any exclusively owned Mux media."
             submitLabel="Delete series and episodes permanently"
-            title="Danger zone · Series + episodes"
+            title="Danger zone � Series + episodes"
           />
         </section>
 

@@ -108,6 +108,8 @@ archived
 
 Do not assume exact enum names if the existing backend already uses different names.
 
+Publishing a series is a bulk CMS action: it must publish every child episode in the same operation. If any child episode lacks a ready playback source, the publish must be blocked and the admin shown the blocker reason(s).
+
 ---
 
 # 4. EPISODE ENTITY — CRITICAL ACCESS CONTROL
@@ -237,6 +239,8 @@ CMS should support:
 publish_at
 status
 ```
+
+When a Series is published, its child Episodes must also be published together. That cascade must reuse the existing episode publish checks instead of allowing a partial series-only publish.
 
 The app should be able to distinguish:
 

@@ -1439,6 +1439,19 @@ export type Database = {
           expires_at: string | null;
         }[];
       };
+      publish_series_with_episodes: {
+        Args: {
+          p_series_id: string;
+        };
+        Returns: {
+          blockers: string[] | null;
+          message: string;
+          published_episode_numbers: number[] | null;
+          series_slug: string | null;
+          status: string;
+          success: boolean;
+        }[];
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
