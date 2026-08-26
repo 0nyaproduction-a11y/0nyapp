@@ -1,11 +1,6 @@
 import { dataResponse } from "@/lib/api/responses";
 import { serializeSeries, serializeShortFilm } from "@/lib/api/serializers";
-import {
-  getMockOrCatalogRows,
-  getMockOrCatalogShortFilms,
-  getPublishedSeries,
-  getPublishedShortFilms,
-} from "@/lib/catalog";
+import { getPublishedSeries, getPublishedShortFilms } from "@/lib/catalog";
 import { getHomeState } from "@/lib/home";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,10 +11,6 @@ export async function GET() {
     getPublishedSeries(),
     getPublishedShortFilms(),
   ]);
-  const seriesCatalog = getMockOrCatalogRows(catalog);
-  const normalizedShortFilms = getMockOrCatalogShortFilms(shortFilms).map((shortFilm) =>
-    shortFilm.slug === "mute-button" ? { ...shortFilm, title: "Trial & Error" } : shortFilm,
-  );
 
   const supabase = await createClient();
   const {
@@ -28,8 +19,8 @@ export async function GET() {
   const home = await getHomeState(user?.id ?? null);
 
   return dataResponse({
-    catalog: seriesCatalog.map(serializeSeries),
-    shortFilms: normalizedShortFilms.map(serializeShortFilm),
+    catalog: catalog.map(serializeSeries),
+    shortFilms: shortFilms.map(serializeShortFilm),
     home,
   });
 }

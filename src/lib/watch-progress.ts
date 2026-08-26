@@ -1,10 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  contentItems,
-  getEpisode,
-  getSeriesBySlug,
-  type ContentItem,
-} from "@/data/content";
+import { type ContentItem } from "@/data/content";
 import type { ShortFilm } from "@/lib/catalog";
 import type { Database } from "@/types/database";
 
@@ -430,7 +425,7 @@ export async function getContinueWatching(supabase: TypedSupabaseClient) {
 
 export function progressToContentItems(
   progressRows: WatchProgress[],
-  catalogItems = contentItems,
+  catalogItems: ContentItem[] = [],
   shortFilms: ShortFilm[] = [],
 ) {
   const seen = new Set<string>();
@@ -464,7 +459,7 @@ export function progressToContentItems(
         episodeDuration: shortFilm.durationLabel,
         synopsis: shortFilm.synopsis,
         poster: shortFilm.poster ?? "/logo-og.jpg",
-        accent: contentItems.find((item) => item.slug === shortFilm.slug)?.accent ?? "#0DD1BC",
+        accent: "#0DD1BC",
         episodes: [],
         progress: getProgressPercentage(
           progress.position_seconds,
@@ -482,9 +477,8 @@ export function progressToContentItems(
       return items;
     }
 
-    const series =
-      catalogItems.find((item) => item.slug === seriesSlug) ?? getSeriesBySlug(seriesSlug);
-    const episode = getEpisode(seriesSlug, episodeNumber);
+    const series = catalogItems.find((item) => item.slug === seriesSlug);
+    const episode = series?.episodes.find((item) => item.number === episodeNumber);
 
     if (!series || !episode) {
       return items;
@@ -519,8 +513,4 @@ export function getFallbackPositionSeconds(progressPercent: number | undefined, 
   }
 
   return clampSeconds((durationSeconds * progressPercent) / 100, durationSeconds);
-}
-
-export function getKnownSeriesSlugs() {
-  return contentItems.map((item) => item.slug);
 }

@@ -59,7 +59,13 @@ function summarizeContinueWatchingCandidate(
   const catalogMatch =
     item.contentType === "short_film"
       ? shortFilms.some((candidate) => candidate.slug === item.shortFilmSlug)
-      : catalog.some((candidate) => candidate.slug === item.seriesSlug);
+      : catalog.some((candidate) => {
+          if (candidate.slug !== item.seriesSlug) {
+            return false;
+          }
+
+          return candidate.episodes.some((episode) => episode.number === item.episodeNumber);
+        });
 
   return {
     completed: item.completed,
@@ -720,8 +726,9 @@ export function HomeScreen({ navigation }: Props) {
         }
 
         const series = catalog.find((candidate) => candidate.slug === item.seriesSlug);
+        const episode = series?.episodes.find((candidate) => candidate.number === item.episodeNumber);
 
-        if (series) {
+        if (series && episode) {
           seenSeries.add(item.seriesSlug);
           selected.push({ ...item, series });
         }

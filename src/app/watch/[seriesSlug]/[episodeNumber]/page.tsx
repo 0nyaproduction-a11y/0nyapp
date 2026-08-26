@@ -1,12 +1,7 @@
 import { notFound } from "next/navigation";
-import {
-  contentItems,
-  getEpisode as getMockEpisode,
-  getSeriesBySlug as getMockSeriesBySlug,
-} from "@/data/content";
 import { LockedEpisode } from "@/components/player/LockedEpisode";
 import { VerticalPlayer } from "@/components/player/VerticalPlayer";
-import { getEpisodeBySeriesSlugAndNumber } from "@/lib/catalog";
+import { getEpisodeBySeriesSlugAndNumber, getPublishedSeries } from "@/lib/catalog";
 import { canUserWatchEpisode } from "@/lib/entitlements";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -20,8 +15,10 @@ type WatchPageProps = {
   params: Promise<{ seriesSlug: string; episodeNumber: string }>;
 };
 
-export function generateStaticParams() {
-  return contentItems.flatMap((series) =>
+export async function generateStaticParams() {
+  const publishedSeries = await getPublishedSeries();
+
+  return publishedSeries.flatMap((series) =>
     series.episodes.map((episode) => ({
       seriesSlug: series.slug,
       episodeNumber: `${episode.number}`,
@@ -35,12 +32,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
   const catalogResult = Number.isInteger(parsedEpisodeNumber)
     ? await getEpisodeBySeriesSlugAndNumber(seriesSlug, parsedEpisodeNumber)
     : null;
-  const mockSeries = getMockSeriesBySlug(seriesSlug);
-  const mockEpisode = Number.isInteger(parsedEpisodeNumber)
-    ? getMockEpisode(seriesSlug, parsedEpisodeNumber)
-    : undefined;
-  const series = catalogResult?.series ?? mockSeries;
-  const episode = catalogResult?.episode ?? mockEpisode;
+  const series = catalogResult?.series;
+  const episode = catalogResult?.episode;
 
   if (!series || !episode) {
     notFound();

@@ -48,7 +48,7 @@ export type ShortFilmDeleteResult =
   | { success: false; message: string; blockers?: string[] };
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SHORT_FILM_STATUSES: ShortFilmStatus[] = ["draft", "published", "archived"];
+export const SHORT_FILM_STATUSES: ShortFilmStatus[] = ["draft", "published", "archived"];
 
 function getAdminClient() {
   return createAdminClient();
@@ -214,6 +214,29 @@ export async function updateShortFilm(id: string, input: ShortFilmInput): Promis
     }
 
     return { success: false, errors: [{ field: "form", message: "Unable to update short film." }] };
+  }
+
+  return { success: true, shortFilm: data };
+}
+
+export async function updateShortFilmStatus(
+  id: string,
+  status: ShortFilmStatus,
+): Promise<ShortFilmActionResult> {
+  if (!SHORT_FILM_STATUSES.includes(status)) {
+    return { success: false, errors: [{ field: "status", message: "Unsupported status." }] };
+  }
+
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("short_films")
+    .update({ status })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+
+  if (error || !data) {
+    return { success: false, errors: [{ field: "status", message: "Unable to update status." }] };
   }
 
   return { success: true, shortFilm: data };

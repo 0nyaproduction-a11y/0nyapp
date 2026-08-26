@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Button } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { MediaAssetAssignmentForm } from "@/components/cms/MediaAssetAssignmentForm";
@@ -32,6 +33,8 @@ import {
   getShortFilmDeletePreview,
   getShortFilmForAdminById,
   persistShortFilmArtwork,
+  SHORT_FILM_STATUSES,
+  updateShortFilmStatus,
   updateShortFilm,
 } from "@/lib/cms/short-films";
 
@@ -283,6 +286,37 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
     return { errors: {}, message: "Chai config saved." };
   }
 
+  async function updateStatusAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(shortFilmEditPath(id));
+
+    if (guard.status !== "authorized") {
+      return;
+    }
+
+    const status = String(formData.get("status"));
+
+    if (!SHORT_FILM_STATUSES.includes(status as (typeof SHORT_FILM_STATUSES)[number])) {
+      redirect(buildFlashUrl(shortFilmEditPath(id), "error", "Unable to update short film status."));
+    }
+
+    const result = await updateShortFilmStatus(id, status as (typeof SHORT_FILM_STATUSES)[number]);
+
+    if (!result.success) {
+      redirect(buildFlashUrl(shortFilmEditPath(id), "error", "Unable to update short film status."));
+    }
+
+    revalidatePath(shortFilmEditPath(id));
+    revalidatePath(shortFilmListPath);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath(shortFilmPath(currentShortFilm.slug));
+    revalidatePath("/api/v1/catalog");
+
+    redirect(shortFilmEditPath(id));
+  }
+
   async function deleteShortFilmAction(
     _prevState: DeleteFormState,
     formData: FormData,
@@ -371,6 +405,26 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
           <div className="mt-3">
             <ShortFilmMetadataForm action={updateShortFilmAction} shortFilm={shortFilm} submitLabel="Save changes" />
           </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
+          <form action={updateStatusAction} className="mt-3 flex items-center gap-3">
+            <select
+              name="status"
+              defaultValue={shortFilm.status}
+              className="border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+            >
+              {SHORT_FILM_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+            <Button type="submit" variant="secondary">
+              Update status
+            </Button>
+          </form>
         </section>
 
         <section>

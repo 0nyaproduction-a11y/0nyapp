@@ -1,5 +1,4 @@
 import {
-  contentItems,
   getSeriesBySlug as getMockSeriesBySlug,
   type ContentFormat,
   type ContentItem,
@@ -69,46 +68,11 @@ function getFallbackAccent(slug: string) {
   return getMockSeriesBySlug(slug)?.accent ?? "#0DD1BC";
 }
 
-function getMockShortFilmBySlug(slug: string) {
-  return contentItems.find((item) => item.slug === slug && item.format === "Short") ?? null;
-}
-
-function getMockShortFilms() {
-  return contentItems.filter((item) => item.format === "Short");
-}
-
 function formatShortFilmDuration(seconds: number) {
   const safeSeconds = Math.max(0, Math.floor(seconds));
   const minutes = Math.max(1, Math.round(safeSeconds / 60));
 
   return `${minutes} min`;
-}
-
-function mapMockShortFilm(item: ContentItem): ShortFilm {
-  return {
-    id: item.slug,
-    slug: item.slug,
-    title: item.title,
-    synopsis: item.synopsis,
-    poster: item.poster,
-    heroImage: item.poster,
-    creatorReference: null,
-    durationSeconds: 0,
-    durationLabel: item.episodeDuration.replace(/\s*episodes$/i, ""),
-    language: null,
-    contentRating: null,
-    contentDescriptors: [],
-    parentalLockRequired: false,
-    ageVerificationRequired: false,
-    status: "published",
-    publishAt: null,
-    midrollEnabled: false,
-    midrollTimecodes: [],
-    postrollEnabled: false,
-    chaiEnabled: false,
-    playbackReady: false,
-    sharePath: `/short-films/${item.slug}`,
-  };
 }
 
 function mapEpisode(row: EpisodeRow): Episode {
@@ -348,8 +312,7 @@ export async function getShortFilmBySlug(
       console.warn("Unable to load short film.");
     }
 
-    const mockShortFilm = getMockShortFilmBySlug(slug);
-    return mockShortFilm ? mapMockShortFilm(mockShortFilm) : null;
+    return null;
   }
 
   if (data.publish_at && new Date(data.publish_at).getTime() > Date.now()) {
@@ -406,12 +369,4 @@ export async function getEpisodeBySeriesSlugAndNumber(
     series,
     episode,
   };
-}
-
-export function getMockOrCatalogRows(catalogItems: ContentItem[]) {
-  return catalogItems.length ? catalogItems : contentItems;
-}
-
-export function getMockOrCatalogShortFilms(shortFilms: ShortFilm[]) {
-  return shortFilms.length ? shortFilms : getMockShortFilms().map(mapMockShortFilm);
 }

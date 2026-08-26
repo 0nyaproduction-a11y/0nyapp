@@ -1,9 +1,5 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import {
-  getEpisode as getMockEpisode,
-  getSeriesBySlug as getMockSeriesBySlug,
-} from "@/data/content";
 import { BrandName } from "@/components/brand/BrandName";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -54,12 +50,8 @@ export default async function PurchasePage({
   const catalogResult = Number.isInteger(parsedEpisodeNumber)
     ? await getEpisodeBySeriesSlugAndNumber(seriesSlug, parsedEpisodeNumber)
     : null;
-  const mockSeries = getMockSeriesBySlug(seriesSlug);
-  const mockEpisode = Number.isInteger(parsedEpisodeNumber)
-    ? getMockEpisode(seriesSlug, parsedEpisodeNumber)
-    : undefined;
-  const series = catalogResult?.series ?? mockSeries;
-  const episode = catalogResult?.episode ?? mockEpisode;
+  const series = catalogResult?.series;
+  const episode = catalogResult?.episode;
 
   if (!series || !episode) {
     notFound();
