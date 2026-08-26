@@ -1,6 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 import {
   getParentalControlStatus,
+  saveParentalRestrictionSettings,
   saveParentalControlPin,
 } from "./api";
 import { supabaseSecureStorage } from "./secureStorage";
@@ -18,6 +19,8 @@ type ParentalSessionProof = {
   parentalSessionToken: string;
 };
 
+export type ParentalRestrictionThreshold = "U/A 13+" | "U/A 16+";
+
 export type ParentalControlScope = {
   key: string;
   kind: "guest" | "registered";
@@ -28,6 +31,8 @@ export type ParentalControlState = {
   failedAttempts: number;
   hasPin: boolean;
   lockedUntil: string | null;
+  restrictionsEnabled: boolean;
+  restrictionThreshold: ParentalRestrictionThreshold | null;
   source: "guest" | "registered";
 };
 
@@ -41,7 +46,8 @@ export type ParentalControlActionResult = ParentalControlState & {
     | "locked"
     | "not_configured"
     | "reauth_required"
-    | "invalid_pin";
+    | "invalid_pin"
+    | "invalid_threshold";
   parentalSessionToken?: string;
   expiresAt?: string;
   guestCredential?: string;
@@ -57,6 +63,30 @@ function getScopeKey(scope: ParentalControlScope) {
 
 function isExpired(expiresAt: string) {
   return new Date(expiresAt).getTime() <= Date.now();
+}
+
+const parentalRatingOrder = {
+  U: 0,
+  "U/A 7+": 1,
+  "U/A 13+": 2,
+  "U/A 16+": 3,
+} as const;
+
+export function shouldRequireParentalGate(
+  contentRating: keyof typeof parentalRatingOrder | "A" | null,
+  state: ParentalControlState | null,
+) {
+  if (
+    !state?.hasPin ||
+    !state.restrictionsEnabled ||
+    !state.restrictionThreshold ||
+    contentRating === null ||
+    contentRating === "A"
+  ) {
+    return false;
+  }
+
+  return parentalRatingOrder[contentRating] >= parentalRatingOrder[state.restrictionThreshold];
 }
 
 async function readStoredGuestCredential() {
@@ -109,6 +139,8 @@ async function getGuestState(): Promise<ParentalControlState> {
     failedAttempts: 0,
     hasPin: false,
     lockedUntil: null,
+    restrictionsEnabled: false,
+    restrictionThreshold: null,
     source: "guest",
   };
 }
@@ -191,6 +223,40 @@ export async function loadParentalControls(session: Session | null): Promise<Par
   };
 }
 
+export async function updateParentalRestrictionSettings(
+  session: Session | null,
+  input: {
+    restrictionsEnabled: boolean;
+    restrictionThreshold?: ParentalRestrictionThreshold | null;
+  },
+): Promise<ParentalControlActionResult> {
+  const scope = getParentalScope(session);
+
+  if (scope.kind === "registered") {
+    const result = await saveParentalRestrictionSettings(session?.access_token ?? null, {
+      restrictionsEnabled: input.restrictionsEnabled,
+      restrictionThreshold: input.restrictionThreshold ?? null,
+    });
+
+    return {
+      ...result,
+      source: "registered",
+    };
+  }
+
+  const credentialRecord = await readStoredGuestCredential();
+  const result = await saveParentalRestrictionSettings(null, {
+    guestCredential: credentialRecord?.guestCredential ?? null,
+    restrictionsEnabled: input.restrictionsEnabled,
+    restrictionThreshold: input.restrictionThreshold ?? null,
+  });
+
+  return {
+    ...result,
+    source: "guest",
+  };
+}
+
 async function setGuestCredentialAndUnlock(
   scope: ParentalControlScope,
   result: {
@@ -222,6 +288,8 @@ export async function verifyParentalPin(
       failedAttempts: 0,
       hasPin: false,
       lockedUntil: null,
+      restrictionsEnabled: false,
+      restrictionThreshold: null,
       source: session?.access_token ? "registered" : "guest",
       success: false,
       status: "invalid_pin",
@@ -286,6 +354,8 @@ export async function setParentalPin(
       failedAttempts: 0,
       hasPin: false,
       lockedUntil: null,
+      restrictionsEnabled: false,
+      restrictionThreshold: null,
       source: session?.access_token ? "registered" : "guest",
       success: false,
       status: "invalid_pin",

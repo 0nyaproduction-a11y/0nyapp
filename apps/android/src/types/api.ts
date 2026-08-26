@@ -132,6 +132,8 @@ export type ParentalControlStatusResponse = {
   failedAttempts: number;
   hasPin: boolean;
   lockedUntil: string | null;
+  restrictionsEnabled: boolean;
+  restrictionThreshold: "U/A 13+" | "U/A 16+" | null;
 };
 
 export type ParentalControlActionResponse = ParentalControlStatusResponse & {
@@ -147,7 +149,8 @@ export type ParentalControlActionResponse = ParentalControlStatusResponse & {
     | "locked"
     | "not_configured"
     | "reauth_required"
-    | "invalid_pin";
+    | "invalid_pin"
+    | "invalid_threshold";
 };
 
 export type PlaybackAuthorizationResponse =

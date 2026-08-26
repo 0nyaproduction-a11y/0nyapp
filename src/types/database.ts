@@ -116,6 +116,8 @@ export type Database = {
           pin_hash: string;
           failed_attempts: number;
           locked_until: string | null;
+          restrictions_enabled: boolean;
+          restriction_threshold: "U/A 13+" | "U/A 16+" | null;
           updated_at: string;
         };
         Insert: {
@@ -124,6 +126,8 @@ export type Database = {
           pin_hash: string;
           failed_attempts?: number;
           locked_until?: string | null;
+          restrictions_enabled?: boolean;
+          restriction_threshold?: "U/A 13+" | "U/A 16+" | null;
           updated_at?: string;
         };
         Update: {
@@ -132,6 +136,8 @@ export type Database = {
           pin_hash?: string;
           failed_attempts?: number;
           locked_until?: string | null;
+          restrictions_enabled?: boolean;
+          restriction_threshold?: "U/A 13+" | "U/A 16+" | null;
           updated_at?: string;
         };
         Relationships: [
@@ -889,6 +895,8 @@ export type Database = {
           pin_hash: string;
           failed_attempts: number;
           locked_until: string | null;
+          restrictions_enabled: boolean;
+          restriction_threshold: "U/A 13+" | "U/A 16+" | null;
           created_at: string;
           updated_at: string;
         };
@@ -899,6 +907,8 @@ export type Database = {
           pin_hash: string;
           failed_attempts?: number;
           locked_until?: string | null;
+          restrictions_enabled?: boolean;
+          restriction_threshold?: "U/A 13+" | "U/A 16+" | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -909,6 +919,8 @@ export type Database = {
           pin_hash?: string;
           failed_attempts?: number;
           locked_until?: string | null;
+          restrictions_enabled?: boolean;
+          restriction_threshold?: "U/A 13+" | "U/A 16+" | null;
           created_at?: string;
           updated_at?: string;
         };

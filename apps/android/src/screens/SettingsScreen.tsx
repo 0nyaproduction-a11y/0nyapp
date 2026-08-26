@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { Alert, Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import appJson from "../../app.json";
 import { Screen } from "../components/Screen";
-import { Body, Card, Label } from "../components/ui";
+import { Body, Button, Card, Label } from "../components/ui";
+import { useAuth } from "../lib/authContext";
+import {
+  clearParentalSessionUnlock,
+  getParentalScope,
+  loadParentalControls,
+  updateParentalRestrictionSettings,
+  type ParentalControlState,
+  type ParentalRestrictionThreshold,
+} from "../lib/parentalControls";
 import {
   getAutoplayNextPreference,
   getMarketingNotificationsPreference,
@@ -99,7 +109,8 @@ function SettingsToggleRow({
   );
 }
 
-export function SettingsScreen({}: Props) {
+export function SettingsScreen({ navigation }: Props) {
+  const { session } = useAuth();
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [newReleaseNotifications, setNewReleaseNotifications] = useState(false);
   const [marketingNotifications, setMarketingNotifications] = useState(false);
@@ -108,6 +119,9 @@ export function SettingsScreen({}: Props) {
     preferredLanguageCode: null,
   });
   const [deviceSettingsError, setDeviceSettingsError] = useState<string | null>(null);
+  const [parentalControls, setParentalControls] = useState<ParentalControlState | null>(null);
+  const [parentalControlsError, setParentalControlsError] = useState<string | null>(null);
+  const [isSavingParentalControls, setIsSavingParentalControls] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -136,6 +150,31 @@ export function SettingsScreen({}: Props) {
       isActive = false;
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
+
+      void loadParentalControls(session)
+        .then((status) => {
+          if (!isActive) {
+            return;
+          }
+
+          setParentalControls(status);
+          setParentalControlsError(null);
+        })
+        .catch(() => {
+          if (isActive) {
+            setParentalControlsError("We couldn't load parental controls.");
+          }
+        });
+
+      return () => {
+        isActive = false;
+      };
+    }, [session]),
+  );
 
   const updateSubtitlePreference = async (nextPreference: SubtitlePreference) => {
     setSubtitlePreferenceState(nextPreference);
@@ -179,6 +218,62 @@ export function SettingsScreen({}: Props) {
 
   const handleMissingDestination = (label: string) => {
     Alert.alert("Not available yet", `${label} is not available yet.`);
+  };
+
+  const saveParentalSettings = async (
+    restrictionsEnabled: boolean,
+    restrictionThreshold: ParentalRestrictionThreshold | null,
+  ) => {
+    setIsSavingParentalControls(true);
+    setParentalControlsError(null);
+
+    try {
+      const result = await updateParentalRestrictionSettings(session, {
+        restrictionsEnabled,
+        restrictionThreshold,
+      });
+
+      if (!result.success) {
+        if (result.status === "not_configured") {
+          setParentalControlsError("Set a parental PIN before turning restrictions on.");
+        } else if (result.status === "invalid_threshold") {
+          setParentalControlsError("Choose a restriction level first.");
+        } else {
+          setParentalControlsError("We couldn't save parental controls.");
+        }
+        return;
+      }
+
+      setParentalControls(result);
+    } catch {
+      setParentalControlsError("We couldn't save parental controls.");
+    } finally {
+      setIsSavingParentalControls(false);
+    }
+  };
+
+  const handleParentalRestrictionsToggle = (enabled: boolean) => {
+    if (enabled && !parentalControls?.hasPin) {
+      navigation.navigate("ParentalControls", { mode: "manage" });
+      return;
+    }
+
+    const threshold = parentalControls?.restrictionThreshold ?? "U/A 13+";
+    void saveParentalSettings(enabled, enabled ? threshold : parentalControls?.restrictionThreshold ?? null);
+  };
+
+  const handleThresholdChange = (threshold: ParentalRestrictionThreshold) => {
+    if (!parentalControls?.hasPin) {
+      navigation.navigate("ParentalControls", { mode: "manage" });
+      return;
+    }
+
+    void saveParentalSettings(true, threshold);
+  };
+
+  const handleLockNow = () => {
+    clearParentalSessionUnlock(getParentalScope(session));
+    Alert.alert("Locked", "Parental access is locked for this app session.");
   };
 
   return (
@@ -231,6 +326,46 @@ export function SettingsScreen({}: Props) {
           }}
           value={marketingNotifications}
         />
+      </Card>
+
+      <Card>
+        <Label>Parental Controls</Label>
+        <SettingsToggleRow
+          detail="When off, U/A content plays normally."
+          label="Parental restrictions"
+          onValueChange={handleParentalRestrictionsToggle}
+          value={parentalControls?.restrictionsEnabled ?? false}
+        />
+        {parentalControls?.restrictionsEnabled ? (
+          <>
+            <SettingsRow
+              detail="Require PIN for U/A 13+ and U/A 16+ content."
+              label="U/A 13+ and above"
+              onPress={() => handleThresholdChange("U/A 13+")}
+              value={parentalControls.restrictionThreshold === "U/A 13+" ? "Selected" : undefined}
+            />
+            <SettingsRow
+              detail="Allow U/A 13+ without PIN; require PIN for U/A 16+."
+              label="U/A 16+ and above"
+              onPress={() => handleThresholdChange("U/A 16+")}
+              value={parentalControls.restrictionThreshold === "U/A 16+" ? "Selected" : undefined}
+            />
+          </>
+        ) : null}
+        <SettingsRow
+          detail={parentalControls?.hasPin ? "Update your existing PIN." : "Create a PIN before enabling restrictions."}
+          label={parentalControls?.hasPin ? "Change PIN" : "Set PIN"}
+          onPress={() => navigation.navigate("ParentalControls", { mode: "manage" })}
+          value={parentalControls?.hasPin ? "Ready" : "Required"}
+        />
+        <Button
+          accessibilityLabel="Lock parental controls now"
+          disabled={!parentalControls?.hasPin || isSavingParentalControls}
+          onPress={handleLockNow}
+        >
+          Lock now
+        </Button>
+        {parentalControlsError ? <Body>{parentalControlsError}</Body> : null}
       </Card>
 
       <Card>

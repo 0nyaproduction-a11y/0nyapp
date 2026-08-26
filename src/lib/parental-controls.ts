@@ -10,6 +10,9 @@ const LOCK_DURATION_MS = 15 * 60 * 1000;
 const FRESH_REAUTH_WINDOW_MS = 5 * 60 * 1000;
 const PARENTAL_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
+export const PARENTAL_RESTRICTION_THRESHOLDS = ["U/A 13+", "U/A 16+"] as const;
+export type ParentalRestrictionThreshold = (typeof PARENTAL_RESTRICTION_THRESHOLDS)[number];
+
 export type ParentalControlRecord =
   Database["public"]["Tables"]["user_parental_controls"]["Row"];
 type GuestParentalControlRecord =
@@ -19,6 +22,8 @@ export type ParentalControlStatus = {
   failedAttempts: number;
   hasPin: boolean;
   lockedUntil: string | null;
+  restrictionsEnabled: boolean;
+  restrictionThreshold: ParentalRestrictionThreshold | null;
 };
 
 export type ParentalControlMutationStatus =
@@ -29,7 +34,8 @@ export type ParentalControlMutationStatus =
   | "locked"
   | "not_configured"
   | "reauth_required"
-  | "invalid_pin";
+  | "invalid_pin"
+  | "invalid_threshold";
 
 export type ParentalControlMutationResult = ParentalControlStatus & {
   success: boolean;
@@ -39,12 +45,45 @@ export type ParentalControlMutationResult = ParentalControlStatus & {
   guestCredential?: string;
 };
 
+type ParentalRestrictionSettingsInput = {
+  restrictionsEnabled: boolean;
+  restrictionThreshold?: ParentalRestrictionThreshold | null;
+};
+
 async function getSupabase(supabase?: SupabaseClient<Database>) {
   return supabase ?? createAdminClient();
 }
 
 function normalizePin(pin: string) {
   return /^\d{4}$/.test(pin) ? pin : null;
+}
+
+function normalizeRestrictionThreshold(
+  value: string | null | undefined,
+): ParentalRestrictionThreshold | null {
+  return PARENTAL_RESTRICTION_THRESHOLDS.includes(value as ParentalRestrictionThreshold)
+    ? (value as ParentalRestrictionThreshold)
+    : null;
+}
+
+function formatStatus(record: ParentalControlRecord | GuestParentalControlRecord | null) {
+  return {
+    failedAttempts: record?.failed_attempts ?? 0,
+    hasPin: Boolean(record),
+    lockedUntil: record?.locked_until ?? null,
+    restrictionsEnabled: record?.restrictions_enabled ?? false,
+    restrictionThreshold: normalizeRestrictionThreshold(record?.restriction_threshold),
+  };
+}
+
+function emptyStatus(): ParentalControlStatus {
+  return {
+    failedAttempts: 0,
+    hasPin: false,
+    lockedUntil: null,
+    restrictionsEnabled: false,
+    restrictionThreshold: null,
+  };
 }
 
 function createSalt() {
@@ -141,6 +180,8 @@ async function recordFailure(
     failedAttempts: nextFailedAttempts,
     hasPin: true,
     lockedUntil,
+    restrictionsEnabled: record.restrictions_enabled,
+    restrictionThreshold: normalizeRestrictionThreshold(record.restriction_threshold),
   };
 }
 
@@ -172,6 +213,8 @@ async function recordGuestFailure(
     failedAttempts: nextFailedAttempts,
     hasPin: true,
     lockedUntil,
+    restrictionsEnabled: record.restrictions_enabled,
+    restrictionThreshold: normalizeRestrictionThreshold(record.restriction_threshold),
   };
 }
 
@@ -285,6 +328,8 @@ async function writePin(
       failedAttempts: 0,
       hasPin: true,
       lockedUntil: null,
+      restrictionsEnabled: record.restrictions_enabled,
+      restrictionThreshold: normalizeRestrictionThreshold(record.restriction_threshold),
     };
   }
 
@@ -301,6 +346,8 @@ async function writePin(
     failedAttempts: 0,
     hasPin: true,
     lockedUntil: null,
+    restrictionsEnabled: false,
+    restrictionThreshold: null,
   };
 }
 
@@ -354,11 +401,7 @@ export async function getParentalControlStatus(
 ): Promise<ParentalControlStatus> {
   const record = await getRecord(userId, supabase);
 
-  return {
-    failedAttempts: record?.failed_attempts ?? 0,
-    hasPin: Boolean(record),
-    lockedUntil: record?.locked_until ?? null,
-  };
+  return formatStatus(record);
 }
 
 export async function getGuestParentalControlStatus(
@@ -370,15 +413,120 @@ export async function getGuestParentalControlStatus(
       failedAttempts: 0,
       hasPin: false,
       lockedUntil: null,
+      restrictionsEnabled: false,
+      restrictionThreshold: null,
     };
   }
 
   const record = await getGuestRecordByCredential(guestCredential, supabase);
 
+  return formatStatus(record);
+}
+
+export async function updateRegisteredParentalRestrictionSettings(
+  userId: string,
+  input: ParentalRestrictionSettingsInput,
+  supabase?: SupabaseClient<Database>,
+): Promise<ParentalControlMutationResult> {
+  const client = await getSupabase(supabase);
+  const record = await getRecord(userId, client);
+
+  if (!record) {
+    return {
+      ...emptyStatus(),
+      success: false,
+      status: "not_configured",
+    };
+  }
+
+  const restrictionThreshold = input.restrictionsEnabled
+    ? normalizeRestrictionThreshold(input.restrictionThreshold)
+    : normalizeRestrictionThreshold(input.restrictionThreshold);
+
+  if (input.restrictionsEnabled && !restrictionThreshold) {
+    return {
+      ...formatStatus(record),
+      success: false,
+      status: "invalid_threshold",
+    };
+  }
+
+  const { data, error } = await client
+    .from("user_parental_controls")
+    .update({
+      restriction_threshold: restrictionThreshold,
+      restrictions_enabled: input.restrictionsEnabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error("Unable to update parental restriction settings.");
+  }
+
   return {
-    failedAttempts: record?.failed_attempts ?? 0,
-    hasPin: Boolean(record),
-    lockedUntil: record?.locked_until ?? null,
+    ...formatStatus(data),
+    success: true,
+    status: "updated",
+  };
+}
+
+export async function updateGuestParentalRestrictionSettings({
+  guestCredential,
+  restrictionThreshold,
+  restrictionsEnabled,
+  supabase,
+}: {
+  guestCredential?: string | null;
+  restrictionThreshold?: ParentalRestrictionThreshold | null;
+  restrictionsEnabled: boolean;
+  supabase?: SupabaseClient<Database>;
+}): Promise<ParentalControlMutationResult> {
+  const client = await getSupabase(supabase);
+  const credential = guestCredential?.trim() || null;
+  const record = credential ? await getGuestRecordByCredential(credential, client) : null;
+
+  if (!record) {
+    return {
+      ...emptyStatus(),
+      success: false,
+      status: "not_configured",
+    };
+  }
+
+  const nextThreshold = restrictionsEnabled
+    ? normalizeRestrictionThreshold(restrictionThreshold)
+    : normalizeRestrictionThreshold(restrictionThreshold);
+
+  if (restrictionsEnabled && !nextThreshold) {
+    return {
+      ...formatStatus(record),
+      success: false,
+      status: "invalid_threshold",
+    };
+  }
+
+  const { data, error } = await client
+    .from("guest_parental_controls")
+    .update({
+      restriction_threshold: nextThreshold,
+      restrictions_enabled: restrictionsEnabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", record.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error("Unable to update guest parental restriction settings.");
+  }
+
+  return {
+    ...formatStatus(data),
+    success: true,
+    status: "updated",
   };
 }
 
@@ -391,9 +539,7 @@ export async function verifyRegisteredParentalPin(
 
   if (!normalizedPin) {
     return {
-      failedAttempts: 0,
-      hasPin: false,
-      lockedUntil: null,
+      ...emptyStatus(),
       success: false,
       status: "invalid_pin",
     };
@@ -404,9 +550,7 @@ export async function verifyRegisteredParentalPin(
 
   if (!record) {
     return {
-      failedAttempts: 0,
-      hasPin: false,
-      lockedUntil: null,
+      ...emptyStatus(),
       success: false,
       status: "not_configured",
     };
@@ -414,9 +558,7 @@ export async function verifyRegisteredParentalPin(
 
   if (isLocked(record)) {
     return {
-      failedAttempts: record.failed_attempts,
-      hasPin: true,
-      lockedUntil: record.locked_until,
+      ...formatStatus(record),
       success: false,
       status: "locked",
     };
@@ -448,8 +590,8 @@ export async function verifyRegisteredParentalPin(
   const parentalSession = await issueParentalSession({ userId, supabase: client });
 
   return {
+    ...formatStatus(record),
     failedAttempts: 0,
-    hasPin: true,
     lockedUntil: null,
     expiresAt: parentalSession.expiresAt,
     parentalSessionToken: parentalSession.parentalSessionToken,
@@ -468,9 +610,7 @@ export async function setRegisteredParentalPin(
 
   if (!normalizedPin) {
     return {
-      failedAttempts: 0,
-      hasPin: false,
-      lockedUntil: null,
+      ...emptyStatus(),
       success: false,
       status: "invalid_pin",
     };
@@ -481,9 +621,7 @@ export async function setRegisteredParentalPin(
 
   if (record && isLocked(record)) {
     return {
-      failedAttempts: record.failed_attempts,
-      hasPin: true,
-      lockedUntil: record.locked_until,
+      ...formatStatus(record),
       success: false,
       status: "locked",
     };
@@ -502,9 +640,7 @@ export async function setRegisteredParentalPin(
       }
     } else if (!isFreshOtpReauth(user)) {
       return {
-        failedAttempts: record.failed_attempts,
-        hasPin: true,
-        lockedUntil: record.locked_until,
+        ...formatStatus(record),
         success: false,
         status: "reauth_required",
       };
@@ -543,9 +679,7 @@ export async function setGuestParentalPin({
 
   if (!normalizedPin) {
     return {
-      failedAttempts: 0,
-      hasPin: false,
-      lockedUntil: null,
+      ...emptyStatus(),
       success: false,
       status: "invalid_pin",
     };
@@ -558,9 +692,7 @@ export async function setGuestParentalPin({
   if (mode === "verify") {
     if (!record) {
       return {
-        failedAttempts: 0,
-        hasPin: false,
-        lockedUntil: null,
+        ...emptyStatus(),
         success: false,
         status: "not_configured",
       };
@@ -568,9 +700,7 @@ export async function setGuestParentalPin({
 
     if (isLocked({ locked_until: record.locked_until })) {
       return {
-        failedAttempts: record.failed_attempts,
-        hasPin: true,
-        lockedUntil: record.locked_until,
+        ...formatStatus(record),
         success: false,
         status: "locked",
       };
@@ -594,8 +724,8 @@ export async function setGuestParentalPin({
     });
 
     return {
+      ...formatStatus(record),
       failedAttempts: 0,
-      hasPin: true,
       lockedUntil: null,
       expiresAt: parentalSession.expiresAt,
       parentalSessionToken: parentalSession.parentalSessionToken,
@@ -607,9 +737,7 @@ export async function setGuestParentalPin({
   if (record) {
     if (!currentPin) {
       return {
-        failedAttempts: record.failed_attempts,
-        hasPin: true,
-        lockedUntil: record.locked_until,
+        ...formatStatus(record),
         success: false,
         status: "reauth_required",
       };
@@ -617,9 +745,7 @@ export async function setGuestParentalPin({
 
     if (isLocked({ locked_until: record.locked_until })) {
       return {
-        failedAttempts: record.failed_attempts,
-        hasPin: true,
-        lockedUntil: record.locked_until,
+        ...formatStatus(record),
         success: false,
         status: "locked",
       };
@@ -643,8 +769,8 @@ export async function setGuestParentalPin({
     });
 
     return {
+      ...formatStatus(record),
       failedAttempts: 0,
-      hasPin: true,
       lockedUntil: null,
       expiresAt: parentalSession.expiresAt,
       parentalSessionToken: parentalSession.parentalSessionToken,
@@ -670,6 +796,8 @@ export async function setGuestParentalPin({
     guestCredential: guestCredentialValue,
     hasPin: true,
     lockedUntil: null,
+    restrictionsEnabled: false,
+    restrictionThreshold: null,
     expiresAt: parentalSession.expiresAt,
     parentalSessionToken: parentalSession.parentalSessionToken,
     success: true,

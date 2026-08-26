@@ -321,6 +321,24 @@ export function saveParentalControlPin(
   });
 }
 
+export function saveParentalRestrictionSettings(
+  accessToken: string | null,
+  body: {
+    guestCredential?: string | null;
+    restrictionsEnabled: boolean;
+    restrictionThreshold?: "U/A 13+" | "U/A 16+" | null;
+  },
+) {
+  return requestApi<ParentalControlActionResponse>("/api/v1/account/parental-controls", {
+    accessToken,
+    body: {
+      ...body,
+      mode: "settings",
+    },
+    method: "POST",
+  });
+}
+
 export function authorizePlayback(
   accessToken: string | null | undefined,
   body: PlaybackAuthorizationRequest & PlaybackAuthorizationAuth,

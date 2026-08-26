@@ -5,14 +5,19 @@ import {
   getParentalControlStatus,
   setGuestParentalPin,
   setRegisteredParentalPin,
+  updateGuestParentalRestrictionSettings,
+  updateRegisteredParentalRestrictionSettings,
   verifyRegisteredParentalPin,
+  type ParentalRestrictionThreshold,
 } from "@/lib/parental-controls";
 
 type ParentalControlActionBody = {
   currentPin?: string;
   guestCredential?: string;
-  mode?: "set" | "verify";
+  mode?: "set" | "settings" | "verify";
   pin?: string;
+  restrictionsEnabled?: boolean;
+  restrictionThreshold?: ParentalRestrictionThreshold | null;
 };
 
 export async function GET(request: Request) {
@@ -34,11 +39,32 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as ParentalControlActionBody;
 
+  const mode = body.mode ?? "set";
+
+  if (mode === "settings") {
+    if (typeof body.restrictionsEnabled !== "boolean") {
+      return errorResponse("invalid_request", "Restriction state is required.", 400);
+    }
+
+    if (auth.user) {
+      const result = await updateRegisteredParentalRestrictionSettings(auth.user.id, {
+        restrictionsEnabled: body.restrictionsEnabled,
+        restrictionThreshold: body.restrictionThreshold ?? null,
+      });
+      return dataResponse(result);
+    }
+
+    const result = await updateGuestParentalRestrictionSettings({
+      guestCredential: body.guestCredential ?? null,
+      restrictionsEnabled: body.restrictionsEnabled,
+      restrictionThreshold: body.restrictionThreshold ?? null,
+    });
+    return dataResponse(result);
+  }
+
   if (!body.pin || body.pin.length !== 4 || !/^\d{4}$/.test(body.pin)) {
     return errorResponse("invalid_request", "A 4-digit PIN is required.", 400);
   }
-
-  const mode = body.mode ?? "set";
 
   if (auth.user) {
     if (mode === "verify") {

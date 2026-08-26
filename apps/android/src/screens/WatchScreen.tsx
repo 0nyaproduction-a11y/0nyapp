@@ -12,6 +12,7 @@ import {
   getParentalScope,
   isParentalSessionUnlocked,
   loadParentalControls,
+  shouldRequireParentalGate,
 } from "../lib/parentalControls";
 import type { RootStackParamList } from "../navigation/types";
 import { PlayerScreen } from "../player/PlayerScreen";
@@ -81,7 +82,9 @@ export function WatchScreen({ navigation, route }: Props) {
   const accessTokenReady = !accessToken || loadedProgressToken === accessToken;
   const isSlateAcknowledged = currentTargetKey ? acknowledgedTargetKey === currentTargetKey : false;
   const isBlockedTarget = currentTargetKey ? blockedTargetKey === currentTargetKey : false;
-  const hasConfiguredParentalLock = parentalControlState?.hasPin ?? false;
+  const requiresParentalGateForClassification = classification
+    ? shouldRequireParentalGate(classification.contentRating, parentalControlState)
+    : false;
   // A content_rating/descriptor value alone is display-only classification, not
   // proof a blocking gate is required. This mirrors the authoritative backend
   // truth in src/lib/playback.ts loadEpisodePlaybackContext(): age verification
@@ -91,7 +94,7 @@ export function WatchScreen({ navigation, route }: Props) {
     classification &&
       (classification.ageVerificationRequired ||
         (classification.parentalLockRequired &&
-          hasConfiguredParentalLock &&
+          requiresParentalGateForClassification &&
           !isParentalSessionUnlocked(parentalScope))),
   );
   const shouldShowSlate = Boolean(
@@ -164,8 +167,7 @@ export function WatchScreen({ navigation, route }: Props) {
       const nextClassification = resolveEffectiveEpisodeClassification(targetSeries, episode);
       const hasLockedPreview = !access.canWatch && episode.lockedPreviewSeconds > 0;
       const requiresNextParentalGate = Boolean(
-        nextClassification.parentalLockRequired &&
-          hasConfiguredParentalLock &&
+        shouldRequireParentalGate(nextClassification.contentRating, parentalControlState) &&
           !isParentalSessionUnlocked(parentalScope),
       );
 
@@ -221,10 +223,10 @@ export function WatchScreen({ navigation, route }: Props) {
     },
     [
       activateTarget,
-      hasConfiguredParentalLock,
       navigation,
       openEpisodeAccessOptionsFor,
       parentalScope,
+      parentalControlState,
       targetEpisodeAccess,
       targetSeries,
     ],
@@ -379,7 +381,7 @@ export function WatchScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (playback.status === "parental_required" && hasConfiguredParentalLock) {
+    if (playback.status === "parental_required" && parentalControlState?.hasPin) {
       navigation.replace("ParentalControls", {
         mode: "unlock",
         target: {
@@ -401,8 +403,8 @@ export function WatchScreen({ navigation, route }: Props) {
     }
   }, [
     openEpisodeAccessOptions,
-    hasConfiguredParentalLock,
     navigation,
+    parentalControlState?.hasPin,
     playback.status,
     route.params.resumeAtSeconds,
     targetAccess,
@@ -446,7 +448,10 @@ export function WatchScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (classification.parentalLockRequired && hasConfiguredParentalLock) {
+    if (
+      classification.parentalLockRequired &&
+      shouldRequireParentalGate(classification.contentRating, parentalControlState)
+    ) {
       if (!isParentalSessionUnlocked(parentalScope)) {
         const unlockTargetScreen =
           targetAccess.canWatch || shouldUsePreview ? "Watch" : "EpisodeAccessOptions";
@@ -501,8 +506,8 @@ export function WatchScreen({ navigation, route }: Props) {
   }, [
     classification,
     currentTargetKey,
-    hasConfiguredParentalLock,
     navigation,
+    parentalControlState,
     targetAccess,
     targetEpisode,
     targetEpisodeAccess,

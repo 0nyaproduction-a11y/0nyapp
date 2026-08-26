@@ -11,6 +11,7 @@ import {
   getParentalScope,
   isParentalSessionUnlocked,
   loadParentalControls,
+  shouldRequireParentalGate,
 } from "../lib/parentalControls";
 import { useAuth } from "../lib/authContext";
 import { getResumePositionSeconds } from "../player/resumePosition";
@@ -79,6 +80,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (!hasValidSlug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- invalid route recovery boundary.
       setError("This short film link is unavailable.");
       setIsLoading(false);
       setShortFilm(null);
@@ -87,7 +89,6 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
 
     let isMounted = true;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch lifecycle boundary.
     setIsLoading(true);
     setResumeAtSeconds(null);
 
@@ -142,6 +143,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
     let isMounted = true;
 
     if (!hasValidSlug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- invalid route recovery boundary.
       setRelatedShortFilms([]);
       return undefined;
     }
@@ -170,7 +172,10 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
   const classification = shortFilm
     ? formatClassification(shortFilm.contentRating, shortFilm.contentDescriptors)
     : null;
-  const hasConfiguredParentalLock = parentalControlState?.hasPin ?? false;
+  const shouldGateForParentalRestrictions = shouldRequireParentalGate(
+    shortFilm?.contentRating ?? null,
+    parentalControlState,
+  );
   const poster = resolveShortFilmArtwork(shortFilm?.heroImage, shortFilm?.poster);
   const posterUri = poster ?? "";
   const canPlayFilm = Boolean(shortFilm && (__DEV__ || shortFilm.playbackReady));
@@ -206,7 +211,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (shortFilm.parentalLockRequired && hasConfiguredParentalLock && !isSessionUnlocked) {
+    if (shortFilm.parentalLockRequired && shouldGateForParentalRestrictions && !isSessionUnlocked) {
       navigation.navigate("ParentalControls", {
         mode: "unlock",
         target: {
@@ -225,7 +230,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
       resumeAtSeconds: resumeAtSeconds ?? undefined,
       slug: shortFilm.slug,
     });
-  }, [canPlayFilm, hasConfiguredParentalLock, isSessionUnlocked, navigation, resumeAtSeconds, shortFilm]);
+  }, [canPlayFilm, isSessionUnlocked, navigation, resumeAtSeconds, shouldGateForParentalRestrictions, shortFilm]);
 
   if (!hasValidSlug) {
     return (

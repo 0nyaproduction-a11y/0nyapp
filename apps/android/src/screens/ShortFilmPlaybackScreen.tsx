@@ -8,6 +8,7 @@ import {
   getParentalScope,
   isParentalSessionUnlocked,
   loadParentalControls,
+  shouldRequireParentalGate,
 } from "../lib/parentalControls";
 import { useAuth } from "../lib/authContext";
 import { PlayerScreen } from "../player/PlayerScreen";
@@ -35,6 +36,10 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const didOpenEndScreenRef = useRef(false);
+  const shouldGateForParentalRestrictions = shouldRequireParentalGate(
+    shortFilm?.contentRating ?? null,
+    parentalControlState,
+  );
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -44,7 +49,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     if (
       !shortFilm ||
       !shortFilm.parentalLockRequired ||
-      !parentalControlState?.hasPin ||
+      !shouldGateForParentalRestrictions ||
       isSessionUnlocked
     ) {
       return;
@@ -61,7 +66,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
         },
       },
     });
-  }, [isSessionUnlocked, navigation, parentalControlState?.hasPin, route.params.resumeAtSeconds, shortFilm, shouldStartFromBeginning]);
+  }, [isSessionUnlocked, navigation, route.params.resumeAtSeconds, shouldGateForParentalRestrictions, shortFilm, shouldStartFromBeginning]);
 
   useEffect(() => {
     didOpenEndScreenRef.current = false;
@@ -77,6 +82,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (!hasValidSlug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- invalid route recovery boundary.
       setError("This short film link is unavailable.");
       setShortFilm(null);
       setIsLoading(false);
@@ -85,7 +91,6 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
 
     let isMounted = true;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch lifecycle boundary.
     setIsLoading(true);
     setSavedProgress(undefined);
 
@@ -260,7 +265,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     );
   }
 
-  if (shortFilm.parentalLockRequired && parentalControlState?.hasPin && !isSessionUnlocked) {
+  if (shortFilm.parentalLockRequired && shouldGateForParentalRestrictions && !isSessionUnlocked) {
     return (
       <Screen>
         <LoadingState />

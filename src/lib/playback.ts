@@ -1,7 +1,12 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizeContentDescriptors, normalizeContentRating, resolveContentClassification } from "@/lib/classification";
+import {
+  normalizeContentDescriptors,
+  normalizeContentRating,
+  resolveContentClassification,
+  type ContentRating,
+} from "@/lib/classification";
 import { canUserWatchEpisode, resolvePlaybackMaxResolution } from "@/lib/entitlements";
 import {
   createMuxPreviewClip,
@@ -11,6 +16,7 @@ import {
 import {
   getGuestParentalControlStatus,
   getParentalControlStatus,
+  type ParentalControlStatus,
   validateParentalSessionProof,
 } from "@/lib/parental-controls";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -119,18 +125,38 @@ function resolveEpisodeClassification(series: SeriesRow, episode: EpisodeRow) {
   );
 }
 
-async function hasConfiguredParentalLock(auth: PlaybackAuthContext) {
-  if (auth.userId) {
-    const status = await getParentalControlStatus(auth.userId);
-    return status.hasPin;
-  }
+const PARENTAL_RATING_ORDER: Record<Exclude<ContentRating, "A">, number> = {
+  U: 0,
+  "U/A 7+": 1,
+  "U/A 13+": 2,
+  "U/A 16+": 3,
+};
 
-  if (!auth.guestCredential?.trim()) {
+function meetsParentalRestrictionThreshold(
+  contentRating: ContentRating | null,
+  status: ParentalControlStatus,
+) {
+  if (!status.restrictionsEnabled || !status.restrictionThreshold || contentRating === "A") {
     return false;
   }
 
-  const status = await getGuestParentalControlStatus(auth.guestCredential);
-  return status.hasPin;
+  if (!contentRating) {
+    return false;
+  }
+
+  return PARENTAL_RATING_ORDER[contentRating] >= PARENTAL_RATING_ORDER[status.restrictionThreshold];
+}
+
+async function loadParentalControlStatus(auth: PlaybackAuthContext) {
+  if (auth.userId) {
+    return getParentalControlStatus(auth.userId);
+  }
+
+  if (!auth.guestCredential?.trim()) {
+    return null;
+  }
+
+  return getGuestParentalControlStatus(auth.guestCredential);
 }
 
 type LoadedEpisodePlaybackContext =
@@ -181,9 +207,12 @@ async function loadEpisodePlaybackContext(
   }
 
   if (classification.parentalLockRequired) {
-    const parentalLockConfigured = await hasConfiguredParentalLock(auth);
+    const parentalControlStatus = await loadParentalControlStatus(auth);
 
-    if (parentalLockConfigured) {
+    if (
+      parentalControlStatus?.hasPin &&
+      meetsParentalRestrictionThreshold(classification.contentRating, parentalControlStatus)
+    ) {
       if (!auth.parentalSessionToken?.trim()) {
         return { status: "parental_required" };
       }
@@ -462,9 +491,12 @@ async function resolveShortFilmPlayback(
   }
 
   if (classification.parentalLockRequired) {
-    const parentalLockConfigured = await hasConfiguredParentalLock(auth);
+    const parentalControlStatus = await loadParentalControlStatus(auth);
 
-    if (parentalLockConfigured) {
+    if (
+      parentalControlStatus?.hasPin &&
+      meetsParentalRestrictionThreshold(classification.contentRating, parentalControlStatus)
+    ) {
       if (!auth.parentalSessionToken?.trim()) {
         return { status: "parental_required" };
       }
