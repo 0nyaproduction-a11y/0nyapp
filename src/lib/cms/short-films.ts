@@ -6,6 +6,7 @@ import {
   type ContentDescriptor,
   type ContentRating,
 } from "@/lib/classification";
+import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
 import { cleanupMediaAssetsAfterContentDeletion } from "@/lib/cms/media";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
@@ -331,7 +332,16 @@ export async function deleteShortFilm(id: string): Promise<ShortFilmDeleteResult
   }
 
   const shortFilm = preview.shortFilm;
+  const cleanupArtworkWarnings = await cleanupArtworkObjectsAfterContentDeletion([
+    shortFilm.poster_url,
+    shortFilm.hero_image_url,
+  ]);
   const cleanupWarnings = await cleanupMediaAssetsAfterContentDeletion([shortFilm.media_asset_id ?? ""]);
 
-  return { success: true, shortFilmId: id, slug: shortFilm.slug, cleanupWarnings };
+  return {
+    success: true,
+    shortFilmId: id,
+    slug: shortFilm.slug,
+    cleanupWarnings: [...cleanupArtworkWarnings, ...cleanupWarnings],
+  };
 }

@@ -95,7 +95,12 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     }
 
     revalidatePath(episodeEditPath(seriesId, episodeId));
-    return { errors: {} };
+    return {
+      errors: {},
+      // eslint-disable-next-line react-hooks/purity -- Server action response marker, not render output.
+      submittedAt: Date.now(),
+      submitMode: String(formData.get("submitMode") ?? "save"),
+    };
   }
 
   async function updateStatusAction(formData: FormData) {

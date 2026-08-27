@@ -7,6 +7,12 @@ import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS, type ContentRating } from "@/lib/classification";
 import { episodeEditPath } from "@/lib/routes";
 import type { MediaUploadIntent } from "@/components/cms/MediaDirectUploadField";
+import {
+  createUploadProgressState,
+  formatUploadBytes,
+  formatUploadProgressBytes,
+  type UploadProgressState,
+} from "@/lib/cms/upload-progress";
 import type {
   BulkEpisodeCreateInput,
   BulkEpisodeCreateResult,
@@ -43,6 +49,7 @@ type BulkEpisodeRow = {
   mimeType: string;
   orientationLabel: string;
   mediaAssetId: string | null;
+  uploadProgress: UploadProgressState | null;
   progress: number;
   status: BulkEpisodeStatus;
   title: string;
@@ -204,6 +211,7 @@ function normalizeFileList(files: File[], startEpisodeNumber: number) {
       metadataStatus: "pending" as const,
       mimeType: file.type || "video/*",
       mediaAssetId: null,
+      uploadProgress: null,
       progress: 0,
       status: "waiting" as const,
       title: buildAutoTitle(episodeNumber),
@@ -267,7 +275,11 @@ function probeVideoMetadata(file: File) {
   });
 }
 
-function uploadToMux(uploadUrl: string, file: File, onProgress: (progress: number) => void) {
+function uploadToMux(
+  uploadUrl: string,
+  file: File,
+  onProgress: (progress: UploadProgressState) => void,
+) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
@@ -275,7 +287,7 @@ function uploadToMux(uploadUrl: string, file: File, onProgress: (progress: numbe
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
+        onProgress(createUploadProgressState(event.loaded, event.total));
       }
     };
     xhr.onload = () => {
@@ -370,6 +382,48 @@ export function BulkEpisodeUploadForm({
     );
   }, [rows]);
 
+  const uploadSummary = useMemo(() => {
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.totalBytes += row.file.size;
+
+        if (row.status === "ready" || row.status === "processing") {
+          acc.loadedBytes += row.file.size;
+        } else if (row.uploadProgress) {
+          acc.loadedBytes += row.uploadProgress.loadedBytes;
+        }
+
+        if (row.status === "uploading") {
+          acc.activeUploads += 1;
+        } else if (row.status === "processing") {
+          acc.processingUploads += 1;
+        } else if (row.status === "ready") {
+          acc.readyUploads += 1;
+        } else if (row.status === "failed") {
+          acc.failedUploads += 1;
+        } else {
+          acc.waitingUploads += 1;
+        }
+
+        return acc;
+      },
+      {
+        activeUploads: 0,
+        failedUploads: 0,
+        loadedBytes: 0,
+        processingUploads: 0,
+        readyUploads: 0,
+        totalBytes: 0,
+        waitingUploads: 0,
+      },
+    );
+
+    return {
+      ...totals,
+      percentage: totals.totalBytes > 0 ? Math.min(100, Math.round((totals.loadedBytes / totals.totalBytes) * 100)) : 0,
+    };
+  }, [rows]);
+
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = "";
@@ -442,7 +496,7 @@ export function BulkEpisodeUploadForm({
       let episodeId = row.episodeId;
 
       if (!episodeId) {
-        updateRowState(index, { error: null, progress: 0, status: "creating" });
+        updateRowState(index, { error: null, progress: 0, status: "creating", uploadProgress: null });
         const created = await createEpisodeAction({
           episodeNumber: row.episodeNumber,
           title: row.title,
@@ -461,9 +515,10 @@ export function BulkEpisodeUploadForm({
           episodeId,
           error: null,
           status: "uploading",
+          uploadProgress: null,
         });
       } else {
-        updateRowState(index, { error: null, progress: 0, status: "uploading" });
+        updateRowState(index, { error: null, progress: 0, status: "uploading", uploadProgress: null });
       }
 
       const intent = await requestUploadAction(row.file.type || "video/mp4", window.location.origin);
@@ -473,13 +528,21 @@ export function BulkEpisodeUploadForm({
         return;
       }
 
-      updateRowState(index, { mediaAssetId: intent.mediaAssetId, status: "uploading" });
-
-      await uploadToMux(intent.uploadUrl, row.file, (progress) => {
-        updateRowState(index, { progress, status: "uploading" });
+      updateRowState(index, {
+       mediaAssetId: intent.mediaAssetId,
+       status: "uploading",
+       uploadProgress: { loadedBytes: 0, totalBytes: row.file.size, percentage: 0 },
       });
 
-      updateRowState(index, { progress: 100, status: "processing" });
+      await uploadToMux(intent.uploadUrl, row.file, (progress) => {
+       updateRowState(index, { progress: progress.percentage, status: "uploading", uploadProgress: progress });
+      });
+
+      updateRowState(index, {
+       progress: 100,
+       status: "processing",
+       uploadProgress: { loadedBytes: row.file.size, totalBytes: row.file.size, percentage: 100 },
+      });
 
       const finalize = await finalizeUploadAction({
         episodeId,
@@ -498,6 +561,7 @@ export function BulkEpisodeUploadForm({
         error: null,
         mediaAssetId: intent.mediaAssetId,
         status: finalize.mediaStatus === "ready" ? "ready" : "processing",
+        uploadProgress: { loadedBytes: row.file.size, totalBytes: row.file.size, percentage: 100 },
       });
     } catch (uploadError) {
       updateRowState(index, {
@@ -866,6 +930,30 @@ export function BulkEpisodeUploadForm({
             </div>
           </div>
 
+          <div className="space-y-2 border border-bone/10 bg-bone/[0.02] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
+                  {uploadSummary.activeUploads > 0
+                    ? "Upload in progress — do not close this page"
+                    : uploadSummary.processingUploads > 0
+                      ? "Upload complete"
+                      : "Batch ready"}
+                </p>
+                <p className="text-sm text-bone/70">
+                  {uploadSummary.readyUploads} ready · {uploadSummary.processingUploads} processing · {uploadSummary.failedUploads} failed
+                </p>
+              </div>
+              <div className="text-right text-xs text-bone/60">
+                <div>{formatUploadBytes(uploadSummary.loadedBytes)} / {formatUploadBytes(uploadSummary.totalBytes)}</div>
+                <div>{uploadSummary.percentage}%</div>
+              </div>
+            </div>
+            <div className="h-1.5 overflow-hidden bg-bone/10">
+              <div className="h-full bg-teal transition-all" style={{ width: `${uploadSummary.percentage}%` }} />
+            </div>
+          </div>
+
           <div className="overflow-x-auto border border-bone/10">
             <table className="min-w-[1180px] w-full border-collapse text-left text-sm">
               <thead className="bg-bone/[0.03] text-xs uppercase tracking-[0.14em] text-bone/50">
@@ -957,10 +1045,23 @@ export function BulkEpisodeUploadForm({
                       </td>
                       <td className="px-4 py-4 text-xs">
                         <div className="font-mono uppercase tracking-[0.14em] text-bone/70">{row.status}</div>
-                        {row.progress > 0 && row.status === "uploading" && (
-                          <div className="mt-2 h-1.5 overflow-hidden bg-bone/10">
-                            <div className="h-full bg-teal transition-all" style={{ width: `${row.progress}%` }} />
+                        {row.status === "uploading" && row.uploadProgress && (
+                          <div className="mt-2 space-y-1">
+                            <div className="text-teal">
+                              {row.uploadProgress.percentage}% · {formatUploadProgressBytes(row.uploadProgress)}
+                            </div>
+                            <div className="h-1.5 overflow-hidden bg-bone/10">
+                              <div className="h-full bg-teal transition-all" style={{ width: `${row.uploadProgress.percentage}%` }} />
+                            </div>
                           </div>
+                        )}
+                        {row.status === "processing" && row.uploadProgress && (
+                          <p className="mt-2 text-bone/60">{formatUploadProgressBytes(row.uploadProgress)} · Processing</p>
+                        )}
+                        {row.status === "failed" && row.uploadProgress && (
+                          <p className="mt-2 text-red-400">
+                            Failed at {row.uploadProgress.percentage}% · {formatUploadProgressBytes(row.uploadProgress)}
+                          </p>
                         )}
                         {row.error && <p className="mt-2 max-w-xs text-red-400">{row.error}</p>}
                       </td>

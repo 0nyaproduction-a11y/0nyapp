@@ -31,6 +31,10 @@ function isVideoMimeType(mimeType: string) {
   return mimeType.trim().startsWith("video/");
 }
 
+function sanitizeCmsUploadError(message: string) {
+  return message.replace(/https?:\/\/\S+/g, "[url-redacted]");
+}
+
 function normalizeMediaAssetIds(mediaAssetIds: string[]) {
   return Array.from(
     new Set(
@@ -45,6 +49,34 @@ async function mediaAssetHasRemainingReferences(mediaAssetId: string) {
   const supabase = getAdminClient();
   const [episodeMediaResult, episodePreviewResult, shortFilmResult, derivedAssetResult] = await Promise.all([
     supabase.from("episodes").select("id").eq("media_asset_id", mediaAssetId).limit(1),
+    supabase.from("episodes").select("id").eq("preview_media_asset_id", mediaAssetId).limit(1),
+    supabase.from("short_films").select("id").eq("media_asset_id", mediaAssetId).limit(1),
+    supabase.from("media_assets").select("id").eq("source_media_asset_id", mediaAssetId).limit(1),
+  ]);
+
+  if (
+    episodeMediaResult.error ||
+    episodePreviewResult.error ||
+    shortFilmResult.error ||
+    derivedAssetResult.error
+  ) {
+    return { error: true as const, referenced: false };
+  }
+
+  return {
+    error: false as const,
+    referenced:
+      (episodeMediaResult.data ?? []).length > 0 ||
+      (episodePreviewResult.data ?? []).length > 0 ||
+      (shortFilmResult.data ?? []).length > 0 ||
+      (derivedAssetResult.data ?? []).length > 0,
+  };
+}
+
+async function mediaAssetHasReferencesOutsideEpisode(mediaAssetId: string, episodeId: string) {
+  const supabase = getAdminClient();
+  const [episodeMediaResult, episodePreviewResult, shortFilmResult, derivedAssetResult] = await Promise.all([
+    supabase.from("episodes").select("id").eq("media_asset_id", mediaAssetId).neq("id", episodeId).limit(1),
     supabase.from("episodes").select("id").eq("preview_media_asset_id", mediaAssetId).limit(1),
     supabase.from("short_films").select("id").eq("media_asset_id", mediaAssetId).limit(1),
     supabase.from("media_assets").select("id").eq("source_media_asset_id", mediaAssetId).limit(1),
@@ -173,6 +205,80 @@ export async function listReadyMediaAssetsForAdmin(): Promise<MediaAssetRow[]> {
   return data;
 }
 
+// "Orphaned" = not yet referenced by any episode/short film (episodes.media_asset_id,
+// episodes.preview_media_asset_id, short_films.media_asset_id). These are rows created
+// by a direct-upload intent whose original page (e.g. a temporary batch intake flow)
+// was left before the upload finished processing/being assigned, so nothing else in
+// the CMS currently tracks or re-checks them.
+export async function listOrphanedProcessingMediaAssetsForAdmin(): Promise<MediaAssetRow[]> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .in("status", ["pending", "processing"])
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    return [];
+  }
+
+  const orphaned: MediaAssetRow[] = [];
+
+  for (const mediaAsset of data) {
+    const referenceState = await mediaAssetHasRemainingReferences(mediaAsset.id);
+
+    if (!referenceState.error && !referenceState.referenced) {
+      orphaned.push(mediaAsset);
+    }
+  }
+
+  return orphaned;
+}
+
+export type OrphanedMediaReconciliationSummary = {
+  becameFailed: number;
+  becameReady: number;
+  checked: number;
+  stillProcessing: number;
+};
+
+// Reuses the existing Mux reconciliation path (reconcileMuxMediaAssetState) for
+// every currently-orphaned pending/processing media_assets row. Does not create any
+// new Mux upload/asset and does not assign anything to an episode/short film — it
+// only lets stuck rows catch up to their real, current Mux status so the existing
+// "Ready media asset" picker can then be used to assign them manually.
+export async function reconcileOrphanedProcessingMediaAssets(): Promise<OrphanedMediaReconciliationSummary> {
+  const supabase = getAdminClient();
+  const orphaned = await listOrphanedProcessingMediaAssetsForAdmin();
+
+  const summary: OrphanedMediaReconciliationSummary = {
+    becameFailed: 0,
+    becameReady: 0,
+    checked: 0,
+    stillProcessing: 0,
+  };
+
+  for (const mediaAsset of orphaned) {
+    summary.checked += 1;
+
+    const reconciliation = await reconcileMuxMediaAssetState(mediaAsset.id, supabase);
+
+    if (reconciliation.status !== "updated") {
+      continue;
+    }
+
+    if (reconciliation.mediaStatus === "ready") {
+      summary.becameReady += 1;
+    } else if (reconciliation.mediaStatus === "failed") {
+      summary.becameFailed += 1;
+    } else {
+      summary.stillProcessing += 1;
+    }
+  }
+
+  return summary;
+}
+
 export async function createMediaUploadIntent(
   mimeType: string,
   corsOriginOverride?: string | null,
@@ -206,6 +312,13 @@ export async function createMediaUploadIntent(
     };
   } catch (error) {
     const failureMessage = error instanceof Error ? error.message : "Unable to create the direct upload.";
+
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[0nya cms mux upload]", {
+        event: "prepare_upload_failed",
+        reason: sanitizeCmsUploadError(failureMessage),
+      });
+    }
 
     await supabase
       .from("media_assets")
@@ -283,6 +396,75 @@ export async function assignEpisodeMediaAsset(episodeId: string, mediaAssetId: s
 
   if (updateError) {
     throw new Error("Unable to assign the media asset to the episode.");
+  }
+
+  return { episodeId: episode.id, mediaAssetId: mediaAsset.id, updated: true as const };
+}
+
+export async function attachEpisodeMediaUploadIntent(episodeId: string, mediaAssetId: string) {
+  const supabase = getAdminClient();
+  const normalizedEpisodeId = episodeId.trim();
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  if (!normalizedEpisodeId) {
+    throw new Error("Episode ID is required.");
+  }
+
+  if (!normalizedMediaAssetId) {
+    throw new Error("Media asset ID is required.");
+  }
+
+  const [{ data: episode, error: episodeError }, { data: mediaAsset, error: mediaAssetError }] =
+    await Promise.all([
+      supabase.from("episodes").select("id,media_asset_id").eq("id", normalizedEpisodeId).maybeSingle(),
+      supabase
+        .from("media_assets")
+        .select("id,provider_name,status")
+        .eq("id", normalizedMediaAssetId)
+        .maybeSingle(),
+    ]);
+
+  if (episodeError || !episode) {
+    throw new Error("Episode not found.");
+  }
+
+  if (mediaAssetError || !mediaAsset) {
+    throw new Error("Media asset not found.");
+  }
+
+  if (mediaAsset.provider_name !== "mux") {
+    throw new Error("Only Mux media assets can be attached to an episode upload.");
+  }
+
+  if (!["pending", "processing", "ready"].includes(mediaAsset.status)) {
+    throw new Error("Only active media uploads can be attached to an episode.");
+  }
+
+  if (episode.media_asset_id && episode.media_asset_id !== mediaAsset.id) {
+    throw new Error("Episode already has a different media asset assigned.");
+  }
+
+  const referenceState = await mediaAssetHasReferencesOutsideEpisode(mediaAsset.id, episode.id);
+
+  if (referenceState.error) {
+    throw new Error("Unable to verify whether the media asset is shared.");
+  }
+
+  if (referenceState.referenced) {
+    throw new Error("Media asset is already referenced by another content item.");
+  }
+
+  if (episode.media_asset_id === mediaAsset.id) {
+    return { episodeId: episode.id, mediaAssetId: mediaAsset.id, updated: false as const };
+  }
+
+  const { error: updateError } = await supabase
+    .from("episodes")
+    .update({ media_asset_id: mediaAsset.id })
+    .eq("id", episode.id);
+
+  if (updateError) {
+    throw new Error("Unable to attach the media upload to the episode.");
   }
 
   return { episodeId: episode.id, mediaAssetId: mediaAsset.id, updated: true as const };

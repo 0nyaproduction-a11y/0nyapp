@@ -4,15 +4,21 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
-import { SeriesStatusForm, type SeriesStatusFormState } from "@/components/cms/SeriesStatusForm";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
+import { SeriesEpisodeManager } from "@/components/cms/SeriesEpisodeManager";
+import { SeriesStatusForm, type SeriesStatusFormState } from "@/components/cms/SeriesStatusForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
+import { buildAccessSummary } from "@/lib/cms/constants";
 import {
+  archiveAllEpisodesForSeries,
   deleteAllEpisodesForSeries,
   getSeriesEpisodesDeletePreview,
   listEpisodesForSeries,
+  resolveEpisodeMediaReadiness,
+  updateEpisode,
 } from "@/lib/cms/episodes";
+import { reconcileOrphanedProcessingMediaAssets } from "@/lib/cms/media";
 import {
   getSeriesForAdminById,
   deleteSeries,
@@ -24,7 +30,18 @@ import {
   type SeriesStatus,
 } from "@/lib/cms/series";
 import { errorsToRecord, parseSeriesFormData, type SeriesFormState } from "@/lib/cms/series-form";
-import { homeListPath, episodeBulkUploadPath, episodeEditPath, episodeNewPath, seriesEditPath, seriesListPath, seriesPath } from "@/lib/routes";
+import { parseEpisodeFormData, type EpisodeFormState } from "@/lib/cms/episode-form";
+import {
+  episodeBulkUploadPath,
+  episodeEditPath,
+  episodeNewPath,
+  homeListPath,
+  purchaseEpisodePath,
+  seriesEditPath,
+  seriesListPath,
+  seriesPath,
+  watchEpisodePath,
+} from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -73,8 +90,57 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
   const errorMessage = typeof query.error === "string" ? query.error : null;
 
   const episodes = await listEpisodesForSeries(id);
+  const hasEpisodes = episodes.length > 0;
+  const hasUnassignedMediaEpisode = episodes.some((episode) => !episode.media_asset_id);
+  const episodeManagerRows = await Promise.all(
+    episodes.map(async (episode) => ({
+      episode,
+      action: buildEpisodeUpdateAction(episode.id),
+      fullPageHref: episodeEditPath(id, episode.id),
+      mediaReadiness: await resolveEpisodeMediaReadiness(episode),
+    })),
+  );
   const deleteEpisodesPreview = await getSeriesEpisodesDeletePreview(id);
   const deletePreview = await getSeriesDeletePreview(id);
+
+  function buildEpisodeUpdateAction(episodeId: string) {
+    return async function updateEpisodeReviewAction(
+      _prevState: EpisodeFormState,
+      formData: FormData,
+    ): Promise<EpisodeFormState> {
+      "use server";
+
+      const guard = await requireCmsAdmin(seriesEditPath(id));
+
+      if (guard.status === "forbidden") {
+        return { errors: { form: "You are not authorized to manage content." } };
+      }
+
+      const existing = episodes.find((episode) => episode.id === episodeId);
+
+      if (!existing) {
+        return { errors: { form: "Episode not found." } };
+      }
+
+      const input = parseEpisodeFormData(formData, existing.thumbnail_url);
+      const result = await updateEpisode(episodeId, input);
+
+      if (!result.success) {
+        return { errors: errorsToRecord(result.errors) };
+      }
+
+      revalidatePath(seriesEditPath(id));
+      revalidatePath(seriesPath(currentSeries.slug));
+      revalidatePath(watchEpisodePath(currentSeries.slug, existing.episode_number));
+      revalidatePath(purchaseEpisodePath(currentSeries.slug, existing.episode_number));
+      revalidatePath(episodeEditPath(id, episodeId));
+      return {
+        errors: {},
+        submittedAt: Date.now(),
+        submitMode: String(formData.get("submitMode") ?? "save"),
+      };
+    };
+  }
 
   async function updateSeriesAction(
     _prevState: SeriesFormState,
@@ -126,6 +192,14 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
       return { error: "Unsupported status." };
     }
 
+    if (status === "archived") {
+      const archiveResult = await archiveAllEpisodesForSeries(id);
+
+      if (!archiveResult.success) {
+        return { error: archiveResult.message };
+      }
+    }
+
     const result = await updateSeriesStatus(id, status as SeriesStatus);
 
     if (!result.success) {
@@ -143,7 +217,7 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     revalidatePath(seriesPath(result.series.slug));
     revalidatePath("/api/v1/catalog");
 
-    if (status === "published") {
+    if (status === "archived" || status === "published") {
       const refreshedEpisodes = await listEpisodesForSeries(id);
 
       for (const episode of refreshedEpisodes) {
@@ -154,6 +228,33 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     }
 
     redirect(seriesEditPath(id));
+  }
+
+  async function refreshProcessingMediaAction() {
+    "use server";
+
+    const guard = await requireCmsAdmin(seriesEditPath(id));
+
+    if (guard.status !== "authorized") {
+      return;
+    }
+
+    // Reuses the existing Mux reconciliation path only — does not create any new
+    // upload/asset and does not assign anything. It simply lets media_assets rows
+    // that were orphaned mid-batch (e.g. a temporary intake page was left before an
+    // upload finished) catch up to their real current Mux status, so a still-unassigned
+    // Episode's original upload can then be assigned via the existing "Ready media
+    // asset" picker on its edit page.
+    const summary = await reconcileOrphanedProcessingMediaAssets();
+
+    revalidatePath(seriesEditPath(id));
+
+    const message =
+      summary.checked === 0
+        ? "No orphaned processing uploads found."
+        : `Checked ${summary.checked} processing upload(s): ${summary.becameReady} became ready, ${summary.stillProcessing} still processing, ${summary.becameFailed} failed.`;
+
+    redirect(buildFlashUrl(seriesEditPath(id), "flash", message));
   }
 
   async function requestPosterUploadAction(mimeType: string) {
@@ -254,7 +355,11 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath(seriesPath(result.slug));
-    redirect(buildFlashUrl(seriesListPath, "flash", "Deleted series."));
+    const message =
+      result.cleanupWarnings.length > 0
+        ? `Deleted series, but ${result.cleanupWarnings.join(" ")}`
+        : "Deleted series.";
+    redirect(buildFlashUrl(seriesListPath, result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
   async function deleteAllEpisodesAction(
@@ -335,11 +440,12 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     revalidatePath(homeListPath);
     revalidatePath("/");
 
+    const cleanupWarnings = [...episodesResult.cleanupWarnings, ...seriesResult.cleanupWarnings];
     const message =
-      episodesResult.cleanupWarnings.length > 0
-        ? `Deleted the series and episodes, but ${episodesResult.cleanupWarnings.join(" ")}`
+      cleanupWarnings.length > 0
+        ? `Deleted the series and episodes, but ${cleanupWarnings.join(" ")}`
         : "Deleted the series and episodes.";
-    redirect(buildFlashUrl(seriesListPath, episodesResult.cleanupWarnings.length > 0 ? "error" : "flash", message));
+    redirect(buildFlashUrl(seriesListPath, cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
   return (
@@ -403,6 +509,13 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Episodes</h2>
             <div className="flex flex-wrap gap-2">
+              {hasUnassignedMediaEpisode && (
+                <form action={refreshProcessingMediaAction}>
+                  <Button type="submit" variant="secondary">
+                    Refresh processing uploads
+                  </Button>
+                </form>
+              )}
               <ButtonLink href={episodeBulkUploadPath(id)} variant="secondary">
                 Bulk upload episodes
               </ButtonLink>
@@ -425,12 +538,9 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
                 <div>
                   <p className="font-medium">
                     Episode {episode.episode_number}
-                    {episode.title ? ` � ${episode.title}` : ""}
+                    {episode.title ? ` — ${episode.title}` : ""}
                   </p>
-                  <p className="text-xs text-bone/50">
-                    {episode.is_free ? "Free" : `${episode.coin_price} coins`}
-                    {episode.plus_access ? " � Plus" : ""}
-                  </p>
+                  <p className="text-xs text-bone/50">{buildAccessSummary(episode)}</p>
                 </div>
                 <span
                   className={`border px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] ${EPISODE_STATUS_STYLES[episode.status] ?? EPISODE_STATUS_STYLES.draft}`}
@@ -443,36 +553,70 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
         </section>
 
         <section>
-          <DangerZoneDeleteForm
-            action={deleteAllEpisodesAction}
-            blockers={deleteEpisodesPreview.blockers}
-            confirmationValue={`DELETE ALL EPISODES ${currentSeries.slug}`}
-            description="This permanently removes every episode in the series and cleans up any exclusively owned Mux media."
-            submitLabel="Delete all episodes permanently"
-            title="Danger zone � Episodes"
-          />
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
+              Review episodes
+            </h2>
+            <p className="text-sm text-bone/60">
+              Configure access and metadata per episode before publishing.
+            </p>
+          </div>
+
+          <div className="mt-3 space-y-4">
+            {episodeManagerRows.length === 0 ? (
+              <p className="text-sm text-bone/60">No episodes yet.</p>
+            ) : (
+              <SeriesEpisodeManager
+                addEpisodeHref={episodeNewPath(id)}
+                bulkUploadHref={episodeBulkUploadPath(id)}
+                rows={episodeManagerRows}
+              />
+            )}
+          </div>
         </section>
 
-        <section>
-          <DangerZoneDeleteForm
-            action={deleteSeriesAndEpisodesAction}
-            blockers={deleteEpisodesPreview.episodeCount === 0 ? ["No episodes exist for this series."] : deleteEpisodesPreview.blockers}
-            confirmationValue={`DELETE SERIES AND EPISODES ${currentSeries.slug}`}
-            description="This permanently removes every episode in the series, then deletes the series record and any exclusively owned Mux media."
-            submitLabel="Delete series and episodes permanently"
-            title="Danger zone � Series + episodes"
-          />
-        </section>
+        <section className="border border-rose-500/25 bg-rose-500/[0.04] p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-rose-100">Danger zone</h2>
 
-        <section>
-          <DangerZoneDeleteForm
-            action={deleteSeriesAction}
-            blockers={deletePreview.blockers}
-            confirmationValue={currentSeries.slug}
-            description="This permanently removes the series after all episodes are gone. Linked home-row placements are cleaned up automatically."
-            submitLabel="Delete series permanently"
-            title="Danger zone"
-          />
+          {hasEpisodes ? (
+            <div className="mt-4 divide-y divide-rose-500/15">
+              <div className="py-4 first:pt-0 last:pb-0">
+                <DangerZoneDeleteForm
+                  variant="bare"
+                  action={deleteAllEpisodesAction}
+                  blockers={deleteEpisodesPreview.blockers}
+                  confirmationValue={`DELETE ALL EPISODES ${currentSeries.slug}`}
+                  description="Removes all deletable episodes and their exclusively owned Mux media. The series, metadata and artwork remain."
+                  submitLabel="Delete all episodes permanently"
+                  title="Delete all episodes"
+                />
+              </div>
+
+              <div className="py-4 first:pt-0 last:pb-0">
+                <DangerZoneDeleteForm
+                  variant="bare"
+                  action={deleteSeriesAndEpisodesAction}
+                  blockers={deleteEpisodesPreview.blockers}
+                  confirmationValue={`DELETE SERIES AND EPISODES ${currentSeries.slug}`}
+                  description="Removes this series, all deletable episodes and their exclusively owned Mux media."
+                  submitLabel="Delete series and episodes permanently"
+                  title="Delete series + all episodes"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <DangerZoneDeleteForm
+                variant="bare"
+                action={deleteSeriesAction}
+                blockers={deletePreview.blockers}
+                confirmationValue={currentSeries.slug}
+                description="Permanently removes this series."
+                submitLabel="Delete series permanently"
+                title="Delete series"
+              />
+            </div>
+          )}
         </section>
       </div>
     </main>

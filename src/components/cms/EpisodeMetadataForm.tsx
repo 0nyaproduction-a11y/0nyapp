@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
@@ -15,12 +15,36 @@ const checkboxClassName = "h-4 w-4 border border-bone/20 bg-bone/[0.03]";
 type EpisodeMetadataFormProps = {
   action: (state: EpisodeFormState, formData: FormData) => Promise<EpisodeFormState>;
   episode?: EpisodeRow;
+  onSaved?: (state: EpisodeFormState) => void;
+  secondarySubmitLabel?: string;
+  secondarySubmitValue?: string;
   submitLabel: string;
 };
 
-export function EpisodeMetadataForm({ action, episode, submitLabel }: EpisodeMetadataFormProps) {
+export function EpisodeMetadataForm({
+  action,
+  episode,
+  onSaved,
+  secondarySubmitLabel,
+  secondarySubmitValue,
+  submitLabel,
+}: EpisodeMetadataFormProps) {
   const [state, formAction, pending] = useActionState(action, { errors: {} });
   const errors = state.errors;
+  const lastSubmittedAtRef = useRef<number | undefined>(state.submittedAt);
+
+  useEffect(() => {
+    if (!state.submittedAt || !onSaved || Object.keys(errors).length > 0) {
+      return;
+    }
+
+    if (lastSubmittedAtRef.current === state.submittedAt) {
+      return;
+    }
+
+    lastSubmittedAtRef.current = state.submittedAt;
+    onSaved(state);
+  }, [errors, onSaved, state.submittedAt]);
 
   return (
     <form action={formAction} className="space-y-5">
@@ -177,9 +201,16 @@ export function EpisodeMetadataForm({ action, episode, submitLabel }: EpisodeMet
 
       {errors.form && <p className="text-sm text-red-400">{errors.form}</p>}
 
-      <Button type="submit" disabled={pending}>
-        {pending ? "Saving…" : submitLabel}
-      </Button>
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" name="submitMode" value="save" disabled={pending}>
+          {pending ? "Saving…" : submitLabel}
+        </Button>
+        {secondarySubmitLabel && secondarySubmitValue && (
+          <Button type="submit" name="submitMode" value={secondarySubmitValue} variant="secondary" disabled={pending}>
+            {secondarySubmitLabel}
+          </Button>
+        )}
+      </div>
     </form>
   );
 }

@@ -13,6 +13,7 @@ import {
   type SeriesRow,
   type SeriesStatus,
 } from "@/lib/cms/constants";
+import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type { SeriesFormat, SeriesRow, SeriesStatus };
@@ -47,7 +48,7 @@ export type SeriesDeletePreview = {
 };
 
 export type SeriesDeleteResult =
-  | { success: true; seriesId: string; slug: string }
+  | { success: true; seriesId: string; slug: string; cleanupWarnings: string[] }
   | { success: false; message: string; blockers?: string[] };
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -118,6 +119,17 @@ export async function listSeriesForAdmin(): Promise<SeriesRow[]> {
 export async function getSeriesForAdminById(id: string): Promise<SeriesRow | null> {
   const supabase = getAdminClient();
   const { data, error } = await supabase.from("series").select("*").eq("id", id).maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data;
+}
+
+export async function getSeriesForAdminBySlug(slug: string): Promise<SeriesRow | null> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.from("series").select("*").eq("slug", slug).maybeSingle();
 
   if (error || !data) {
     return null;
@@ -334,5 +346,10 @@ export async function deleteSeries(id: string): Promise<SeriesDeleteResult> {
     return { success: false, message: "Unable to delete series." };
   }
 
-  return { success: true, seriesId: id, slug: preview.series.slug };
+  const cleanupWarnings = await cleanupArtworkObjectsAfterContentDeletion([
+    preview.series.poster_url,
+    preview.series.hero_image_url,
+  ]);
+
+  return { success: true, seriesId: id, slug: preview.series.slug, cleanupWarnings };
 }

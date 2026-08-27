@@ -6,6 +6,7 @@ import {
   type ContentDescriptor,
   type ContentRating,
 } from "@/lib/classification";
+import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
 import {
   EPISODE_STATUSES,
   REWARDED_ACCESS_MODES,
@@ -73,6 +74,16 @@ export type SeriesEpisodesDeletePreview = {
 export type SeriesEpisodesDeleteResult =
   | { success: true; seriesId: string; seriesSlug: string; deletedCount: number; cleanupWarnings: string[] }
   | { success: false; message: string; blockers?: string[] };
+
+export type SeriesEpisodesArchiveResult =
+  | {
+      success: true;
+      seriesId: string;
+      seriesSlug: string;
+      updatedCount: number;
+      updatedEpisodeNumbers: number[];
+    }
+  | { success: false; message: string };
 
 function getAdminClient() {
   return createAdminClient();
@@ -154,6 +165,25 @@ export async function listEpisodesForSeries(seriesId: string): Promise<EpisodeRo
 export async function getEpisodeForAdminById(id: string): Promise<EpisodeRow | null> {
   const supabase = getAdminClient();
   const { data, error } = await supabase.from("episodes").select("*").eq("id", id).maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data;
+}
+
+export async function getEpisodeForSeriesByNumber(
+  seriesId: string,
+  episodeNumber: number,
+): Promise<EpisodeRow | null> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("episodes")
+    .select("*")
+    .eq("series_id", seriesId)
+    .eq("episode_number", episodeNumber)
+    .maybeSingle();
 
   if (error || !data) {
     return null;
@@ -415,6 +445,7 @@ export async function deleteEpisode(episode: EpisodeRow, seriesSlug: string): Pr
     episode.media_asset_id ?? "",
     episode.preview_media_asset_id ?? "",
   ]);
+  const artworkCleanupWarnings = await cleanupArtworkObjectsAfterContentDeletion([episode.thumbnail_url]);
 
   return {
     success: true,
@@ -422,7 +453,7 @@ export async function deleteEpisode(episode: EpisodeRow, seriesSlug: string): Pr
     episodeNumber: episode.episode_number,
     seriesId: episode.series_id,
     seriesSlug,
-    cleanupWarnings,
+    cleanupWarnings: [...artworkCleanupWarnings, ...cleanupWarnings],
   };
 }
 
@@ -434,7 +465,7 @@ async function inspectSeriesEpisodesDeletion(seriesId: string): Promise<SeriesEp
     supabase.from("series").select("id,slug,status").eq("id", seriesId).maybeSingle(),
     supabase
       .from("episodes")
-      .select("id,episode_number,status,media_asset_id,preview_media_asset_id")
+      .select("id,episode_number,status,media_asset_id,preview_media_asset_id,thumbnail_url")
       .eq("series_id", seriesId)
       .order("episode_number", { ascending: true }),
   ]);
@@ -525,7 +556,7 @@ export async function deleteAllEpisodesForSeries(seriesId: string): Promise<Seri
   const supabase = getAdminClient();
   const { data: episodesForCleanup, error: cleanupQueryError } = await supabase
     .from("episodes")
-    .select("media_asset_id,preview_media_asset_id")
+    .select("media_asset_id,preview_media_asset_id,thumbnail_url")
     .eq("series_id", seriesId);
 
   if (cleanupQueryError || !episodesForCleanup) {
@@ -541,8 +572,14 @@ export async function deleteAllEpisodesForSeries(seriesId: string): Promise<Seri
     return { success: false, message: "Unable to delete all episodes for this series." };
   }
 
+  const cleanupRows = episodesForCleanup as Array<
+    Pick<EpisodeRow, "media_asset_id" | "preview_media_asset_id" | "thumbnail_url">
+  >;
   const cleanupWarnings = await cleanupMediaAssetsAfterContentDeletion(
-    episodesForCleanup.flatMap((episode) => [episode.media_asset_id ?? "", episode.preview_media_asset_id ?? ""]),
+    cleanupRows.flatMap((episode) => [episode.media_asset_id ?? "", episode.preview_media_asset_id ?? ""]),
+  );
+  const artworkCleanupWarnings = await cleanupArtworkObjectsAfterContentDeletion(
+    cleanupRows.map((episode) => episode.thumbnail_url),
   );
 
   return {
@@ -550,6 +587,56 @@ export async function deleteAllEpisodesForSeries(seriesId: string): Promise<Seri
     seriesId,
     seriesSlug: preview.series.slug,
     deletedCount: count ?? preview.episodeCount,
-    cleanupWarnings,
+    cleanupWarnings: [...artworkCleanupWarnings, ...cleanupWarnings],
+  };
+}
+
+export async function archiveAllEpisodesForSeries(seriesId: string): Promise<SeriesEpisodesArchiveResult> {
+  const supabase = getAdminClient();
+  const [seriesResult, episodesResult] = await Promise.all([
+    supabase.from("series").select("id,slug,status").eq("id", seriesId).maybeSingle(),
+   supabase
+     .from("episodes")
+     .select("id,episode_number,status")
+     .eq("series_id", seriesId)
+     .order("episode_number", { ascending: true }),
+  ]);
+
+  if (seriesResult.error || !seriesResult.data) {
+   return { success: false, message: "Series not found." };
+  }
+
+  const episodes = episodesResult.data ?? [];
+  const episodesToArchive = episodes.filter((episode) => episode.status !== "archived");
+
+  if (episodesToArchive.length === 0) {
+   return {
+     success: true,
+     seriesId,
+     seriesSlug: seriesResult.data.slug,
+     updatedCount: 0,
+     updatedEpisodeNumbers: [],
+   };
+  }
+
+  const { data, error } = await supabase
+   .from("episodes")
+   .update({ status: "archived" })
+   .eq("series_id", seriesId)
+   .neq("status", "archived")
+   .select("episode_number");
+
+  if (error || !data) {
+   return { success: false, message: "Unable to archive all episodes for this series." };
+  }
+
+  const updatedEpisodeNumbers = data.map((episode) => episode.episode_number).sort((a, b) => a - b);
+
+  return {
+   success: true,
+   seriesId,
+   seriesSlug: seriesResult.data.slug,
+   updatedCount: updatedEpisodeNumbers.length,
+   updatedEpisodeNumbers,
   };
 }

@@ -219,6 +219,25 @@ async function fetchMuxResource<T>(path: string) {
   return payload.data ?? null;
 }
 
+async function getMuxSafeErrorSummary(response: Response) {
+  try {
+    const payload = (await response.json()) as {
+      error?: {
+        messages?: string[];
+        type?: string;
+      };
+    };
+
+    const errorType = payload.error?.type?.trim();
+    const messages = payload.error?.messages?.map((message) => message.trim()).filter(Boolean) ?? [];
+    const detail = [errorType, ...messages].filter(Boolean).join(": ");
+
+    return detail ? ` ${detail}` : "";
+  } catch {
+    return "";
+  }
+}
+
 export async function deleteMuxAsset(assetId: string): Promise<MuxAssetDeleteResult> {
   const normalizedAssetId = assetId.trim();
 
@@ -433,7 +452,8 @@ export async function createMuxDirectUpload(
   });
 
   if (!response.ok) {
-    throw new Error(`Mux direct upload creation failed with status ${response.status}.`);
+    const safeErrorSummary = await getMuxSafeErrorSummary(response);
+    throw new Error(`Mux direct upload creation failed with status ${response.status}.${safeErrorSummary}`);
   }
 
   const payload = (await response.json()) as {

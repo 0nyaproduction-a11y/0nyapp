@@ -28,3 +28,29 @@ export type RewardedAccessMode = EpisodeRow["rewarded_access_mode"];
 // (episodes_status_check, episodes rewarded_access_mode check).
 export const EPISODE_STATUSES = ["draft", "published", "archived"] as const satisfies readonly EpisodeStatus[];
 export const REWARDED_ACCESS_MODES = ["permanent", "session"] as const satisfies readonly RewardedAccessMode[];
+
+// Single source of truth for the compact Episode access summary shown on
+// both the legacy Episode list and SeriesEpisodeManager. Reflects ONLY
+// currently ENABLED access methods — coin_price is irrelevant (and must not
+// be shown) whenever coin_unlock_enabled is false.
+export function buildAccessSummary(episode: EpisodeRow) {
+  const parts: string[] = [];
+
+  if (episode.is_free) {
+    parts.push("Free");
+  }
+
+  if (episode.coin_unlock_enabled) {
+    parts.push(`${episode.coin_price} coins`);
+  }
+
+  if (episode.rewarded_unlock_enabled) {
+    parts.push("Rewarded");
+  }
+
+  if (episode.plus_access) {
+    parts.push("Plus");
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "Not configured";
+}

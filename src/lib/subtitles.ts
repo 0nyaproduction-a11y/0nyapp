@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createMuxSubtitleTextTrack } from "@/lib/mux";
 
 export const SUBTITLE_BUCKET_ID = "content-subtitles" as const;
 
@@ -39,6 +40,31 @@ type SubtitleContentTarget = {
   contentId: string;
   mediaAssetId: string | null;
   targetType: SubtitleTarget["type"];
+};
+
+export type SubtitleTrackCreationResult =
+  | {
+      status: "ready" | "processing";
+      subtitleTrackId: string;
+    }
+  | {
+      status: "failed";
+      subtitleTrackId: string;
+    };
+
+export type SubtitleUploadIntent = {
+  bucket: typeof SUBTITLE_BUCKET_ID;
+  closedCaptions: boolean;
+  isDefault: boolean;
+  languageCode: string;
+  label: string;
+  mediaAssetId: string;
+  mimeType: SubtitleMimeType;
+  objectPath: string;
+  signedUploadUrl: string;
+  sourceFormat: SubtitleSourceFormat;
+  targetType: SubtitleTarget["type"];
+  token: string;
 };
 
 function getSubtitleMimeType(sourceFormat: SubtitleSourceFormat, mimeType: string): SubtitleMimeType {
@@ -177,6 +203,11 @@ export async function createSubtitleUploadIntent(input: {
   const mimeType = getSubtitleMimeType(sourceFormat, input.mimeType);
   const languageCode = getSubtitleLanguageCode(input.languageCode);
   const label = normalizeSubtitleLabel(input.label);
+
+  if (!target.mediaAssetId) {
+    throw new Error("Target media is not ready for subtitles.");
+  }
+
   const supabase = createAdminClient();
   const objectPath = buildSubtitleObjectPath(target, sourceFormat);
   const { data, error } = await supabase.storage.from(SUBTITLE_BUCKET_ID).createSignedUploadUrl(objectPath);
@@ -199,6 +230,95 @@ export async function createSubtitleUploadIntent(input: {
     targetType: target.targetType,
     token: data.token,
   };
+}
+
+function mapSubtitleTrackStatus(status: "preparing" | "ready" | "errored" | "deleted") {
+  if (status === "ready") {
+    return "ready" as const;
+  }
+
+  if (status === "preparing") {
+    return "processing" as const;
+  }
+
+  return "failed" as const;
+}
+
+export async function finalizeSubtitleTrackUpload(input: {
+  label: string;
+  languageCode: string;
+  mimeType: string;
+  objectPath: string;
+  sourceFormat: SubtitleSourceFormat;
+  target: SubtitleTarget;
+  closedCaptions?: boolean;
+  isDefault?: boolean;
+}) {
+  const target = await resolveSubtitleTarget(input.target);
+  const supabase = createAdminClient();
+  const normalizedObjectPath = assertSubtitleObjectPath(input.objectPath);
+  const normalizedMimeType = getSubtitleMimeType(input.sourceFormat, input.mimeType);
+  const normalizedLabel = normalizeSubtitleLabel(input.label);
+  const normalizedLanguageCode = getSubtitleLanguageCode(input.languageCode);
+
+  if (!target.mediaAssetId) {
+    throw new Error("Target media is not ready for subtitles.");
+  }
+
+  const sourceUrl = await createSubtitleSourceReadUrl(normalizedObjectPath);
+  const track = await createMuxSubtitleTextTrack({
+    assetId: target.mediaAssetId,
+    closedCaptions: input.closedCaptions,
+    languageCode: normalizedLanguageCode,
+    name: normalizedLabel,
+    sourceUrl,
+  });
+
+  const muxStatus = track.status;
+  const status = mapSubtitleTrackStatus(muxStatus);
+  const failureCode = status === "failed" ? "mux_subtitle_track_error" : null;
+  const failureMessage = status === "failed" ? "Mux subtitle track creation failed." : null;
+  const subtitleTrackPayload = {
+    closed_captions: Boolean(input.closedCaptions),
+    episode_id: input.target.type === "SERIES_EPISODE" ? target.contentId : null,
+    failure_code: failureCode,
+    failure_message: failureMessage,
+    is_default: Boolean(input.isDefault),
+    label: normalizedLabel,
+    language_code: normalizedLanguageCode,
+    mux_track_reference: track.trackId,
+    short_film_id: input.target.type === "SHORT_FILM" ? target.contentId : null,
+    source_bucket: SUBTITLE_BUCKET_ID,
+    source_format: input.sourceFormat,
+    source_mime_type: normalizedMimeType,
+    source_object_path: normalizedObjectPath,
+    status,
+    target_type: input.target.type,
+  };
+
+  if (subtitleTrackPayload.is_default) {
+    const targetColumn = input.target.type === "SERIES_EPISODE" ? "episode_id" : "short_film_id";
+    await supabase
+      .from("subtitle_tracks")
+      .update({ is_default: false })
+      .eq(targetColumn, target.contentId)
+      .eq("is_default", true);
+  }
+
+  const { data, error } = await supabase
+    .from("subtitle_tracks")
+    .upsert(subtitleTrackPayload, { onConflict: "source_object_path" })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error("Unable to save subtitle track.");
+  }
+
+  return {
+    status,
+    subtitleTrackId: data.id,
+  } satisfies SubtitleTrackCreationResult;
 }
 
 export async function createSubtitleSourceReadUrl(objectPath: string) {

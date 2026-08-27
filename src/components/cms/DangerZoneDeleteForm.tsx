@@ -14,6 +14,8 @@ type DangerZoneDeleteFormProps = {
   blockers: string[];
   confirmationValue: string;
   description: string;
+  className?: string;
+  variant?: "panel" | "bare";
   submitLabel: string;
   title: string;
 };
@@ -23,14 +25,20 @@ export function DangerZoneDeleteForm({
   blockers,
   confirmationValue,
   description,
+  className,
+  variant = "panel",
   submitLabel,
   title,
 }: DangerZoneDeleteFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const visibleBlockers = state.blockers ?? blockers;
+  const rootClassName =
+    variant === "bare"
+      ? className ?? ""
+      : `border border-rose-500/25 bg-rose-500/[0.04] p-4 ${className ?? ""}`.trim();
 
   return (
-    <section className="border border-rose-500/25 bg-rose-500/[0.04] p-4">
+    <section className={rootClassName}>
       <div className="space-y-1">
         <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-rose-100">{title}</h3>
         <p className="text-sm text-bone/70">{description}</p>

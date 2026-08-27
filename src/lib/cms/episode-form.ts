@@ -8,6 +8,8 @@ import type { EpisodeInput } from "@/lib/cms/episodes";
 
 export type EpisodeFormState = {
   errors: Record<string, string>;
+  submittedAt?: number;
+  submitMode?: string;
 };
 
 export const initialEpisodeFormState: EpisodeFormState = { errors: {} };
