@@ -2,7 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { adminPath, loginPath } from "@/lib/routes";
+import { adminLoginPath, adminPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
 
@@ -59,7 +59,7 @@ export async function requireCmsAdmin(
   const context = await getCmsAdminContext();
 
   if (context.status === "unauthenticated") {
-    redirect(`${loginPath}?next=${encodeURIComponent(nextPath)}`);
+    redirect(`${adminLoginPath}?next=${encodeURIComponent(nextPath)}`);
   }
 
   return context;

@@ -20,6 +20,7 @@ export const walletPath = "/wallet";
 export const plansPath = "/plans";
 export const loginPath = "/login";
 export const adminPath = "/admin";
+export const adminLoginPath = "/admin/login";
 
 export const seriesListPath = "/admin/series";
 export const seriesNewPath = "/admin/series/new";
