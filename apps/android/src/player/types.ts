@@ -36,5 +36,6 @@ export type PlaybackSource = {
 };
 
 export type PlaybackEndedPayload = {
+  chaiSentThisPlayback?: boolean;
   context: PlaybackContext;
 };

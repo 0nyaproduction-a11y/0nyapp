@@ -1,5 +1,6 @@
 ﻿import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
+import { useEffect } from "react";
 import {
   Image,
   Keyboard,
@@ -13,11 +14,13 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getCatalog, getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
+import { getCatalog, getRequestRecoveryCopy, type RecoveryCopy } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
 import { loadWatchHistory } from "../lib/playbackHistory";
+import { perfMark, perfNow } from "../lib/perf";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch } from "../lib/recentSearches";
 import { useAuth } from "../lib/authContext";
-import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
+import { findStartEpisode } from "../lib/seriesPlayback";
 import type { ExploreFormat, MainTabScreenProps } from "../navigation/types";
 import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
 import { borders, colors } from "../theme/tokens";
@@ -35,7 +38,7 @@ const formatOptions: Array<{ label: string; value: ExploreFormat }> = [
 ];
 
 function hasValidPoster(poster?: string) {
-  return typeof poster === "string" && poster.trim().length > 0 && !poster.startsWith("/");
+  return typeof poster === "string" && poster.trim().length > 0;
 }
 
 export function ExploreScreen({ navigation }: Props) {
@@ -44,6 +47,7 @@ export function ExploreScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
   const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
+  const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -53,13 +57,28 @@ export function ExploreScreen({ navigation }: Props) {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
 
+  useEffect(() => {
+    perfMark("EXPLORE_MOUNT");
+  }, []);
+
   const loadCatalog = useCallback(async () => {
-    const data = await getCatalog(accessToken);
+    const startedAt = perfNow();
+    const [data, progressData] = await Promise.all([
+      getCatalog(accessToken),
+      loadWatchHistory(session),
+    ]);
     setCatalog(data.catalog);
     setShortFilms(data.shortFilms);
+    setProgress(progressData);
     setError(null);
+    perfMark("EXPLORE_DATA_READY", {
+      catalog_count: data.catalog.length,
+      duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
+      progress_count: progressData.length,
+      short_film_count: data.shortFilms.length,
+    });
     return data;
-  }, [accessToken]);
+  }, [accessToken, session]);
 
   const reloadCatalog = useCallback(async () => {
     setIsLoading(true);
@@ -181,30 +200,34 @@ export function ExploreScreen({ navigation }: Props) {
       return;
     }
 
+    perfMark("CONTENT_TAP", {
+      content_type: "series_episode",
+      series_slug: series.slug,
+      source: "EXPLORE",
+    });
     setResolvingKey(key);
 
     try {
-      const seriesData = await getSeries(series.slug, accessToken);
-      const progressData = await loadWatchHistory(session).catch(() => [] as WatchProgressItem[]);
-      const seriesProgress = progressData.filter(
+      const seriesProgress = progress.filter(
         (item) => item.contentType === "series_episode" && item.seriesSlug === series.slug,
       );
-      const resumeEpisode = findResumeEpisode(
-        seriesProgress,
-        seriesData.series.slug,
-        seriesData.series.episodes,
-        seriesData.episodeAccess,
-      );
-      const startEpisode = findStartEpisode(seriesData.series.episodes);
+      const resumeProgress = seriesProgress
+        .sort(
+          (first, second) =>
+            new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
+        )
+        .find((item) => !item.completed && item.positionSeconds >= 5);
+      const resumeEpisode = resumeProgress
+        ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
+        : undefined;
+      const startEpisode = findStartEpisode(series.episodes);
       const targetEpisode = resumeEpisode ?? startEpisode;
-      const targetAccess = targetEpisode ? seriesData.episodeAccess[String(targetEpisode.number)] : undefined;
 
-      if (targetEpisode && targetAccess) {
+      if (targetEpisode) {
         navigation.navigate("Watch", {
-          access: targetAccess,
-          episode: targetEpisode,
-          episodeAccess: seriesData.episodeAccess,
-          series: seriesData.series,
+          episodeNumber: targetEpisode.number,
+          resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
+          seriesSlug: series.slug,
         });
         return;
       }
@@ -281,6 +304,7 @@ export function ExploreScreen({ navigation }: Props) {
       <Text style={styles.screenTitle}>Explore</Text>
 
       <View style={styles.searchRow}>
+        <Text style={styles.searchIcon}>{"\u26B2"}</Text>
         <TextInput
           accessibilityLabel="Search 0nya"
           autoCapitalize="none"
@@ -303,7 +327,9 @@ export function ExploreScreen({ navigation }: Props) {
             onPress={() => setQuery("")}
             style={styles.clearButton}
           >
-            <Text style={styles.clearButtonText}>{"\u00D7"}</Text>
+            <View style={styles.clearCircle}>
+              <Text style={styles.clearButtonText}>{"\u00D7"}</Text>
+            </View>
           </Pressable>
         ) : null}
       </View>
@@ -410,7 +436,7 @@ export function ExploreScreen({ navigation }: Props) {
                         accessibilityLabel={`${series.title} poster`}
                         accessible
                         alt=""
-                        source={{ uri: series.poster }}
+                        source={{ uri: resolveMediaUrl(series.poster)! }}
                         style={styles.coverImage}
                         resizeMode="contain"
                       />
@@ -440,7 +466,14 @@ export function ExploreScreen({ navigation }: Props) {
                   accessibilityLabel={`Open details for ${shortFilm.title}`}
                   accessibilityRole="button"
                   disabled={isBusy}
-                  onPress={() => navigation.navigate("ShortFilm", { slug: shortFilm.slug })}
+                  onPress={() => {
+                    perfMark("CONTENT_TAP", {
+                      content_type: "short_film",
+                      short_film_slug: shortFilm.slug,
+                      source: "EXPLORE",
+                    });
+                    navigation.navigate("ShortFilm", { slug: shortFilm.slug });
+                  }}
                   style={({ pressed }) => [
                     styles.cardMainPressable,
                     { width: cardWidth },
@@ -454,7 +487,7 @@ export function ExploreScreen({ navigation }: Props) {
                         accessibilityLabel={`${shortFilm.title} poster`}
                         accessible
                         alt=""
-                        source={{ uri: shortFilm.poster }}
+                        source={{ uri: resolveMediaUrl(shortFilm.poster)! }}
                         style={styles.coverImage}
                         resizeMode="contain"
                       />
@@ -501,30 +534,49 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
+    marginBottom: 8,
   },
   searchRow: {
     alignItems: "center",
-    borderColor: borders.color,
-    borderWidth: borders.width,
+    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderWidth: 1,
+    borderRadius: 10,
     flexDirection: "row",
-    minHeight: 48,
-    paddingHorizontal: 14,
+    minHeight: 52,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    color: colors.muted,
+    fontSize: 18,
+    marginRight: 8,
+    transform: [{ rotate: "45deg" }],
   },
   searchInput: {
     color: colors.text,
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     paddingVertical: 12,
   },
   clearButton: {
     alignItems: "center",
-    height: 48,
+    height: 44,
     justifyContent: "center",
     width: 32,
   },
+  clearCircle: {
+    backgroundColor: "rgba(232, 228, 218, 0.15)",
+    borderRadius: 999,
+    height: 20,
+    width: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   clearButtonText: {
-    color: colors.muted,
-    fontSize: 20,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "bold",
+    marginTop: -1,
   },
   recentWrap: {
     gap: 8,
@@ -552,21 +604,24 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   filterRow: {
-    gap: 8,
-    paddingVertical: 4,
+    gap: 10,
+    paddingVertical: 8,
   },
   filterChip: {
-    borderColor: borders.color,
-    borderWidth: borders.width,
-    minHeight: 44,
+    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderWidth: 1,
+    borderRadius: 8,
+    minHeight: 36,
     justifyContent: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
   },
   filterChipSelected: {
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
   },
   filterChipText: {
-    color: colors.text,
+    color: colors.muted,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -577,9 +632,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "700",
+    marginTop: 12,
+    marginBottom: 4,
   },
   cardMainPressable: {
-    gap: 8,
+    gap: 10,
   },
   grid: {
     flexDirection: "row",
@@ -588,6 +645,7 @@ const styles = StyleSheet.create({
   },
   coverWrap: {
     backgroundColor: colors.surface,
+    borderRadius: 8,
     overflow: "hidden",
   },
   coverImage: {
@@ -610,12 +668,16 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
+    lineHeight: 18,
   },
   cardMeta: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   emptyState: {
     gap: 10,

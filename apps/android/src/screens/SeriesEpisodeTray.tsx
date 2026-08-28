@@ -25,6 +25,7 @@ const GRID_GAP = 6;
 const TOUCH_TARGET_MIN = 48;
 const MIN_COLUMNS = 3;
 const PREFERRED_COLUMNS = 5;
+const PLUS_MARKER_COLOR = "#B91825";
 const TRAY_HEIGHT_RATIO = 0.4;
 const SHEET_TOP_PADDING = 14;
 // Chrome block heights below mirror the actual style values used for those
@@ -235,13 +236,16 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
             isCurrent && styles.markerCurrent,
           ]}
         >
-          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          {marker.icon === "coin" ? <CoinGlyph /> : null}
           <Text
             numberOfLines={1}
             style={[
               styles.cellAccessLabel,
               marker.tone === "available" && styles.cellAccessLabelAvailable,
               marker.tone === "locked" && styles.cellAccessLabelLocked,
+              marker.variant === "plus" && styles.cellAccessLabelPlus,
+              marker.variant === "ad" && styles.cellAccessLabelAd,
+              marker.variant === "coin" && styles.cellAccessLabelCoin,
               isCurrent && styles.cellAccessLabelCurrent,
             ]}
           >
@@ -253,10 +257,11 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
   );
 }
 
-function CoinGlyph({ color }: { color: string }) {
+function CoinGlyph() {
   return (
-    <View style={[styles.coinGlyph, { borderColor: color }]}>
-      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
+    <View style={styles.coinGlyph}>
+      <View style={styles.coinGlyphInner} />
+      <View style={styles.coinGlyphHighlight} />
     </View>
   );
 }
@@ -392,8 +397,17 @@ const styles = StyleSheet.create({
   cellAccessLabelAvailable: {
     color: colors.text,
   },
+  cellAccessLabelAd: {
+    color: colors.muted,
+  },
+  cellAccessLabelCoin: {
+    color: colors.text,
+  },
   cellAccessLabelLocked: {
     color: colors.muted,
+  },
+  cellAccessLabelPlus: {
+    color: PLUS_MARKER_COLOR,
   },
   cellAccessLabelCurrent: {
     color: colors.accent,
@@ -408,6 +422,8 @@ const styles = StyleSheet.create({
   markerCurrent: {},
   coinGlyph: {
     alignItems: "center",
+    backgroundColor: "#F2B705",
+    borderColor: "#F6DD63",
     borderRadius: 999,
     borderWidth: 1.2,
     height: 7,
@@ -415,8 +431,18 @@ const styles = StyleSheet.create({
     width: 7,
   },
   coinGlyphInner: {
+    backgroundColor: "#D89100",
     borderRadius: 999,
-    height: 2,
-    width: 2,
+    height: 4,
+    width: 4,
+  },
+  coinGlyphHighlight: {
+    backgroundColor: "#FFF0A6",
+    borderRadius: 999,
+    height: 1.4,
+    left: 1.8,
+    position: "absolute",
+    top: 1.3,
+    width: 1.4,
   },
 });

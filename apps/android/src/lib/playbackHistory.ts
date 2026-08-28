@@ -1,6 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { getPlaybackAuthorizationCredentials } from "./parentalControls";
-import { putWatchProgress, getWatchProgress } from "./api";
+import { ApiError, putWatchProgress, getWatchProgress } from "./api";
 import { supabaseSecureStorage } from "./secureStorage";
 import type { WatchProgressItem, WatchProgressWriteRequest } from "../types/api";
 
@@ -68,42 +68,49 @@ async function getLegacyGuestHistoryKey(session: Session | null) {
   return `${LOCAL_HISTORY_KEY_PREFIX}.${guestCredential}`;
 }
 
-async function readLocalHistory(session: Session | null) {
+async function getLocalHistoryStorageKeys(session: Session | null) {
   const keys = [LOCAL_HISTORY_KEY, await getLegacyGuestHistoryKey(session)].filter(
     (key): key is string => Boolean(key),
   );
+
+  return Array.from(new Set(keys));
+}
+
+function parseStoredHistory(raw: string | null) {
+  if (!raw) {
+    return [];
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.filter(
+    (item): item is WatchProgressItem => Boolean(item) && typeof item === "object",
+  );
+}
+
+async function readLocalHistory(session: Session | null) {
+  const keys = await getLocalHistoryStorageKeys(session);
   const merged = new Map<string, WatchProgressItem>();
 
   for (const storageKey of keys) {
-    const raw = await supabaseSecureStorage.getItem(storageKey);
-
-    if (!raw) {
-      continue;
-    }
-
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      continue;
-    }
-
-    if (!Array.isArray(parsed)) {
-      continue;
-    }
+    const parsed = parseStoredHistory(await supabaseSecureStorage.getItem(storageKey));
 
     for (const item of parsed) {
-      if (!item || typeof item !== "object") {
-        continue;
-      }
-
-      const candidate = item as WatchProgressItem;
-      const key = makeLocalRecordKey(candidate);
+      const key = makeLocalRecordKey(item);
       const existing = merged.get(key);
 
-      if (!existing || new Date(candidate.lastWatchedAt).getTime() > new Date(existing.lastWatchedAt).getTime()) {
-        merged.set(key, candidate);
+      if (!existing || new Date(item.lastWatchedAt).getTime() > new Date(existing.lastWatchedAt).getTime()) {
+        merged.set(key, item);
       }
     }
   }
@@ -115,6 +122,34 @@ async function readLocalHistory(session: Session | null) {
 
 async function writeLocalHistory(_session: Session | null, progress: WatchProgressItem[]) {
   await supabaseSecureStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(progress));
+}
+
+async function removeLocalHistoryItems(session: Session | null, items: WatchProgressItem[]) {
+  const staleKeys = new Set(items.map(makeLocalRecordKey));
+
+  if (!staleKeys.size) {
+    return;
+  }
+
+  for (const storageKey of await getLocalHistoryStorageKeys(session)) {
+    const history = parseStoredHistory(await supabaseSecureStorage.getItem(storageKey));
+
+    if (!history.length) {
+      continue;
+    }
+
+    const nextHistory = history.filter((item) => !staleKeys.has(makeLocalRecordKey(item)));
+
+    if (nextHistory.length === history.length) {
+      continue;
+    }
+
+    if (nextHistory.length > 0) {
+      await supabaseSecureStorage.setItem(storageKey, JSON.stringify(nextHistory));
+    } else {
+      await supabaseSecureStorage.removeItem(storageKey);
+    }
+  }
 }
 
 type HistoryMergeState = Record<string, { guestCredential: string | null; mergedAt: string }>;
@@ -225,6 +260,33 @@ function summarizeWatchProgress(item: WatchProgressItem) {
   };
 }
 
+function summarizeWatchProgressTarget(item: WatchProgressItem) {
+  if (item.contentType === "short_film") {
+    return {
+      contentType: "short_film",
+      shortFilmSlug: item.shortFilmSlug,
+    };
+  }
+
+  return {
+    contentType: "series_episode",
+    episodeNumber: item.episodeNumber,
+    seriesSlug: item.seriesSlug,
+  };
+}
+
+function isStaleContentNotFoundError(error: unknown, item: WatchProgressItem) {
+  if (!(error instanceof ApiError) || error.status !== 404 || error.code !== "not_found") {
+    return false;
+  }
+
+  if (item.contentType === "short_film") {
+    return error.message === "Short film not found.";
+  }
+
+  return error.message === "Episode not found.";
+}
+
 export async function mergeGuestWatchHistory(session: Session | null) {
   if (!session?.user?.id || !session.access_token) {
     return { merged: 0, skipped: true };
@@ -270,6 +332,7 @@ export async function mergeGuestWatchHistory(session: Session | null) {
     .sort((left, right) => new Date(left.lastWatchedAt).getTime() - new Date(right.lastWatchedAt).getTime());
 
   let merged = 0;
+  const staleItems: WatchProgressItem[] = [];
 
   for (const item of candidates) {
     try {
@@ -292,9 +355,26 @@ export async function mergeGuestWatchHistory(session: Session | null) {
       );
       merged += 1;
     } catch (error) {
+      if (isStaleContentNotFoundError(error, item)) {
+        staleItems.push(item);
+
+        if (__DEV__) {
+          console.warn("[0nya watch history merge] stale local entry pruned", {
+            ...summarizeWatchProgressTarget(item),
+            reason: error instanceof ApiError ? error.message : "Content not found.",
+          });
+        }
+
+        continue;
+      }
+
       console.warn("Unable to merge guest watch history.", error);
       return { merged, skipped: false };
     }
+  }
+
+  if (staleItems.length > 0) {
+    await removeLocalHistoryItems(null, staleItems);
   }
 
   if (merged > 0) {

@@ -1,7 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Screen } from "../components/Screen";
 import { RecoveryState } from "../components/ui";
 import {
@@ -9,16 +9,23 @@ import {
   authorizePlayback,
   getCatalog,
   getRequestRecoveryCopy,
-  getSeries,
   getWallet,
   type RecoveryCopy,
 } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
+import { perfMark, perfNow } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
-import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
+import { findStartEpisode } from "../lib/seriesPlayback";
 import type { MainTabScreenProps, RootStackParamList } from "../navigation/types";
-import type { ApiSeries, ApiShortFilm, PlaybackAuthorizationResponse, WatchProgressItem } from "../types/api";
+import type {
+  ApiSeries,
+  ApiShortFilm,
+  HomeState,
+  PlaybackAuthorizationResponse,
+  WatchProgressItem,
+} from "../types/api";
 import { borders, colors, typography } from "../theme/tokens";
 
 type Props = MainTabScreenProps<"Home">;
@@ -29,11 +36,10 @@ type Props = MainTabScreenProps<"Home">;
 // temporary product-default constant rather than a magic number inline.
 const CONTINUE_WATCHING_MIN_SECONDS = 5;
 
-const HOME_POSTER_MIN_WIDTH = 112;
-const HOME_POSTER_MAX_WIDTH = 132;
-const HOME_DISCOVERY_POSTER_ASPECT_RATIO = 9 / 16;
-const HOME_RESUME_MIN_WIDTH = 150;
-const HOME_RESUME_MAX_WIDTH = 176;
+const HOME_POSTER_MIN_WIDTH = 120;
+const HOME_POSTER_MAX_WIDTH = 160;
+const HOME_RESUME_MIN_WIDTH = 220;
+const HOME_RESUME_MAX_WIDTH = 300;
 
 type ContinueWatchingEntry = WatchProgressItem & {
   series?: ApiSeries;
@@ -41,8 +47,22 @@ type ContinueWatchingEntry = WatchProgressItem & {
 };
 
 function hasValidPoster(poster?: string) {
-  return typeof poster === "string" && poster.trim().length > 0 && !poster.startsWith("/");
+  return typeof poster === "string" && poster.trim().length > 0;
 }
+
+type StartHereItem =
+  | {
+      contentType: "series";
+      poster: string | null;
+      series: ApiSeries;
+      title: string;
+    }
+  | {
+      contentType: "short_film";
+      poster: string | null;
+      shortFilm: ApiShortFilm;
+      title: string;
+    };
 
 function isQualifyingProgress(item: WatchProgressItem) {
   return (
@@ -212,7 +232,7 @@ function ContinueWatchingCard({
             accessibilityLabel={`${title} still`}
             accessible
             alt=""
-            source={{ uri: stillUrl }}
+            source={{ uri: resolveMediaUrl(stillUrl)! }}
             style={styles.coverImage}
             resizeMode="cover"
           />
@@ -235,12 +255,14 @@ function ContinueWatchingCard({
           </View>
         </View>
       </View>
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {title}
-      </Text>
-      <Text style={styles.metaText} numberOfLines={1}>
-        {metaText}
-      </Text>
+      <View style={styles.cardInfo}>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {title}
+        </Text>
+        <Text style={styles.metaText} numberOfLines={1}>
+          {metaText}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -344,6 +366,7 @@ export function HomeScreen({ navigation }: Props) {
   const rootNavigation = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
+  const [homeState, setHomeState] = useState<HomeState | null>(null);
   const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [error, setError] = useState<RecoveryCopy | null>(null);
@@ -353,14 +376,14 @@ export function HomeScreen({ navigation }: Props) {
   const discoveryPosterWidth = Math.round(
     Math.min(
       HOME_POSTER_MAX_WIDTH,
-      Math.max(HOME_POSTER_MIN_WIDTH, (windowWidth - 56) / 2.55),
+      Math.max(HOME_POSTER_MIN_WIDTH, (windowWidth - 44) / 2.35),
     ),
   );
-  const discoveryPosterHeight = Math.round(discoveryPosterWidth / HOME_DISCOVERY_POSTER_ASPECT_RATIO);
+  const discoveryPosterHeight = Math.round(discoveryPosterWidth / (9 / 16));
   const resumeCardWidth = Math.round(
-    Math.min(HOME_RESUME_MAX_WIDTH, Math.max(HOME_RESUME_MIN_WIDTH, windowWidth * 0.41)),
+    Math.min(HOME_RESUME_MAX_WIDTH, Math.max(HOME_RESUME_MIN_WIDTH, (windowWidth - 44) / 1.15)),
   );
-  const resumeCardHeight = Math.round((resumeCardWidth * 16) / 9);
+  const resumeCardHeight = Math.round(resumeCardWidth / (9 / 16));
   const continueWatchingMediaCacheRef = useRef<
     Map<string, ContinueWatchingMediaCacheEntry>
   >(new Map());
@@ -375,6 +398,10 @@ export function HomeScreen({ navigation }: Props) {
   const [unresolvableContinueWatchingKeys, setUnresolvableContinueWatchingKeys] = useState<
     ReadonlySet<string>
   >(() => new Set());
+
+  useEffect(() => {
+    perfMark("HOME_MOUNT");
+  }, []);
 
   const markContinueWatchingUnresolvable = useCallback((mediaKey: string) => {
     setUnresolvableContinueWatchingKeys((previous) => {
@@ -552,6 +579,8 @@ export function HomeScreen({ navigation }: Props) {
   );
 
   const loadHome = useCallback(async () => {
+    const startedAt = perfNow();
+    perfMark("HOME_REQUEST_START");
     if (__DEV__) {
       console.info("[0nya catalog HOME fetch start]");
     }
@@ -569,19 +598,29 @@ export function HomeScreen({ navigation }: Props) {
     }
 
     const nextCatalog = catalogData.catalog;
+    const nextHomeState = catalogData.home ?? null;
     const nextShortFilms = catalogData.shortFilms;
     const nextProgress = progressData;
 
     if (__DEV__) {
       console.info("[0nya catalog HOME mapping complete]", {
         catalogLength: nextCatalog.length,
+        homeRowsLength: nextHomeState?.rows.length ?? 0,
         shortFilmsLength: nextShortFilms.length,
         progressLength: nextProgress.length,
       });
     }
 
+    perfMark("HOME_DATA_READY", {
+      catalog_count: nextCatalog.length,
+      duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
+      progress_count: nextProgress.length,
+      short_film_count: nextShortFilms.length,
+    });
+
     return {
       catalog: nextCatalog,
+      homeState: nextHomeState,
       shortFilms: nextShortFilms,
       progress: nextProgress,
     };
@@ -628,6 +667,7 @@ export function HomeScreen({ navigation }: Props) {
         });
       }
       setCatalog(data.catalog);
+      setHomeState(data.homeState);
       setShortFilms(data.shortFilms);
       setProgress(data.progress);
       setError(null);
@@ -669,6 +709,7 @@ export function HomeScreen({ navigation }: Props) {
         }
 
         setCatalog(data.catalog);
+        setHomeState(data.homeState);
         setShortFilms(data.shortFilms);
         setProgress(data.progress);
         setError(null);
@@ -756,6 +797,53 @@ export function HomeScreen({ navigation }: Props) {
       ),
     [continueWatching, unresolvableContinueWatchingKeys],
   );
+  const startHereRow = homeState?.rows.find((row) => row.role === "start_here") ?? null;
+  const localCompletedCount = useMemo(
+    () => progress.filter((item) => item.completed).length,
+    [progress],
+  );
+  const isLowHistoryByServerThreshold =
+    homeState?.lowHistoryThreshold !== null &&
+    homeState?.lowHistoryThreshold !== undefined &&
+    localCompletedCount < homeState.lowHistoryThreshold;
+  const shouldRenderStartHere =
+    visibleContinueWatching.length === 0 &&
+    (homeState?.startHereVisible ?? isLowHistoryByServerThreshold);
+  const startHereItems = useMemo<StartHereItem[]>(
+    () =>
+      shouldRenderStartHere && startHereRow
+        ? startHereRow.items.reduce<StartHereItem[]>((items, item) => {
+            if (item.contentType === "series") {
+              const series = catalog.find((candidate) => candidate.slug === item.slug);
+
+              if (series) {
+                items.push({
+                  contentType: "series",
+                  poster: item.poster ?? series.poster,
+                  series,
+                  title: item.title || series.title,
+                });
+              }
+
+              return items;
+            }
+
+            const shortFilm = shortFilms.find((candidate) => candidate.slug === item.slug);
+
+            if (shortFilm) {
+              items.push({
+                contentType: "short_film",
+                poster: item.poster ?? shortFilm.poster,
+                shortFilm,
+                title: item.title || shortFilm.title,
+              });
+            }
+
+            return items;
+          }, [])
+        : [],
+    [catalog, shortFilms, shouldRenderStartHere, startHereRow],
+  );
 
   async function openContinueWatching(entry: ContinueWatchingEntry) {
     const key =
@@ -767,50 +855,33 @@ export function HomeScreen({ navigation }: Props) {
       return;
     }
 
+    perfMark("CONTENT_TAP", {
+      content_type: entry.contentType,
+      episode_number: entry.episodeNumber,
+      source: "HOME_CONTINUE_WATCHING",
+    });
     setResolvingKey(key);
 
-    try {
-      // Reuses the existing Series-detail API/access-resolution contract (the
-      // same one SeriesScreen uses) so the exact saved episode's resolved
-      // access is respected before entering the player.
-      if (entry.contentType === "short_film") {
-        navigation.navigate("ShortFilmPlayback", {
-          resumeAtSeconds: entry.positionSeconds,
-          slug: entry.shortFilmSlug ?? "",
-        });
-        return;
-      }
-
-      const seriesSlug = entry.seriesSlug;
-
-      if (!seriesSlug) {
-        return;
-      }
-
-      const seriesData = await getSeries(seriesSlug, accessToken);
-      const episode = seriesData.series.episodes.find(
-        (candidate) => candidate.number === entry.episodeNumber,
-      );
-      const access = seriesData.episodeAccess[String(entry.episodeNumber)];
-
-      if (episode && access) {
-        navigation.navigate("Watch", {
-          access,
-          episode,
-          episodeAccess: seriesData.episodeAccess,
-          series: seriesData.series,
-        });
-        return;
-      }
-    } catch {
-      // Fall through to the existing Series detail entry point below.
-    } finally {
+    if (entry.contentType === "short_film") {
+      navigation.navigate("ShortFilmPlayback", {
+        resumeAtSeconds: entry.positionSeconds,
+        slug: entry.shortFilmSlug ?? "",
+      });
       setResolvingKey(null);
+      return;
     }
 
-    if (entry.seriesSlug) {
-      navigation.navigate("Series", { slug: entry.seriesSlug });
+    if (!entry.seriesSlug || typeof entry.episodeNumber !== "number") {
+      setResolvingKey(null);
+      return;
     }
+
+    navigation.navigate("Watch", {
+      episodeNumber: entry.episodeNumber,
+      resumeAtSeconds: entry.positionSeconds,
+      seriesSlug: entry.seriesSlug,
+    });
+    setResolvingKey(null);
   }
 
   async function openSeriesPlayback(series: ApiSeries) {
@@ -820,38 +891,37 @@ export function HomeScreen({ navigation }: Props) {
       return;
     }
 
+    perfMark("CONTENT_TAP", {
+      content_type: "series_episode",
+      series_slug: series.slug,
+      source: "HOME",
+    });
     setResolvingKey(key);
 
-    try {
-      const seriesData = await getSeries(series.slug, accessToken);
-      const resumeEpisode = findResumeEpisode(
-        progress,
-        seriesData.series.slug,
-        seriesData.series.episodes,
-        seriesData.episodeAccess,
+    const seriesProgress = progress
+      .filter((item) => item.contentType === "series_episode" && item.seriesSlug === series.slug)
+      .sort(
+        (first, second) =>
+          new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
       );
-      const startEpisode = findStartEpisode(seriesData.series.episodes);
-      const targetEpisode = resumeEpisode ?? startEpisode;
-      const targetAccess = targetEpisode
-        ? seriesData.episodeAccess[String(targetEpisode.number)]
-        : undefined;
+    const resumeProgress = seriesProgress.find((item) => !item.completed && item.positionSeconds >= CONTINUE_WATCHING_MIN_SECONDS);
+    const resumeEpisode = resumeProgress
+      ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
+      : undefined;
+    const targetEpisode = resumeEpisode ?? findStartEpisode(series.episodes);
 
-      if (targetEpisode && targetAccess) {
-        navigation.navigate("Watch", {
-          access: targetAccess,
-          episode: targetEpisode,
-          episodeAccess: seriesData.episodeAccess,
-          series: seriesData.series,
-        });
-        return;
-      }
-    } catch {
-      // Fall back to the deliberate details route below.
-    } finally {
+    if (targetEpisode) {
+      navigation.navigate("Watch", {
+        episodeNumber: targetEpisode.number,
+        resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
+        seriesSlug: series.slug,
+      });
       setResolvingKey(null);
+      return;
     }
 
     navigation.navigate("Series", { slug: series.slug });
+    setResolvingKey(null);
   }
 
   if (isLoading) {
@@ -927,6 +997,145 @@ export function HomeScreen({ navigation }: Props) {
           </View>
         ) : null}
 
+        {startHereRow && startHereItems.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{startHereRow.title}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+            >
+              {startHereItems.map((item) => {
+                if (item.contentType === "series") {
+                  const isBusy = resolvingKey === `series-${item.series.slug}`;
+
+                  return (
+                    <View key={`start-here-series-${item.series.slug}`} style={[styles.posterCard, { width: discoveryPosterWidth }]}>
+                      <Pressable
+                        accessibilityLabel={`Play or resume ${item.title}`}
+                        accessibilityRole="button"
+                        disabled={isBusy}
+                        onPress={() => void openSeriesPlayback(item.series)}
+                        style={({ pressed }) => [
+                          styles.cardMainPressable,
+                          isBusy && styles.cardPressableBusy,
+                          pressed && styles.cardPressablePressed,
+                        ]}
+                      >
+                        <View style={[styles.coverWrap, { width: discoveryPosterWidth, height: discoveryPosterHeight }]}>
+                          {hasValidPoster(item.poster ?? undefined) ? (
+                            <Image
+                              accessibilityLabel={`${item.title} poster`}
+                              accessible
+                              alt=""
+                              source={{ uri: resolveMediaUrl(item.poster)! }}
+                              style={styles.coverImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.coverFallback}>
+                              <Text style={styles.coverTitle} numberOfLines={2}>
+                                {item.title}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </Pressable>
+
+                      <View style={styles.cardInfo}>
+                        <View style={styles.cardTitleRow}>
+                          <Pressable
+                            accessibilityLabel={`Play or resume ${item.title}`}
+                            accessibilityRole="button"
+                            disabled={isBusy}
+                            onPress={() => void openSeriesPlayback(item.series)}
+                            style={({ pressed }) => [
+                              styles.cardTitlePressable,
+                              isBusy && styles.cardPressableBusy,
+                              pressed && styles.cardPressablePressed,
+                            ]}
+                          >
+                            <Text style={styles.cardTitle} numberOfLines={2}>
+                              {item.title}
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            accessibilityLabel={`Open details for ${item.title}`}
+                            accessibilityRole="button"
+                            hitSlop={8}
+                            onPress={() => navigation.navigate("Series", { slug: item.series.slug })}
+                            style={({ pressed }) => [styles.infoButton, pressed && styles.infoButtonPressed]}
+                          >
+                            <InfoGlyph />
+                          </Pressable>
+                        </View>
+                        <Text style={styles.metaText} numberOfLines={1}>
+                          MICRO DRAMA
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                }
+
+                const isBusy = resolvingKey === `short-${item.shortFilm.slug}`;
+                const posterSource = hasValidPoster(item.poster ?? undefined) ? resolveMediaUrl(item.poster) : null;
+
+                return (
+                  <Pressable
+                    key={`start-here-short-${item.shortFilm.slug}`}
+                    accessibilityLabel={`Open details for ${item.title}`}
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={() => {
+                      if (isBusy) {
+                        return;
+                      }
+
+                      perfMark("CONTENT_TAP", {
+                        content_type: "short_film",
+                        short_film_slug: item.shortFilm.slug,
+                        source: "HOME_START_HERE",
+                      });
+                      setResolvingKey(`short-${item.shortFilm.slug}`);
+                      navigation.navigate("ShortFilm", { slug: item.shortFilm.slug });
+                      setResolvingKey(null);
+                    }}
+                    style={[styles.posterCard, { width: discoveryPosterWidth }, isBusy && styles.cardPressableBusy]}
+                  >
+                    <View style={[styles.coverWrap, { width: discoveryPosterWidth, height: discoveryPosterHeight }]}>
+                      {posterSource ? (
+                        <Image
+                          accessibilityLabel={`${item.title} poster`}
+                          accessible
+                          alt=""
+                          source={{ uri: posterSource }}
+                          style={styles.coverImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.coverFallback}>
+                          <Text style={styles.coverTitle} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.metaText} numberOfLines={1}>
+                        {item.shortFilm.durationLabel}
+                        {item.shortFilm.language ? ` • ${item.shortFilm.language}` : ""}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
         {catalog.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Micro Dramas</Text>
@@ -957,7 +1166,7 @@ export function HomeScreen({ navigation }: Props) {
                             accessibilityLabel={`${series.title} poster`}
                             accessible
                             alt=""
-                            source={{ uri: series.poster }}
+                            source={{ uri: resolveMediaUrl(series.poster)! }}
                             style={styles.coverImage}
                             resizeMode="cover"
                           />
@@ -971,31 +1180,36 @@ export function HomeScreen({ navigation }: Props) {
                       </View>
                     </Pressable>
 
-                    <View style={styles.cardTitleRow}>
-                      <Pressable
-                        accessibilityLabel={`Play or resume ${series.title}`}
-                        accessibilityRole="button"
-                        disabled={isBusy}
-                        onPress={() => void openSeriesPlayback(series)}
-                        style={({ pressed }) => [
-                          styles.cardTitlePressable,
-                          isBusy && styles.cardPressableBusy,
-                          pressed && styles.cardPressablePressed,
-                        ]}
-                      >
-                        <Text style={styles.cardTitle} numberOfLines={2}>
-                          {series.title}
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityLabel={`Open details for ${series.title}`}
-                        accessibilityRole="button"
-                        hitSlop={8}
-                        onPress={() => navigation.navigate("Series", { slug: series.slug })}
-                        style={({ pressed }) => [styles.infoButton, pressed && styles.infoButtonPressed]}
-                      >
-                        <InfoGlyph />
-                      </Pressable>
+                    <View style={styles.cardInfo}>
+                      <View style={styles.cardTitleRow}>
+                        <Pressable
+                          accessibilityLabel={`Play or resume ${series.title}`}
+                          accessibilityRole="button"
+                          disabled={isBusy}
+                          onPress={() => void openSeriesPlayback(series)}
+                          style={({ pressed }) => [
+                            styles.cardTitlePressable,
+                            isBusy && styles.cardPressableBusy,
+                            pressed && styles.cardPressablePressed,
+                          ]}
+                        >
+                          <Text style={styles.cardTitle} numberOfLines={2}>
+                            {series.title}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel={`Open details for ${series.title}`}
+                          accessibilityRole="button"
+                          hitSlop={8}
+                          onPress={() => navigation.navigate("Series", { slug: series.slug })}
+                          style={({ pressed }) => [styles.infoButton, pressed && styles.infoButtonPressed]}
+                        >
+                          <InfoGlyph />
+                        </Pressable>
+                      </View>
+                      <Text style={styles.metaText} numberOfLines={1}>
+                        MICRO DRAMA
+                      </Text>
                     </View>
                   </View>
                 );
@@ -1014,7 +1228,7 @@ export function HomeScreen({ navigation }: Props) {
             >
               {shortFilms.map((shortFilm) => {
                 const isBusy = resolvingKey === `short-${shortFilm.slug}`;
-                const posterSource = hasValidPoster(shortFilm.poster) ? shortFilm.poster : null;
+                const posterSource = hasValidPoster(shortFilm.poster) ? resolveMediaUrl(shortFilm.poster) : null;
 
                 return (
                   <Pressable
@@ -1027,6 +1241,11 @@ export function HomeScreen({ navigation }: Props) {
                         return;
                       }
 
+                      perfMark("CONTENT_TAP", {
+                        content_type: "short_film",
+                        short_film_slug: shortFilm.slug,
+                        source: "HOME",
+                      });
                       setResolvingKey(`short-${shortFilm.slug}`);
                       navigation.navigate("ShortFilm", { slug: shortFilm.slug });
                       setResolvingKey(null);
@@ -1051,13 +1270,14 @@ export function HomeScreen({ navigation }: Props) {
                         </View>
                       )}
                     </View>
-                    <Text style={styles.cardTitle} numberOfLines={2}>
-                      {shortFilm.title}
-                    </Text>
-                    <Text style={styles.metaText} numberOfLines={1}>
-                      {shortFilm.durationLabel}
-                      {shortFilm.language ? ` • ${shortFilm.language}` : ""}
-                    </Text>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>
+                        {shortFilm.title}
+                      </Text>
+                      <Text style={styles.metaText} numberOfLines={1}>
+                        SHORT FILM
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -1071,18 +1291,18 @@ export function HomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   scrollContent: {
-    gap: 18,
-    paddingBottom: 24,
+    gap: 24,
+    paddingBottom: 40,
   },
   loadingContent: {
-    gap: 18,
-    paddingBottom: 24,
+    gap: 24,
+    paddingBottom: 40,
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
+    paddingHorizontal: 0,
     marginBottom: 4,
   },
   walletChip: {
@@ -1094,7 +1314,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 8,
-    minHeight: 48,
+    minHeight: 44,
     paddingHorizontal: 12,
   },
   walletChipPressed: {
@@ -1145,9 +1365,10 @@ const styles = StyleSheet.create({
   },
   brand: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
-    letterSpacing: 0.2,
+    fontSize: 26,
+    fontWeight: Platform.select({ android: "400", ios: "300" }),
+    fontFamily: Platform.select({ android: "serif", ios: "Cormorant Garamond" }),
+    letterSpacing: 0.5,
   },
   brandAccent: {
     color: colors.accent,
@@ -1156,11 +1377,12 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   section: {
-    gap: 10,
+    gap: 12,
   },
   sectionTitle: {
     color: colors.text,
     ...typography.homeSectionTitle,
+    letterSpacing: 0.3,
   },
   sectionTitleSkeleton: {
     backgroundColor: "rgba(232, 228, 218, 0.08)",
@@ -1168,21 +1390,21 @@ const styles = StyleSheet.create({
     width: 132,
   },
   horizontalList: {
-    gap: 10,
-    paddingHorizontal: 2,
+    gap: 12,
+    paddingHorizontal: 0,
     paddingBottom: 2,
   },
   continueWatchingSeparator: {
-    width: 10,
+    width: 12,
   },
   posterCard: {
-    gap: 8,
+    gap: 10,
   },
   resumeCard: {
-    gap: 7,
+    gap: 10,
   },
   cardMainPressable: {
-    gap: 6,
+    gap: 0,
   },
   cardPressableBusy: {
     opacity: 0.6,
@@ -1193,8 +1415,7 @@ const styles = StyleSheet.create({
   coverWrap: {
     position: "relative",
     backgroundColor: colors.surface,
-    borderColor: borders.color,
-    borderWidth: 0,
+    borderRadius: 10,
     overflow: "hidden",
   },
   previewFallback: {
@@ -1210,8 +1431,8 @@ const styles = StyleSheet.create({
   progressOverlay: {
     bottom: 0,
     left: 0,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
     position: "absolute",
     right: 0,
   },
@@ -1232,14 +1453,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
+  cardInfo: {
+    gap: 4,
+    paddingHorizontal: 2,
+  },
   cardTitle: {
     color: colors.text,
     ...typography.homeCardTitle,
+    fontSize: 14,
   },
   metaText: {
     color: colors.muted,
-    ...typography.homeCardMeta,
-    textTransform: "none",
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   pressed: {
     opacity: 0.82,
@@ -1263,9 +1491,10 @@ const styles = StyleSheet.create({
   },
   infoButton: {
     alignItems: "center",
-    height: 28,
+    height: 24,
     justifyContent: "center",
-    width: 28,
+    width: 24,
+    marginTop: -2,
   },
   infoButtonPressed: {
     opacity: 0.72,
@@ -1287,12 +1516,13 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
   progressTrack: {
-    height: 4,
+    height: 3,
     backgroundColor: "rgba(232, 228, 218, 0.14)",
+    borderRadius: 2,
     overflow: "hidden",
   },
   progressFill: {
-    height: 4,
+    height: 3,
     backgroundColor: colors.accent,
   },
   brandSkeleton: {
@@ -1345,7 +1575,6 @@ const styles = StyleSheet.create({
   },
   loadingCard: {
     backgroundColor: "rgba(232, 228, 218, 0.08)",
-    borderColor: borders.color,
-    borderWidth: 1,
+    borderRadius: 10,
   },
 });

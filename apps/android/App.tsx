@@ -9,6 +9,7 @@ import { MainTabsNavigator } from "./src/navigation/MainTabs";
 import type { RootStackParamList } from "./src/navigation/types";
 import { colors } from "./src/theme/tokens";
 import { EpisodeAccessOptionsScreen } from "./src/screens/EpisodeAccessOptionsScreen";
+import { AgeDeclarationScreen } from "./src/screens/AgeDeclarationScreen";
 import { SeriesScreen } from "./src/screens/SeriesScreen";
 import { SeriesEpisodesScreen } from "./src/screens/SeriesEpisodesScreen";
 import { ParentalControlsScreen } from "./src/screens/ParentalControlsScreen";
@@ -23,8 +24,11 @@ import { WalletScreen } from "./src/screens/WalletScreen";
 import { CoinPurchaseScreen } from "./src/screens/CoinPurchaseScreen";
 import { PlusScreen } from "./src/screens/PlusScreen";
 import { WatchScreen } from "./src/screens/WatchScreen";
+import { perfMark } from "./src/lib/perf";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+perfMark("APP_START");
 
 function AppNavigator() {
   const { isLoading } = useAuth();
@@ -35,7 +39,7 @@ function AppNavigator() {
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer linking={linking} onReady={() => perfMark("NAVIGATION_READY")}>
       <Stack.Navigator
         initialRouteName="MainTabs"
         screenOptions={{
@@ -85,12 +89,17 @@ function AppNavigator() {
         />
         <Stack.Screen name="Watch" component={WatchScreen} />
         <Stack.Screen
+          name="AgeDeclaration"
+          component={AgeDeclarationScreen}
+          options={{ title: "Before you continue" }}
+        />
+        <Stack.Screen
           name="SignIn"
           component={SignInScreen}
           options={{ title: "Sign in" }}
         />
       </Stack.Navigator>
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </NavigationContainer>
   );
 }

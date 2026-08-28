@@ -1,9 +1,11 @@
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { useAuth } from "../lib/authContext";
+import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
 import { getSeries } from "../lib/api";
 import {
@@ -26,6 +28,7 @@ const SCREEN_HORIZONTAL_PADDING = 16;
 const TOUCH_TARGET_MIN = 48;
 const MIN_COLUMNS = 3;
 const PREFERRED_COLUMNS = 5;
+const PLUS_MARKER_COLOR = "#B91825";
 
 export function SeriesEpisodesScreen({ navigation, route }: Props) {
   const { width } = useWindowDimensions();
@@ -33,13 +36,17 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
   const accessToken = session?.access_token;
   const routedSeries = route.params.series;
   const routedSeriesSlug = route.params.seriesSlug ?? routedSeries?.slug;
-  const [resolvedSeries, setResolvedSeries] = useState<ApiSeries | null>(routedSeries ?? null);
+  const confirmedInitialSeriesAccess = getConfirmedSeriesAccess(routedSeriesSlug);
+  const [resolvedSeries, setResolvedSeries] = useState<ApiSeries | null>(
+    confirmedInitialSeriesAccess?.series ?? routedSeries ?? null,
+  );
   const [resolvedEpisodeAccess, setResolvedEpisodeAccess] = useState<Record<string, EpisodeAccess>>(
-    route.params.episodeAccess ?? {},
+    confirmedInitialSeriesAccess?.episodeAccess ?? route.params.episodeAccess ?? {},
   );
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const shouldFetchSeries = !routedSeries || routedSeries.episodes.length === 0;
-  const [isSeriesLoading, setIsSeriesLoading] = useState(() => shouldFetchSeries);
+  const [isSeriesLoading, setIsSeriesLoading] = useState(() => shouldFetchSeries && !confirmedInitialSeriesAccess);
+  const hasHydratedRef = useRef(Boolean(confirmedInitialSeriesAccess) || !shouldFetchSeries);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
@@ -66,6 +73,7 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
       })
       .finally(() => {
         if (isMounted) {
+          hasHydratedRef.current = true;
           setIsSeriesLoading(false);
         }
       });
@@ -74,6 +82,54 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
       isMounted = false;
     };
   }, [accessToken, routedSeriesSlug, shouldFetchSeries]);
+
+  useEffect(() => {
+    if (!routedSeriesSlug) {
+      return undefined;
+    }
+
+    return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (seriesResponse.series.slug !== routedSeriesSlug) {
+        return;
+      }
+
+      setResolvedSeries(seriesResponse.series);
+      setResolvedEpisodeAccess(seriesResponse.episodeAccess);
+      setSeriesError(null);
+      setIsSeriesLoading(false);
+      hasHydratedRef.current = true;
+    });
+  }, [routedSeriesSlug]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!routedSeriesSlug || !hasHydratedRef.current) {
+        return undefined;
+      }
+
+      let isActive = true;
+
+      void getSeries(routedSeriesSlug, accessToken)
+        .then((seriesResponse) => {
+          if (!isActive) {
+            return;
+          }
+
+          setResolvedSeries(seriesResponse.series);
+          setResolvedEpisodeAccess(seriesResponse.episodeAccess);
+          setSeriesError(null);
+        })
+        .catch(() => {
+          if (isActive && __DEV__) {
+            console.error("[0nya SERIES episodes access refresh] Unable to refresh episode access.");
+          }
+        });
+
+      return () => {
+        isActive = false;
+      };
+    }, [accessToken, routedSeriesSlug]),
+  );
 
   const series = resolvedSeries ?? routedSeries ?? null;
   const episodes = useMemo(() => series?.episodes ?? EMPTY_EPISODES, [series]);
@@ -338,13 +394,16 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
             isCurrent && styles.markerCurrent,
           ]}
         >
-          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          {marker.icon === "coin" ? <CoinGlyph /> : null}
           <Text
             numberOfLines={1}
             style={[
               styles.cellAccessLabel,
               marker.tone === "available" && styles.cellAccessLabelAvailable,
               marker.tone === "locked" && styles.cellAccessLabelLocked,
+              marker.variant === "plus" && styles.cellAccessLabelPlus,
+              marker.variant === "ad" && styles.cellAccessLabelAd,
+              marker.variant === "coin" && styles.cellAccessLabelCoin,
               isCurrent && styles.cellAccessLabelCurrent,
             ]}
           >
@@ -356,10 +415,11 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
   );
 }
 
-function CoinGlyph({ color }: { color: string }) {
+function CoinGlyph() {
   return (
-    <View style={[styles.coinGlyph, { borderColor: color }]}>
-      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
+    <View style={styles.coinGlyph}>
+      <View style={styles.coinGlyphInner} />
+      <View style={styles.coinGlyphHighlight} />
     </View>
   );
 }
@@ -453,8 +513,17 @@ const styles = StyleSheet.create({
   cellAccessLabelAvailable: {
     color: colors.text,
   },
+  cellAccessLabelAd: {
+    color: colors.muted,
+  },
+  cellAccessLabelCoin: {
+    color: colors.text,
+  },
   cellAccessLabelLocked: {
     color: colors.muted,
+  },
+  cellAccessLabelPlus: {
+    color: PLUS_MARKER_COLOR,
   },
   cellAccessLabelCurrent: {
     color: colors.accent,
@@ -469,6 +538,8 @@ const styles = StyleSheet.create({
   markerCurrent: {},
   coinGlyph: {
     alignItems: "center",
+    backgroundColor: "#F2B705",
+    borderColor: "#F6DD63",
     borderRadius: 999,
     borderWidth: 1.3,
     height: 8,
@@ -476,8 +547,18 @@ const styles = StyleSheet.create({
     width: 8,
   },
   coinGlyphInner: {
+    backgroundColor: "#D89100",
     borderRadius: 999,
-    height: 2.5,
-    width: 2.5,
+    height: 4.5,
+    width: 4.5,
+  },
+  coinGlyphHighlight: {
+    backgroundColor: "#FFF0A6",
+    borderRadius: 999,
+    height: 1.6,
+    left: 2,
+    position: "absolute",
+    top: 1.5,
+    width: 1.6,
   },
 });

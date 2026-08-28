@@ -833,9 +833,11 @@ does not invent policy
 - Exact confirmation is required for every destructive action.
 - Protected entitlement, commerce, accounting, and history dependencies must block deletion.
 - Series-level "Delete All Episodes" and "Delete Series + All Episodes" are supported for operational cleanup.
-- Content deletion may also remove exclusively owned Mux assets and their orphaned `media_assets` rows after the editorial records are gone.
-- Shared Mux/media assets must be preserved.
-- If provider cleanup fails after content deletion, the media asset row must be preserved for retry.
+- Content deletion may also remove exclusively owned artwork objects and Mux assets, plus their orphaned `media_assets` rows, after the editorial records are gone.
+- Archive/unpublish must never delete artwork or Mux assets.
+- Shared artwork and shared Mux/media assets must be preserved.
+- Episode delete may remove its own thumbnail artwork only when no other live content record references that object.
+- If provider or artwork cleanup fails after content deletion, the affected row/object must be preserved for retry and the failure must remain observable.
 
 ---
 

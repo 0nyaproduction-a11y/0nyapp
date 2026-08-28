@@ -37,6 +37,7 @@ export type MainTabParamList = {
 };
 
 export type RootStackParamList = {
+  AgeDeclaration: undefined;
   SignIn: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   Wallet: undefined;
@@ -85,6 +86,7 @@ export type RootStackParamList = {
       allowedCoinAmounts: number[];
       available: boolean;
     };
+    hasSentChaiThisPlayback?: boolean;
   };
   ShortFilmChaiAmount: {
     selectedAmount?: number;

@@ -455,7 +455,7 @@ This replaces the old mandatory 'first three free' model.
 2. Film Detail opens with poster, creator/director, duration, language, rating/descriptors, synopsis, Play/Resume and Share.
 3. Free/Registered Free viewer taps Play -> film plays with CMS-controlled short-film ad rules.
 4. 0nya Plus viewer taps Play -> same film plays ad-free.
-5. Film completes -> post-roll ad for non-Plus if enabled/available -> Chai coin prompt -> Share -> Related films.
+5. During eligible playback, a subtle Send Chai affordance may become available approximately 45 seconds before completion; film completion still leads to post-roll ad for non-Plus if enabled/available -> Chai coin prompt -> Share -> Related films.
 
 | Film state | Free / Registered Free | 0nya Plus |
 | --- | --- | --- |
@@ -463,7 +463,7 @@ This replaces the old mandatory 'first three free' model.
 | Coin lock | Never | Never |
 | Mid-roll ad | CMS controlled | No |
 | Post-roll ad | CMS controlled | No |
-| Chai coin tip | Available after completion | Available after completion |
+| Chai coin tip | Subtle in-player affordance may appear at approximately T-45 seconds; also available after completion | Subtle in-player affordance may appear at approximately T-45 seconds; also available after completion |
 
 D02 CTA state uses the shared resume/completion rule:
 
@@ -495,7 +495,7 @@ D02 CTA state uses the shared resume/completion rule:
 
 > **LOCKED** — Chai is a coin transaction. A viewer tips 0nya coins to a Vertical Short Film from the same wallet flow; there is no separate cash/UPI Chai checkout inside the viewer flow.
 
-1. During the final ~10 seconds of eligible short-film playback, show a compact in-context Send Chai affordance (optional, never auto-opens the full flow).
+1. During the final ~45 seconds of eligible short-film playback, show a compact in-context Send Chai affordance (optional, never auto-opens the full flow).
 2. Film completes.
 3. Non-Plus post-roll runs first if enabled and available.
 4. F02 still surfaces Send Chai, Share, Replay, optional Related films, and Home.

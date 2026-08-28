@@ -7,6 +7,7 @@ import { BrandWordmark, RecoveryState } from "../components/ui";
 import { ApiError, createRewardedAdAttempt, getRewardedAdAttemptStatus, getSeries, getWallet, purchaseEpisodeWithCoins } from "../lib/api";
 import { useAdMob } from "../lib/adMob";
 import { useAuth } from "../lib/authContext";
+import { publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { useEpisodeRewardedUnlockAd } from "../lib/episodeRewardedUnlockAd";
 import type { RootStackParamList } from "../navigation/types";
 import type { RewardedAdAttemptResponse, SeriesResponse } from "../types/api";
@@ -130,6 +131,8 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
       if (!unlockedAccess.canWatch) {
         throw new Error("Rewarded access was not reflected by the backend.");
       }
+
+      publishConfirmedSeriesAccess(seriesResponse);
 
       navigation.replace("Watch", {
         access: unlockedAccess,

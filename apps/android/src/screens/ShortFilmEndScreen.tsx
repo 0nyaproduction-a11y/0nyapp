@@ -3,7 +3,7 @@ import { Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, use
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Screen } from "../components/Screen";
-import { Body, Button, Label, Title } from "../components/ui";
+import { Body, Button, Label, Title, TransientFeedback } from "../components/ui";
 import { getCatalog, getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { buildShortFilmShareMessage } from "../lib/content-links";
@@ -14,6 +14,8 @@ import type { ApiShortFilm } from "../types/api";
 import { borders, colors } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ShortFilmEnd">;
+
+const CHAI_SUCCESS_FEEDBACK_MS = 2600;
 
 function amountLabel(amount: number) {
   return `${amount} coins`;
@@ -34,6 +36,10 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
   const [submitState, setSubmitState] = useState<"idle" | "success" | "error">("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [lastSubmittedAmount, setLastSubmittedAmount] = useState<number | null>(null);
+  const [chaiFeedback, setChaiFeedback] = useState<{ id: number; message: string } | null>(null);
+  const [hasSentChaiThisPlayback, setHasSentChaiThisPlayback] = useState(
+    route.params.hasSentChaiThisPlayback === true,
+  );
   const [relatedShortFilms, setRelatedShortFilms] = useState<ApiShortFilm[]>([]);
   const filmTitle = shortFilm.title;
   const shareMessage = useMemo(
@@ -42,6 +48,7 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
   );
   const allowedAmounts = useMemo(() => chai.allowedCoinAmounts ?? [], [chai.allowedCoinAmounts]);
   const canSendChai = shortFilm.chaiEnabled && chai.available && allowedAmounts.length > 0;
+  const chaiCtaLabel = hasSentChaiThisPlayback ? "Send More Chai" : "Send Chai";
 
   const goHome = useCallback(() => {
     navigation.reset({
@@ -60,6 +67,20 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
+
+  useEffect(() => {
+    if (!chaiFeedback) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setChaiFeedback((currentFeedback) =>
+        currentFeedback?.id === chaiFeedback.id ? null : currentFeedback,
+      );
+    }, CHAI_SUCCESS_FEEDBACK_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [chaiFeedback]);
 
   useEffect(() => {
     let isMounted = true;
@@ -148,8 +169,14 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
 
       if (result.success || result.status === "tip_success" || result.status === "already_processed") {
         setLastSubmittedAmount(selectedAmount);
+        setHasSentChaiThisPlayback(true);
         setWalletBalance(result.remainingBalance ?? Math.max((walletBalance ?? wallet.balance) - selectedAmount, 0));
         setSubmitState("success");
+        setIsChaiSheetOpen(false);
+        setChaiFeedback({
+          id: Date.now(),
+          message: `Chai sent \u2022 ${selectedAmount} coins`,
+        });
         return;
       }
 
@@ -207,12 +234,12 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
           <Body>Enjoyed the film?</Body>
           {canSendChai ? (
             <Pressable
-              accessibilityLabel="Send Chai"
+              accessibilityLabel={chaiCtaLabel}
               accessibilityRole="button"
               onPress={() => void openChaiSheet()}
               style={styles.primaryAction}
             >
-              <Text style={styles.primaryActionText}>Send Chai</Text>
+              <Text style={styles.primaryActionText}>{chaiCtaLabel}</Text>
               <Text style={styles.primaryActionHelper}>Appreciate this film</Text>
             </Pressable>
           ) : null}
@@ -293,6 +320,12 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
           <Text style={styles.homeActionText}>Home</Text>
         </Pressable>
       </View>
+
+      <TransientFeedback
+        message={chaiFeedback?.message ?? ""}
+        style={[styles.chaiFeedback, { bottom: 24 + insets.bottom }]}
+        visible={Boolean(chaiFeedback)}
+      />
 
       <Modal animationType="slide" transparent visible={isChaiSheetOpen} onRequestClose={() => setIsChaiSheetOpen(false)}>
         <Pressable style={styles.sheetBackdrop} onPress={() => setIsChaiSheetOpen(false)}>
@@ -513,6 +546,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: "700",
+  },
+  chaiFeedback: {
+    left: 18,
+    position: "absolute",
+    right: 18,
   },
   sheetBackdrop: {
     backgroundColor: "rgba(0,0,0,0.55)",

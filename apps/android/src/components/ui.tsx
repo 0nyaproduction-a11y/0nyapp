@@ -14,11 +14,18 @@ import {
 import { borders, colors, radii, spacing } from "../theme/tokens";
 
 type TextBlockProps = PropsWithChildren<{
+  numberOfLines?: number;
   style?: StyleProp<TextStyle>;
 }>;
 
-export function Title({ children, style }: TextBlockProps) {
-  return <Text style={[styles.title, style]}>{children}</Text>;
+type TransientFeedbackProps = {
+  message: string;
+  style?: StyleProp<ViewStyle>;
+  visible: boolean;
+};
+
+export function Title({ children, numberOfLines, style }: TextBlockProps) {
+  return <Text numberOfLines={numberOfLines} style={[styles.title, style]}>{children}</Text>;
 }
 
 type BrandWordmarkProps = {
@@ -35,12 +42,12 @@ export function BrandWordmark({ plus = false, style }: BrandWordmarkProps) {
   );
 }
 
-export function Label({ children }: PropsWithChildren) {
-  return <Text style={styles.label}>{children}</Text>;
+export function Label({ children, numberOfLines, style }: TextBlockProps) {
+  return <Text numberOfLines={numberOfLines} style={[styles.label, style]}>{children}</Text>;
 }
 
-export function Body({ children, style }: TextBlockProps) {
-  return <Text style={[styles.body, style]}>{children}</Text>;
+export function Body({ children, numberOfLines, style }: TextBlockProps) {
+  return <Text numberOfLines={numberOfLines} style={[styles.body, style]}>{children}</Text>;
 }
 
 export function Card({ children }: PropsWithChildren) {
@@ -129,6 +136,19 @@ export function LoadingState() {
 
 export function ErrorText({ children }: PropsWithChildren) {
   return <Text style={styles.error}>{children}</Text>;
+}
+
+export function TransientFeedback({ message, style, visible }: TransientFeedbackProps) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="none" style={[styles.transientFeedback, style]}>
+      <Text style={styles.transientFeedbackIcon}>{"\u2713"}</Text>
+      <Text style={styles.transientFeedbackText}>{message}</Text>
+    </View>
+  );
 }
 
 type RecoveryStateProps = {
@@ -310,5 +330,30 @@ const styles = StyleSheet.create({
     color: "#ff8d76",
     fontSize: 14,
     lineHeight: 20,
+  },
+  transientFeedback: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "rgba(5, 10, 10, 0.86)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderRadius: 999,
+    borderWidth: borders.width,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    maxWidth: "86%",
+    minHeight: 38,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  transientFeedbackIcon: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  transientFeedbackText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
   },
 });

@@ -6,8 +6,10 @@ import { VideoView } from "expo-video";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { TransientFeedback } from "../components/ui";
 import { getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
+import { perfMark, perfSetAutoNextPlaybackPending } from "../lib/perf";
 import { EpisodeListSheet } from "./EpisodeListSheet";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerMoreSheet } from "./PlayerMoreSheet";
@@ -67,7 +69,8 @@ const DOUBLE_TAP_DELAY_MS = 280;
 const SEEK_SECONDS = 10;
 const HOLD_RATE = 1.5;
 const TERMINAL_VISUAL_GUARD_SECONDS = 0.05;
-const CHAI_REVEAL_FINAL_SECONDS = 10;
+const CHAI_REVEAL_FINAL_SECONDS = 45;
+const CHAI_SUCCESS_FEEDBACK_MS = 2600;
 
 function isInChaiRevealWindow(duration: number, currentTime: number) {
   if (
@@ -116,6 +119,23 @@ function getRetrySeekSeconds(options: {
   return clampedPosition;
 }
 
+function shouldResolveNextEpisodeAfterCompletion(context: PlaybackContext, autoplayNextEnabled: boolean) {
+  return Boolean(
+    autoplayNextEnabled &&
+      context.type === "SERIES_EPISODE" &&
+      context.nextEpisode &&
+      !context.hasUnreleasedNextEpisode,
+  );
+}
+
+function shouldUseSeamlessAutoNextCover(context: PlaybackContext, autoplayNextEnabled: boolean) {
+  return Boolean(
+    shouldResolveNextEpisodeAfterCompletion(context, autoplayNextEnabled) &&
+      context.type === "SERIES_EPISODE" &&
+      !context.hasLockedNextEpisode,
+  );
+}
+
 export function PlayerScreen({
   context,
   episodeAccess,
@@ -146,6 +166,7 @@ export function PlayerScreen({
   // true before awaiting saveFinal() so competing playToEnd events cannot both
   // race into the same transition path.
   const autoNextActiveRef = useRef(false);
+  const completionHandoffBlurredRef = useRef(false);
   const resumeAppliedContextRef = useRef<string | null>(null);
   const progressSyncArmedRef = useRef(false);
   const subtitlePreferenceLoadedRef = useRef(false);
@@ -172,6 +193,7 @@ export function PlayerScreen({
   // episode actually mounting, so the Replay/Back ended-overlay does not
   // flash on screen during a seamless auto-advance.
   const [isAutoAdvancing, setIsAutoAdvancing] = useState(false);
+  const [isCompletionHandoffActive, setIsCompletionHandoffActive] = useState(false);
   const [isTransitionRequested, setIsTransitionRequested] = useState(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState(false);
   const [isSubtitleSheetOpen, setIsSubtitleSheetOpen] = useState(false);
@@ -183,6 +205,7 @@ export function PlayerScreen({
   const [chaiSubmitState, setChaiSubmitState] = useState<"idle" | "success" | "error">("idle");
   const [chaiError, setChaiError] = useState<string | null>(null);
   const [hasSentChai, setHasSentChai] = useState(false);
+  const [chaiFeedback, setChaiFeedback] = useState<{ id: number; message: string } | null>(null);
   const [autoplayNextEnabled, setAutoplayNextEnabled] = useState(true);
   const [subtitlePreference, setSubtitlePreferenceState] = useState<SubtitlePreference>({
     enabled: false,
@@ -202,9 +225,7 @@ export function PlayerScreen({
 
   const advanceToNext = useCallback(() => {
     if (
-      !autoplayNextEnabled ||
-      context.type !== "SERIES_EPISODE" ||
-      !context.nextEpisode ||
+      !shouldResolveNextEpisodeAfterCompletion(context, autoplayNextEnabled) ||
       transitionStartedRef.current
     ) {
       // Keep the lock if a successful handoff already started; the incoming
@@ -216,8 +237,19 @@ export function PlayerScreen({
       return;
     }
 
+    if (context.type !== "SERIES_EPISODE" || !context.nextEpisode) {
+      return;
+    }
+
     transitionStartedRef.current = true;
-    setIsAutoAdvancing(true);
+    perfMark("AUTO_NEXT_START", {
+      episode_number: context.nextEpisode.episodeNumber,
+      series_slug: context.seriesSlug,
+    });
+    perfSetAutoNextPlaybackPending();
+    if (shouldUseSeamlessAutoNextCover(context, autoplayNextEnabled)) {
+      setIsAutoAdvancing(true);
+    }
     onAdvanceToNextRef.current?.(context.nextEpisode);
   }, [autoplayNextEnabled, context]);
 
@@ -237,11 +269,11 @@ export function PlayerScreen({
       }
 
       if (
-        autoplayNextEnabled &&
-        context.type === "SERIES_EPISODE" &&
-        context.nextEpisode &&
+        shouldResolveNextEpisodeAfterCompletion(context, autoplayNextEnabled) &&
         !transitionStartedRef.current
       ) {
+        completionHandoffBlurredRef.current = false;
+        setIsCompletionHandoffActive(true);
         seamlessTransitionRequestedRef.current = true;
         seamlessTransitionQueuedRef.current = true;
         setIsTransitionRequested(true);
@@ -261,10 +293,13 @@ export function PlayerScreen({
       void (async () => {
         await progressSyncRef.current.saveFinal();
 
-        onEnded?.(payload);
+        onEnded?.({
+          ...payload,
+          chaiSentThisPlayback: context.type === "SHORT_FILM" ? hasSentChai : undefined,
+        });
       })();
     },
-    [autoplayNextEnabled, context, isPreviewMode, onEnded],
+    [autoplayNextEnabled, context, hasSentChai, isPreviewMode, onEnded],
   );
 
   const controller = usePlaybackController({
@@ -303,7 +338,7 @@ export function PlayerScreen({
         return;
       }
 
-      setIsAutoAdvancing(true);
+      setIsAutoAdvancing(shouldUseSeamlessAutoNextCover(context, autoplayNextEnabled));
       advanceToNext();
       setIsTransitionRequested(false);
       seamlessTransitionRequestedRef.current = false;
@@ -313,7 +348,7 @@ export function PlayerScreen({
     return () => {
       cancelled = true;
     };
-  }, [advanceToNext, autoplayNextEnabled, contextKey, isTransitionRequested]);
+  }, [advanceToNext, autoplayNextEnabled, context, contextKey, isTransitionRequested]);
   const player = controller.player;
   const playbackRate = controller.playbackRate;
   const sourceLoadCount = controller.sourceLoadCount;
@@ -323,11 +358,16 @@ export function PlayerScreen({
     controller.isPlaying,
   );
   const { pause, play, seekBy, setPlaybackRate } = controller;
-  const shouldShowTransitionCover = isTransitionRequested || isAutoAdvancing;
-  const shouldShowTerminalGuard =
-    !isPreviewMode &&
+  const shouldUseSeamlessCover = shouldUseSeamlessAutoNextCover(context, autoplayNextEnabled);
+  const shouldShowTransitionCover = (isTransitionRequested && shouldUseSeamlessCover) || isAutoAdvancing;
+  const shouldSuppressCompletedOverlay =
+    isCompletionHandoffActive &&
     context.type === "SERIES_EPISODE" &&
     Boolean(context.nextEpisode) &&
+    !context.hasUnreleasedNextEpisode;
+  const shouldShowTerminalGuard =
+    !isPreviewMode &&
+    shouldUseSeamlessCover &&
     !isTransitionRequested &&
     !isAutoAdvancing &&
     !controller.hasEnded &&
@@ -387,6 +427,7 @@ export function PlayerScreen({
     autoNextActiveRef.current = false;
     resumeAppliedContextRef.current = null;
     progressSyncArmedRef.current = false;
+    completionHandoffBlurredRef.current = false;
     replayStartPendingRef.current =
       context.type === "SHORT_FILM" && initialSeekSeconds === 0;
     // A new episode/context means any in-flight auto-advance handoff from the
@@ -397,6 +438,7 @@ export function PlayerScreen({
     Promise.resolve().then(() => {
       if (active) {
         setIsAutoAdvancing(false);
+        setIsCompletionHandoffActive(false);
       }
     });
 
@@ -412,7 +454,22 @@ export function PlayerScreen({
     setWalletBalance(null);
     setChaiSubmitState("idle");
     setChaiError(null);
+    setChaiFeedback(null);
   }, []);
+
+  useEffect(() => {
+    if (!chaiFeedback) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setChaiFeedback((currentFeedback) =>
+        currentFeedback?.id === chaiFeedback.id ? null : currentFeedback,
+      );
+    }, CHAI_SUCCESS_FEEDBACK_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [chaiFeedback]);
 
   useEffect(() => {
     let active = true;
@@ -434,7 +491,16 @@ export function PlayerScreen({
   }, []);
 
   useEffect(() => {
+    const unsubscribeFocus = navigation.addListener("focus", () => {
+      if (completionHandoffBlurredRef.current) {
+        completionHandoffBlurredRef.current = false;
+        setIsCompletionHandoffActive(false);
+      }
+    });
     const unsubscribeBlur = navigation.addListener("blur", () => {
+      if (isCompletionHandoffActive) {
+        completionHandoffBlurredRef.current = true;
+      }
       void progressSync.saveNow();
       pause();
       if (temporaryPlaybackRateRestoreRef.current !== null) {
@@ -446,9 +512,10 @@ export function PlayerScreen({
     });
 
     return () => {
+      unsubscribeFocus();
       unsubscribeBlur();
     };
-  }, [navigation, pause, progressSync, setPlaybackRate]);
+  }, [isCompletionHandoffActive, navigation, pause, progressSync, setPlaybackRate]);
 
   useEffect(() => {
     const unsubscribeBeforeRemove = navigation.addListener("beforeRemove", (event) => {
@@ -523,6 +590,10 @@ export function PlayerScreen({
 
   const handleSeekTo = useCallback(
     (seconds: number) => {
+      perfMark("SEEK", {
+        position_seconds: Math.floor(seconds),
+        source: "SCRUB",
+      });
       controller.seekTo(seconds);
       revealControls();
     },
@@ -618,6 +689,11 @@ export function PlayerScreen({
         setHasSentChai(true);
         setChaiSubmitState("success");
         setWalletBalance(result.remainingBalance ?? Math.max((walletBalance ?? currentBalance) - nextAmount, 0));
+        setIsChaiSheetOpen(false);
+        setChaiFeedback({
+          id: Date.now(),
+          message: `Chai sent \u2022 ${nextAmount} coins`,
+        });
         return;
       }
 
@@ -811,6 +887,11 @@ export function PlayerScreen({
     }
 
     if (isDoubleTap) {
+      perfMark("SEEK", {
+        direction: side === "left" ? "backward" : "forward",
+        seconds: SEEK_SECONDS,
+        source: "DOUBLE_TAP",
+      });
       seekBy(side === "left" ? -SEEK_SECONDS : SEEK_SECONDS);
       revealControls();
       lastTapRef.current = null;
@@ -819,6 +900,7 @@ export function PlayerScreen({
 
     lastTapRef.current = { side, timestamp: now };
     singleTapTimerRef.current = setTimeout(() => {
+      perfMark("PLAYER_CONTROLS_TOGGLE", { source: "TAP" });
       toggleControls();
       singleTapTimerRef.current = null;
     }, DOUBLE_TAP_DELAY_MS);
@@ -953,7 +1035,10 @@ export function PlayerScreen({
                       </Pressable>
                     </View>
                   </View>
-                ) : controller.hasEnded && !isAutoAdvancing && context.type === "SERIES_EPISODE" ? (
+                ) : controller.hasEnded &&
+                  !isAutoAdvancing &&
+                  !shouldSuppressCompletedOverlay &&
+                  context.type === "SERIES_EPISODE" ? (
                   <View pointerEvents="box-none" style={styles.endedOverlay}>
                     <View pointerEvents="none" style={styles.endedTopScrim} />
                     <View pointerEvents="none" style={styles.endedBottomScrim} />
@@ -994,6 +1079,12 @@ export function PlayerScreen({
                     <Text style={styles.chaiButtonText}>Send Chai</Text>
                   </Pressable>
                 ) : null}
+
+                <TransientFeedback
+                  message={chaiFeedback?.message ?? ""}
+                  style={styles.chaiFeedback}
+                  visible={Boolean(chaiFeedback)}
+                />
 
                 {controller.status === "error" ? (
                   <View style={styles.errorPanel}>
@@ -1375,6 +1466,10 @@ const styles = StyleSheet.create({
     color: "#F4FFFD",
     fontSize: 13,
     fontWeight: "800",
+  },
+  chaiFeedback: {
+    bottom: 166,
+    position: "absolute",
   },
   chaiSheetBackdrop: {
     ...StyleSheet.absoluteFill,

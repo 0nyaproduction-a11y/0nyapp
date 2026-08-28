@@ -505,7 +505,7 @@ flowchart TD
 - Non-Plus may receive CMS mid/post-roll ads.
 - Plus is ad-free.
 - No blind 50% mid-roll if editorial timecodes are available.
-- The Chai affordance can reveal in the final ~10 seconds of playback, but it must stay in-context and not auto-open a full-screen T01/T02 flow.
+- The Chai affordance can reveal in the final ~45 seconds of playback, but it must stay in-context and not auto-open a full-screen T01/T02 flow.
 - If ignored, the user can still reach the same compact sheet from the film-end state without changing completion or wallet authority.
 - D02 CTA is dynamic: Play for no-valid-progress, completed, or final-zone; Resume for valid unfinished >=5 seconds outside final-zone.
 - D02 CTA action must match label: Play starts from beginning for completed/fresh entry; Resume continues latest valid unfinished position.

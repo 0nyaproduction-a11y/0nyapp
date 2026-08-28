@@ -5,7 +5,9 @@ import { Screen } from "../components/Screen";
 import { ContentRatingSlate } from "../components/ContentRatingSlate";
 import { LoadingState, RecoveryState } from "../components/ui";
 import { getSeries } from "../lib/api";
+import { subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { loadWatchHistory } from "../lib/playbackHistory";
+import { perfEnd, perfMark, perfStart } from "../lib/perf";
 import { resolveEffectiveEpisodeClassification } from "../lib/classification";
 import { useAuth } from "../lib/authContext";
 import {
@@ -70,6 +72,14 @@ export function WatchScreen({ navigation, route }: Props) {
   const [progressByEpisode, setProgressByEpisode] = useState<Record<number, WatchProgressItem>>({});
   const [loadedProgressToken, setLoadedProgressToken] = useState<string | null>(null);
   const [parentalControlState, setParentalControlState] = useState<ParentalControlState | null>(null);
+
+  useEffect(() => {
+    perfMark("WATCH_MOUNT", {
+      episode_number: route.params.episode?.number ?? route.params.episodeNumber,
+      has_initial_target: hasInitialTarget(route.params),
+      series_slug: route.params.series?.slug ?? route.params.seriesSlug,
+    });
+  }, [route.params]);
 
   const currentTargetKey = targetSeries && targetEpisode ? `${targetSeries.slug}:${targetEpisode.number}` : null;
   const classification = useMemo(
@@ -152,7 +162,7 @@ export function WatchScreen({ navigation, route }: Props) {
   );
 
   const activateTargetFromEpisode = useCallback(
-    (episodeNumber: number) => {
+    (episodeNumber: number, source: "auto_next" | "manual" = "manual") => {
       if (!targetSeries) {
         return;
       }
@@ -161,7 +171,24 @@ export function WatchScreen({ navigation, route }: Props) {
       const access = targetEpisodeAccess[String(episodeNumber)];
 
       if (!episode || !access) {
+        if (source === "auto_next") {
+          perfMark("NEXT_ACCESS_END", {
+            episode_number: episodeNumber,
+            series_slug: targetSeries.slug,
+            status: "unavailable",
+          });
+        }
         return;
+      }
+
+      if (source === "auto_next") {
+        perfMark("NEXT_ACCESS_END", {
+          access_kind: access.kind,
+          can_watch: access.canWatch,
+          episode_number: episodeNumber,
+          series_slug: targetSeries.slug,
+          status: "ready",
+        });
       }
 
       const nextClassification = resolveEffectiveEpisodeClassification(targetSeries, episode);
@@ -248,9 +275,41 @@ export function WatchScreen({ navigation, route }: Props) {
   }, [navigation, targetAccess, targetEpisode, targetEpisodeAccess, targetSeries]);
 
   useEffect(() => {
+    if (!targetSeries) {
+      return undefined;
+    }
+
+    return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (seriesResponse.series.slug !== targetSeries.slug) {
+        return;
+      }
+
+      const refreshedEpisode = targetEpisode
+        ? seriesResponse.series.episodes.find((candidate) => candidate.number === targetEpisode.number) ?? targetEpisode
+        : null;
+      const refreshedAccess = refreshedEpisode
+        ? seriesResponse.episodeAccess[String(refreshedEpisode.number)] ?? targetAccess
+        : targetAccess;
+
+      setTargetSeries(seriesResponse.series);
+      setTargetEpisode(refreshedEpisode);
+      setTargetEpisodeAccess(seriesResponse.episodeAccess);
+
+      if (refreshedAccess) {
+        setTargetAccess(refreshedAccess);
+      }
+    });
+  }, [targetAccess, targetEpisode, targetSeries]);
+
+  useEffect(() => {
     let isMounted = true;
 
     if (hasInitialTarget(route.params)) {
+      perfMark("ACCESS_END", {
+        episode_number: route.params.episode?.number,
+        source: "ROUTE_PARAMS",
+        status: "ready",
+      });
       return () => {
         isMounted = false;
       };
@@ -264,6 +323,12 @@ export function WatchScreen({ navigation, route }: Props) {
       };
     }
 
+    const accessMeasure = perfStart("ACCESS", {
+      episode_number: episodeNumber,
+      series_slug: seriesSlug,
+      source: "WATCH_ROUTE",
+    });
+
     void getSeries(seriesSlug, accessToken)
       .then((seriesData) => {
         if (!isMounted) {
@@ -274,10 +339,22 @@ export function WatchScreen({ navigation, route }: Props) {
         const access = seriesData.episodeAccess[String(episodeNumber)];
 
         if (!episode || !access) {
+          perfEnd(accessMeasure, {
+            episode_number: episodeNumber,
+            series_slug: seriesSlug,
+            status: "unavailable",
+          });
           setLoadState("unavailable");
           return;
         }
 
+        perfEnd(accessMeasure, {
+          access_kind: access.kind,
+          can_watch: access.canWatch,
+          episode_number: episodeNumber,
+          series_slug: seriesSlug,
+          status: "ready",
+        });
         activateTarget({
           access,
           episode,
@@ -286,6 +363,11 @@ export function WatchScreen({ navigation, route }: Props) {
         });
       })
       .catch(() => {
+        perfEnd(accessMeasure, {
+          episode_number: episodeNumber,
+          series_slug: seriesSlug,
+          status: "error",
+        });
         if (isMounted) {
           setLoadState("error");
         }
@@ -637,11 +719,14 @@ export function WatchScreen({ navigation, route }: Props) {
 
   if (playback.status === "media_not_ready" || playback.status === "playback_unavailable") {
     return (
-      <Screen>
+      <Screen scroll={false}>
         <RecoveryState
           body="This episode is not ready to play right now."
           onPrimaryAction={() => playback.refresh()}
           primaryActionLabel="Retry"
+          onSecondaryAction={backToPrevious}
+          secondaryActionLabel="Back"
+          variant="cinematic"
           title="Playback unavailable"
         />
       </Screen>
@@ -675,7 +760,7 @@ export function WatchScreen({ navigation, route }: Props) {
       isProgressResolved={accessTokenReady}
       onSeeOptions={openEpisodeAccessOptions}
       onAdvanceToNext={(nextEpisode) => {
-        activateTargetFromEpisode(nextEpisode.episodeNumber);
+        activateTargetFromEpisode(nextEpisode.episodeNumber, "auto_next");
       }}
       onSelectEpisode={(episodeNumber) => {
         activateTargetFromEpisode(episodeNumber);

@@ -44,3 +44,6 @@ next-env.d.ts
 
 # local backup/restore artifacts
 .local-backups/
+
+# Android performance capture artifacts
+/perf/

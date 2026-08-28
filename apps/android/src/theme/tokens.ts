@@ -67,4 +67,6 @@ export const borders = {
 export const artwork = {
   // web canonical content artwork ratio (aspect-[9/16]), width / height
   posterAspectRatio: 9 / 16,
+  // 0nya vertical video-derived stills use the same width / height ratio.
+  resumeAspectRatio: 9 / 16,
 } as const;

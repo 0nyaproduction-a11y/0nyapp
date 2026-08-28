@@ -8,6 +8,7 @@ import {
   type PreviewPlaybackAuthorizationRequest,
 } from "../lib/api";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
+import { perfMark, perfNow } from "../lib/perf";
 import type { PlaybackAuthorizationResponse, PreviewPlaybackAuthorizationResponse } from "../types/api";
 import type { PlaybackContext, PlaybackMode, PlaybackSource } from "./types";
 
@@ -169,6 +170,21 @@ export function usePlaybackSource(
     }
 
     let isMounted = true;
+    const sourceResolveStartedAt = perfNow();
+
+    perfMark("SOURCE_RESOLVE_START", {
+      context: contextKey,
+      playback_mode: playbackMode,
+    });
+
+    const markSourceResolved = (status: string, resolvedPlaybackMode = playbackMode) => {
+      perfMark("SOURCE_RESOLVED", {
+        context: contextKey,
+        duration_ms: Math.max(0, perfNow() - sourceResolveStartedAt).toFixed(1),
+        playback_mode: resolvedPlaybackMode,
+        status,
+      });
+    };
 
     // Source swaps are lifecycle boundaries; clear the old URL before resolving a fresh one.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -198,6 +214,7 @@ export function usePlaybackSource(
           }
 
           if (fullResponse.status === "ok") {
+            markSourceResolved("ok", "full");
             setState({
               expiresAt: fullResponse.expiresAt,
               playbackMode: "full",
@@ -208,6 +225,7 @@ export function usePlaybackSource(
             return;
           }
 
+          markSourceResolved(fullResponse.status, "full");
           setState({
             expiresAt: null,
             playbackMode: "full",
@@ -219,6 +237,7 @@ export function usePlaybackSource(
         }
 
         if (response.status === "ok") {
+          markSourceResolved("ok", "preview");
           setState({
             expiresAt: response.expiresAt,
             playbackMode: "preview",
@@ -229,6 +248,7 @@ export function usePlaybackSource(
           return;
         }
 
+        markSourceResolved(response.status, "preview");
         setState({
           expiresAt: null,
           playbackMode: "preview",
@@ -260,6 +280,7 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
@@ -270,6 +291,7 @@ export function usePlaybackSource(
             return;
           }
 
+          markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
             playbackMode: "full",
@@ -299,6 +321,7 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
@@ -309,6 +332,7 @@ export function usePlaybackSource(
             return;
           }
 
+          markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
             playbackMode: "full",
@@ -336,6 +360,7 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
@@ -346,6 +371,7 @@ export function usePlaybackSource(
             return;
           }
 
+          markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
             playbackMode: "full",
@@ -364,6 +390,7 @@ export function usePlaybackSource(
       }
 
       if (response.status === "ok") {
+        markSourceResolved("ok", "full");
         setState({
           expiresAt: response.expiresAt,
           playbackMode: "full",
@@ -374,6 +401,7 @@ export function usePlaybackSource(
         return;
       }
 
+      markSourceResolved(response.status, "full");
       setState({
         expiresAt: null,
         playbackMode: "full",
@@ -393,6 +421,7 @@ export function usePlaybackSource(
         source: null,
         status: playbackMode === "preview" ? "preview_unavailable" : "playback_unavailable",
       });
+      markSourceResolved(playbackMode === "preview" ? "preview_unavailable" : "playback_unavailable");
     });
 
     return () => {

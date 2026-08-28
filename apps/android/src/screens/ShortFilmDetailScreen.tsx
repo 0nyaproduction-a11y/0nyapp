@@ -14,6 +14,7 @@ import {
   shouldRequireParentalGate,
 } from "../lib/parentalControls";
 import { useAuth } from "../lib/authContext";
+import { perfMark } from "../lib/perf";
 import { getResumePositionSeconds } from "../player/resumePosition";
 import { resolveShortFilmArtwork } from "../lib/shortFilmArtwork";
 import type { RootStackParamList } from "../navigation/types";
@@ -226,6 +227,11 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
       return;
     }
 
+    perfMark("CONTENT_TAP", {
+      content_type: "short_film",
+      short_film_slug: shortFilm.slug,
+      source: "SHORT_FILM_DETAIL",
+    });
     navigation.navigate("ShortFilmPlayback", {
       resumeAtSeconds: resumeAtSeconds ?? undefined,
       slug: shortFilm.slug,

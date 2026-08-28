@@ -18,6 +18,26 @@ type AdMobContextValue = {
 const AdMobContext = createContext<AdMobContextValue | null>(null);
 
 let mobileAdsInitializationPromise: Promise<void> | null = null;
+const CONSENT_BOOTSTRAP_TIMEOUT_MS = __DEV__ ? 2500 : 10000;
+
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out.`));
+    }, CONSENT_BOOTSTRAP_TIMEOUT_MS);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
 
 function initializeMobileAds() {
   if (!mobileAdsInitializationPromise) {
@@ -44,10 +64,46 @@ export function AdMobProvider({ children }: { children: ReactNode }) {
     let active = true;
 
     async function bootstrap() {
+      if (__DEV__) {
+        console.info("[0nya adMob] Dev/test-ad startup bypasses UMP consent bootstrap.");
+
+        if (active) {
+          setBootstrapError(null);
+          setCanRequestAds(true);
+          setPrivacyOptionsRequired(false);
+          setIsInitialized(false);
+          setIsBootstrapping(false);
+        }
+
+        return;
+      }
+
       try {
-        await AdsConsent.requestInfoUpdate();
-        await AdsConsent.loadAndShowConsentFormIfRequired();
-        const consentInfo = await AdsConsent.getConsentInfo();
+        await withTimeout(AdsConsent.requestInfoUpdate(), "Ads consent info update");
+
+        if (!__DEV__) {
+          try {
+            await withTimeout(
+              AdsConsent.loadAndShowConsentFormIfRequired(),
+              "Ads consent form",
+            );
+          } catch (formError) {
+            console.warn(
+              formError instanceof Error
+                ? formError.message
+                : "Unable to show Google Mobile Ads consent form.",
+            );
+          }
+        } else {
+          if (__DEV__) {
+            console.info("[0nya adMob] Consent form skipped in dev/test-ad startup.");
+          }
+        }
+
+        const consentInfo = await withTimeout(
+          AdsConsent.getConsentInfo(),
+          "Ads consent info read",
+        );
 
         if (!active) {
           return;
@@ -72,9 +128,13 @@ export function AdMobProvider({ children }: { children: ReactNode }) {
         }
 
         const message = error instanceof Error ? error.message : "Unable to prepare Google Mobile Ads.";
-        console.warn(message);
+        if (__DEV__) {
+          console.info("[0nya adMob] Startup continuing without consent bootstrap.", message);
+        } else {
+          console.warn(message);
+        }
         setBootstrapError(message);
-        setCanRequestAds(true);
+        setCanRequestAds(__DEV__);
         setPrivacyOptionsRequired(false);
 
         try {
@@ -110,6 +170,14 @@ export function AdMobProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showPrivacyChoices = useCallback(async () => {
+    if (__DEV__) {
+      console.info("[0nya adMob] Privacy choices skipped in dev/test-ad mode.");
+      setBootstrapError(null);
+      setCanRequestAds(true);
+      setPrivacyOptionsRequired(false);
+      return;
+    }
+
     try {
       await AdsConsent.showPrivacyOptionsForm();
       const consentInfo = await AdsConsent.getConsentInfo();

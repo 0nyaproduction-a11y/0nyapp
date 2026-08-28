@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObjec
 import { AppState, type AppStateStatus } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 import { saveWatchHistory } from "../lib/playbackHistory";
+import { perfEnd, perfMark, perfStart } from "../lib/perf";
 import type { PlaybackContext } from "./types";
 
 type WatchProgressSyncOptions = {
@@ -23,6 +24,7 @@ type LatestProgressState = {
 const PERIODIC_WRITE_SECONDS = 5;
 const MIN_WRITE_DELTA_SECONDS = 5;
 const WRITE_TIMEOUT_MS = 4000;
+type ProgressSyncMode = "final" | "lifecycle" | "periodic" | "user";
 
 export function useWatchProgressSync({
   context,
@@ -40,6 +42,7 @@ export function useWatchProgressSync({
   });
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const lastQueuedPositionRef = useRef<number | null>(null);
+  const pendingSaveCountRef = useRef(0);
   const contextKey = getProgressContextKey(context);
 
   useLayoutEffect(() => {
@@ -55,7 +58,7 @@ export function useWatchProgressSync({
     lastQueuedPositionRef.current = null;
   }, [contextKey]);
 
-  const enqueueSave = useCallback((mode: "final" | "periodic" | "user" = "user") => {
+  const enqueueSave = useCallback((mode: ProgressSyncMode = "user") => {
     if (!enabled) {
       return Promise.resolve();
     }
@@ -116,13 +119,34 @@ export function useWatchProgressSync({
             shortFilmSlug: latest.context.filmSlug,
           };
 
+    const hadOverlap = pendingSaveCountRef.current > 0;
     queueRef.current = queueRef.current
       .catch(() => undefined)
       .then(async () => {
+        const measure = perfStart("PROGRESS_SYNC", {
+          content_type: request.contentType,
+          mode,
+          overlap: hadOverlap,
+        });
+        pendingSaveCountRef.current += 1;
         try {
           await withTimeout(saveWatchHistory(session, request, latest.duration));
+          perfEnd(measure, {
+            content_type: request.contentType,
+            mode,
+            position_seconds: positionSeconds,
+            result: "ok",
+          });
         } catch {
           // Progress sync should never interrupt playback.
+          perfEnd(measure, {
+            content_type: request.contentType,
+            mode,
+            position_seconds: positionSeconds,
+            result: "error",
+          });
+        } finally {
+          pendingSaveCountRef.current = Math.max(0, pendingSaveCountRef.current - 1);
         }
       });
 
@@ -152,7 +176,8 @@ export function useWatchProgressSync({
 
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state !== "active") {
-        void enqueueSave("user");
+        perfMark("PROGRESS_SYNC_LIFECYCLE_SAVE", { app_state: state });
+        void enqueueSave("lifecycle");
       }
     };
 

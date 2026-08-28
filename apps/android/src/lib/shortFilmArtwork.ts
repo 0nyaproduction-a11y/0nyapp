@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from "./media";
+
 const PLACEHOLDER_ARTWORK = "/logo-og.jpg";
 
 export function hasRenderableShortFilmArtwork(value?: string | null) {
@@ -11,13 +13,11 @@ export function hasRenderableShortFilmArtwork(value?: string | null) {
 }
 
 export function resolveShortFilmArtwork(heroImage?: string | null, poster?: string | null) {
-  if (hasRenderableShortFilmArtwork(heroImage)) {
-    return heroImage!.trim();
-  }
+  const candidate = hasRenderableShortFilmArtwork(heroImage)
+    ? heroImage!.trim()
+    : hasRenderableShortFilmArtwork(poster)
+      ? poster!.trim()
+      : undefined;
 
-  if (hasRenderableShortFilmArtwork(poster)) {
-    return poster!.trim();
-  }
-
-  return undefined;
+  return resolveMediaUrl(candidate) ?? undefined;
 }

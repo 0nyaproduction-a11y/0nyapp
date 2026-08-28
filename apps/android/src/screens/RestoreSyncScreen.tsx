@@ -83,7 +83,7 @@ export function RestoreSyncScreen({ navigation }: Props) {
           ) : null}
           <Card>
             <Label>Restore purchases</Label>
-            <Body>Purchase restoration isn't available in this test build yet.</Body>
+            <Body>{"Purchase restoration isn't available in this test build yet."}</Body>
             <Button accessibilityLabel="Restore unavailable" disabled onPress={() => undefined}>
               RESTORE UNAVAILABLE
             </Button>

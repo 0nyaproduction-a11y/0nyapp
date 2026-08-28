@@ -190,7 +190,38 @@ export type PreviewPlaybackAuthorizationResponse =
 
 export type CatalogResponse = {
   catalog: ApiSeries[];
+  home?: HomeState | null;
   shortFilms: ApiShortFilm[];
+};
+
+export type HomeContentType = "series" | "short_film";
+
+export type HomeRowItem = {
+  id: string;
+  contentType: HomeContentType;
+  slug: string;
+  title: string;
+  poster: string | null;
+  sharePath: string;
+};
+
+export type HomeRow = {
+  id: string;
+  title: string;
+  role: "start_here" | "editorial";
+  enabled: boolean;
+  sortOrder: number;
+  items: HomeRowItem[];
+};
+
+export type HomeState = {
+  state: "H01" | "H02" | null;
+  startHereVisible: boolean | null;
+  viewerStateKnown: boolean;
+  lowHistoryThreshold: number | null;
+  completedCount: number;
+  isGuest: boolean;
+  rows: HomeRow[];
 };
 
 export type SeriesResponse = {

@@ -6,17 +6,20 @@ import { Screen } from "../components/Screen";
 import { Body, Button, Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { SeriesEpisodeTray } from "./SeriesEpisodeTray";
 import { getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
+import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { loadWatchHistory } from "../lib/playbackHistory";
+import { perfMark } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
 import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiEpisode, SeriesResponse, WatchProgressItem } from "../types/api";
-import { borders, colors } from "../theme/tokens";
+import { colors } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Series">;
 
 function hasValidPoster(poster?: string) {
-  return typeof poster === "string" && poster.trim().length > 0 && !poster.startsWith("/");
+  return typeof poster === "string" && poster.trim().length > 0;
 }
 
 function formatClassification(contentRating: string, contentDescriptors: string[]) {
@@ -32,13 +35,15 @@ export function SeriesScreen({ navigation, route }: Props) {
   const accessToken = session?.access_token;
   const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
   const hasValidSlug = normalizedSlug.length > 0;
-  const [data, setData] = useState<SeriesResponse | null>(null);
+  const confirmedInitialSeriesAccess = hasValidSlug ? getConfirmedSeriesAccess(normalizedSlug) : null;
+  const [data, setData] = useState<SeriesResponse | null>(confirmedInitialSeriesAccess);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [error, setError] = useState<RecoveryCopy | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !confirmedInitialSeriesAccess);
   const [isEpisodeTrayOpen, setIsEpisodeTrayOpen] = useState(false);
-  const hasHydratedRef = useRef(false);
+  const hasHydratedRef = useRef(Boolean(confirmedInitialSeriesAccess));
 
+  /* eslint-disable react-hooks/set-state-in-effect -- invalid route params hydrate the existing recovery state. */
   useEffect(() => {
     if (!hasValidSlug) {
       setError({
@@ -80,6 +85,24 @@ export function SeriesScreen({ navigation, route }: Props) {
       isMounted = false;
     };
   }, [hasValidSlug, normalizedSlug, accessToken]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!hasValidSlug) {
+      return undefined;
+    }
+
+    return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (seriesResponse.series.slug !== normalizedSlug) {
+        return;
+      }
+
+      setData(seriesResponse);
+      setError(null);
+      setIsLoading(false);
+      hasHydratedRef.current = true;
+    });
+  }, [hasValidSlug, normalizedSlug]);
 
   useFocusEffect(
     useCallback(() => {
@@ -89,26 +112,40 @@ export function SeriesScreen({ navigation, route }: Props) {
 
       let isActive = true;
 
-      void loadWatchHistory(session)
-        .then((progressData) => {
-          if (isActive) {
-            setProgress(progressData.filter((item) => item.contentType === "series_episode"));
-          }
-        })
-        .catch((error) => {
-          if (isActive) {
-            console.error(
-              "[0nya SERIES history refresh]",
-              error instanceof Error ? error.message : String(error),
-              error instanceof Error ? error.stack : undefined,
-            );
-          }
-        });
+      void Promise.allSettled([
+        getSeries(normalizedSlug, accessToken),
+        loadWatchHistory(session),
+      ]).then(([seriesResult, progressResult]) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (seriesResult.status === "fulfilled") {
+          setData(seriesResult.value);
+          setError(null);
+        } else if (__DEV__) {
+          console.error(
+            "[0nya SERIES access refresh]",
+            seriesResult.reason instanceof Error ? seriesResult.reason.message : String(seriesResult.reason),
+            seriesResult.reason instanceof Error ? seriesResult.reason.stack : undefined,
+          );
+        }
+
+        if (progressResult.status === "fulfilled") {
+          setProgress(progressResult.value.filter((item) => item.contentType === "series_episode"));
+        } else if (__DEV__) {
+          console.error(
+            "[0nya SERIES history refresh]",
+            progressResult.reason instanceof Error ? progressResult.reason.message : String(progressResult.reason),
+            progressResult.reason instanceof Error ? progressResult.reason.stack : undefined,
+          );
+        }
+      });
 
       return () => {
         isActive = false;
       };
-    }, [session]),
+    }, [accessToken, normalizedSlug, session]),
   );
 
   useEffect(() => {
@@ -180,6 +217,13 @@ export function SeriesScreen({ navigation, route }: Props) {
       if (!access) {
         return;
       }
+
+      perfMark("CONTENT_TAP", {
+        content_type: "series_episode",
+        episode_number: episode.number,
+        series_slug: data.series.slug,
+        source: "SERIES_EPISODE_TRAY",
+      });
 
       setIsEpisodeTrayOpen(false);
 
@@ -267,74 +311,90 @@ export function SeriesScreen({ navigation, route }: Props) {
   return (
     <>
       <Screen>
-        <View style={styles.heroCard}>
+        <View style={styles.heroLayout}>
           <View style={styles.posterWrap}>
             {hasValidPoster(data.series.poster) ? (
               <Image
                 accessibilityLabel={`${data.series.title} artwork`}
                 accessible
                 alt=""
-                source={{ uri: data.series.poster }}
+                source={{ uri: resolveMediaUrl(data.series.poster)! }}
                 style={styles.posterImage}
                 resizeMode="cover"
               />
             ) : (
               <View style={styles.posterFallback}>
-                <Title>{data.series.title}</Title>
+                <Title numberOfLines={1}>{data.series.title}</Title>
               </View>
             )}
           </View>
 
-          <View style={styles.contentBlock}>
-            <Title>{data.series.title}</Title>
-            <Label>{metaLine}</Label>
+          <View style={styles.detailsBlock}>
+            <Title numberOfLines={2} style={styles.titleText}>{data.series.title}</Title>
+            <Label style={styles.metaLabel}>{metaLine}</Label>
             {data.series.contentRating ? (
-              <Body>{formatClassification(data.series.contentRating, data.series.contentDescriptors)}</Body>
+              <Body style={styles.classificationText}>
+                {formatClassification(data.series.contentRating, data.series.contentDescriptors)}
+              </Body>
             ) : null}
-            <Body>{episodeCountLabel}</Body>
-            <Body>{data.series.synopsis}</Body>
+            <Body style={styles.episodeCountText}>{episodeCountLabel}</Body>
           </View>
         </View>
 
-        <Button
-          accessibilityLabel={ctaEnabled ? ctaLabel : `${data.series.title} is locked`}
-          disabled={!ctaEnabled}
-          onPress={() => {
-            if (!ctaEnabled || !ctaEpisode || !ctaAccess) {
-              return;
-            }
+        <View style={styles.actionBlock}>
+          <Button
+            accessibilityLabel={ctaEnabled ? ctaLabel : `${data.series.title} is locked`}
+            disabled={!ctaEnabled}
+            onPress={() => {
+              if (!ctaEnabled || !ctaEpisode || !ctaAccess) {
+                return;
+              }
 
-            if (ctaAccess.canWatch) {
-              navigation.navigate("Watch", {
+              perfMark("CONTENT_TAP", {
+                content_type: "series_episode",
+                episode_number: ctaEpisode.number,
+                series_slug: data.series.slug,
+                source: "SERIES_DETAIL",
+              });
+
+              if (ctaAccess.canWatch) {
+                navigation.navigate("Watch", {
+                  access: ctaAccess,
+                  episode: ctaEpisode,
+                  episodeAccess: data.episodeAccess,
+                  series: data.series,
+                });
+                return;
+              }
+
+              navigation.navigate("EpisodeAccessOptions", {
                 access: ctaAccess,
                 episode: ctaEpisode,
                 episodeAccess: data.episodeAccess,
-                series: data.series,
+                seriesSlug: data.series.slug,
+                seriesTitle: data.series.title,
               });
-              return;
-            }
+            }}
+          >
+            {ctaEnabled ? ctaLabel : "Locked"}
+          </Button>
 
-            navigation.navigate("EpisodeAccessOptions", {
-              access: ctaAccess,
-              episode: ctaEpisode,
-              episodeAccess: data.episodeAccess,
-              seriesSlug: data.series.slug,
-              seriesTitle: data.series.title,
-            });
-          }}
-        >
-          {ctaEnabled ? ctaLabel : "Locked"}
-        </Button>
+          <Pressable
+            accessibilityLabel="Browse episodes"
+            accessibilityRole="button"
+            onPress={() => setIsEpisodeTrayOpen(true)}
+            style={styles.episodesAction}
+          >
+            <Body style={styles.episodesActionText}>Episodes</Body>
+            <Body style={styles.episodesActionChevron}>›</Body>
+          </Pressable>
+        </View>
 
-        <Pressable
-          accessibilityLabel="Browse episodes"
-          accessibilityRole="button"
-          onPress={() => setIsEpisodeTrayOpen(true)}
-          style={styles.episodesAction}
-        >
-          <Body>Episodes</Body>
-          <Body>›</Body>
-        </Pressable>
+        <View style={styles.synopsisBlock}>
+          <Body numberOfLines={5} style={styles.synopsisText}>
+            {data.series.synopsis}
+          </Body>
+        </View>
       </Screen>
 
       {isEpisodeTrayOpen ? (
@@ -352,23 +412,41 @@ export function SeriesScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  heroCard: {
-    alignItems: "center",
+  heroLayout: {
+    flexDirection: "row",
     gap: 16,
+    marginBottom: 8,
   },
-  contentBlock: {
-    alignItems: "flex-start",
-    gap: 8,
-    width: "100%",
+  detailsBlock: {
+    flex: 1,
+    gap: 6,
+    justifyContent: "flex-end",
+    paddingBottom: 4,
+  },
+  titleText: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  metaLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  classificationText: {
+    fontSize: 13,
+  },
+  episodeCountText: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "600",
   },
   posterWrap: {
     aspectRatio: 9 / 16,
     backgroundColor: colors.surface,
-    borderColor: borders.color,
-    borderWidth: borders.width,
-    maxWidth: 320,
+    borderColor: "rgba(232, 228, 218, 0.08)",
+    borderWidth: 1,
+    borderRadius: 8,
     overflow: "hidden",
-    width: "76%",
+    width: "36%",
   },
   posterImage: {
     width: "100%",
@@ -378,15 +456,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-    padding: 16,
+    padding: 8,
+  },
+  actionBlock: {
+    gap: 16,
+    marginVertical: 8,
   },
   episodesAction: {
     alignItems: "center",
     alignSelf: "flex-start",
-    borderBottomColor: colors.accent,
-    borderBottomWidth: 1,
     flexDirection: "row",
-    gap: 8,
-    paddingBottom: 4,
+    gap: 6,
+    paddingVertical: 8,
+  },
+  episodesActionText: {
+    color: colors.accent,
+    fontWeight: "700",
+  },
+  episodesActionChevron: {
+    color: colors.accent,
+    fontSize: 20,
+    marginTop: -2,
+  },
+  synopsisBlock: {
+    marginTop: 8,
+  },
+  synopsisText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.muted,
   },
 });

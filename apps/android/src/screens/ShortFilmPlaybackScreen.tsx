@@ -14,7 +14,7 @@ import { useAuth } from "../lib/authContext";
 import { PlayerScreen } from "../player/PlayerScreen";
 import { getResumePositionSeconds } from "../player/resumePosition";
 import { usePlaybackSource } from "../player/usePlaybackSource";
-import type { PlaybackContext } from "../player/types";
+import type { PlaybackContext, PlaybackEndedPayload } from "../player/types";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm, ShortFilmResponse, WatchProgressItem } from "../types/api";
 import type { ParentalControlState } from "../lib/parentalControls";
@@ -173,7 +173,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     });
   }, [navigation, parentalControlState?.hasPin, playback.status, route.params.resumeAtSeconds, shortFilm, shouldStartFromBeginning]);
 
-  const handleEnded = useCallback(() => {
+  const handleEnded = useCallback((payload: PlaybackEndedPayload) => {
     if (!shortFilm || didOpenEndScreenRef.current) {
       return;
     }
@@ -184,6 +184,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
         allowedCoinAmounts: [],
         available: false,
       },
+      hasSentChaiThisPlayback: payload.chaiSentThisPlayback === true,
       shortFilm,
     });
   }, [chai, navigation, shortFilm]);

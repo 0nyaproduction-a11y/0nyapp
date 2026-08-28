@@ -20,12 +20,33 @@ import type {
   WatchProgressWriteRequest,
   WatchProgressWriteResponse,
 } from "../types/api";
+import { publishConfirmedSeriesAccess } from "./confirmedSeriesAccess";
+import { perfEnd, perfMark, perfStart } from "./perf";
 
 type ApiRequestOptions = {
   accessToken?: string | null;
   body?: unknown;
   method?: "GET" | "POST" | "PUT";
 };
+
+const CATALOG_CACHE_TTL_MS = 15000;
+
+type CatalogCacheEntry = {
+  expiresAt: number;
+  value: CatalogResponse;
+};
+
+const catalogCache = new Map<string, CatalogCacheEntry>();
+const catalogInFlight = new Map<string, Promise<CatalogResponse>>();
+const seriesInFlight = new Map<string, Promise<SeriesResponse>>();
+
+function getAuthScopedCacheKey(accessToken?: string | null) {
+  return accessToken ? `auth:${accessToken}` : "guest";
+}
+
+function getSafeApiPath(path: string) {
+  return path.split("?")[0] || path;
+}
 
 export type PlaybackAuthorizationRequest =
   | {
@@ -90,23 +111,25 @@ function normalizeCatalogResponse(payload: unknown): CatalogResponse {
 
   const normalized = {
     catalog: Array.isArray(envelope.catalog) ? (envelope.catalog as ApiSeries[]) : [],
+    home:
+      envelope.home && typeof envelope.home === "object"
+        ? envelope.home
+        : null,
     shortFilms: Array.isArray(envelope.shortFilms) ? (envelope.shortFilms as ApiShortFilm[]) : [],
   };
-
-  if (__DEV__) {
-    console.info("[0nya catalog normalize]", {
-      catalogLength: normalized.catalog.length,
-      shortFilmsLength: normalized.shortFilms.length,
-      firstSeriesSlug: normalized.catalog[0]?.slug,
-      firstEpisodeCount: normalized.catalog[0]?.episodes?.length ?? 0,
-    });
-  }
 
   return normalized;
 }
 
 async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
   const { apiBaseUrl } = getMobileEnv();
+  const method = options.method ?? "GET";
+  const safePath = getSafeApiPath(path);
+  const requestMeasure = perfStart("API_REQUEST", {
+    method,
+    path: safePath,
+    source: "NETWORK",
+  });
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
@@ -125,9 +148,15 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
     response = await fetch(`${apiBaseUrl}${path}`, {
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       headers,
-      method: options.method ?? "GET",
+      method,
     });
   } catch (error) {
+    perfEnd(requestMeasure, {
+      method,
+      path: safePath,
+      source: "NETWORK",
+      status: 0,
+    });
     console.error(
       "[0nya catalog requestApi fetch]",
       error instanceof Error ? error.message : String(error),
@@ -140,20 +169,13 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
 
   try {
     body = (await response.json()) as ApiEnvelope<T> | T;
-    if (__DEV__) {
-      const entries = body && typeof body === "object" ? Object.keys(body) : [];
-      const dataKeys =
-        body && typeof body === "object" && "data" in body && body.data && typeof body.data === "object"
-          ? Object.keys(body.data as Record<string, unknown>)
-          : [];
-      console.info("[0nya catalog response]", {
-        status: response.status,
-        type: typeof body,
-        keys: entries,
-        dataKeys,
-      });
-    }
   } catch (error) {
+    perfEnd(requestMeasure, {
+      method,
+      path: safePath,
+      source: "NETWORK",
+      status: response.status,
+    });
     console.error(
       "[0nya catalog requestApi json]",
       error instanceof Error ? error.message : String(error),
@@ -167,8 +189,21 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
   }
 
   if (body && typeof body === "object" && "error" in body) {
+    perfEnd(requestMeasure, {
+      method,
+      path: safePath,
+      source: "NETWORK",
+      status: response.status,
+    });
     throw new ApiError(body.error.code, body.error.message, response.status);
   }
+
+  perfEnd(requestMeasure, {
+    method,
+    path: safePath,
+    source: "NETWORK",
+    status: response.status,
+  });
 
   if (body && typeof body === "object" && "data" in body && body.data !== undefined) {
     return body.data as T;
@@ -178,15 +213,80 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
 }
 
 export function getCatalog(accessToken?: string | null) {
-  return requestApi<CatalogResponse>("/api/v1/catalog", { accessToken }).then((payload) =>
-    normalizeCatalogResponse(payload),
-  );
+  const cacheKey = getAuthScopedCacheKey(accessToken);
+  const cached = catalogCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now) {
+    perfMark("API_REQUEST_END", {
+      duration_ms: 0,
+      method: "GET",
+      path: "/api/v1/catalog",
+      source: "CACHE",
+      status: 200,
+    });
+    return Promise.resolve(cached.value);
+  }
+
+  const inFlight = catalogInFlight.get(cacheKey);
+
+  if (inFlight) {
+    perfMark("API_REQUEST_END", {
+      duration_ms: 0,
+      method: "GET",
+      path: "/api/v1/catalog",
+      source: "DEDUPED",
+      status: 0,
+    });
+    return inFlight;
+  }
+
+  const request = requestApi<CatalogResponse>("/api/v1/catalog", { accessToken })
+    .then((payload) => {
+      const normalized = normalizeCatalogResponse(payload);
+      catalogCache.set(cacheKey, {
+        expiresAt: Date.now() + CATALOG_CACHE_TTL_MS,
+        value: normalized,
+      });
+      return normalized;
+    })
+    .finally(() => {
+      catalogInFlight.delete(cacheKey);
+    });
+
+  catalogInFlight.set(cacheKey, request);
+  return request;
 }
 
 export function getSeries(slug: string, accessToken?: string | null) {
-  return requestApi<SeriesResponse>(`/api/v1/series/${encodeURIComponent(slug)}`, {
+  const normalizedSlug = slug.trim();
+  const requestKey = `${getAuthScopedCacheKey(accessToken)}:${normalizedSlug}`;
+  const inFlight = seriesInFlight.get(requestKey);
+
+  if (inFlight) {
+    perfMark("API_REQUEST_END", {
+      duration_ms: 0,
+      method: "GET",
+      path: "/api/v1/series/:slug",
+      source: "DEDUPED",
+      status: 0,
+    });
+    return inFlight;
+  }
+
+  const request = requestApi<SeriesResponse>(`/api/v1/series/${encodeURIComponent(normalizedSlug)}`, {
     accessToken,
-  });
+  })
+    .then((seriesResponse) => {
+      publishConfirmedSeriesAccess(seriesResponse);
+      return seriesResponse;
+    })
+    .finally(() => {
+      seriesInFlight.delete(requestKey);
+    });
+
+  seriesInFlight.set(requestKey, request);
+  return request;
 }
 
 export function isShortFilmPublished(shortFilm: Partial<ApiShortFilm> | null | undefined) {

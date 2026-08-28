@@ -5,6 +5,7 @@ export type EpisodeAccessMarker = {
   icon?: "coin";
   label: string;
   tone: "available" | "locked" | "muted";
+  variant?: "ad" | "coin" | "plus";
 };
 
 export type EpisodeAccessDisplay = {
@@ -82,6 +83,7 @@ function getUnlockMethodMarkers(episode: ApiEpisode) {
       icon: "coin",
       label: String(episode.coinPrice),
       tone: "available",
+      variant: "coin",
     });
   }
 
@@ -89,7 +91,8 @@ function getUnlockMethodMarkers(episode: ApiEpisode) {
     markers.push({
       accessibilityLabel: "Watch Ad",
       label: "\u25B6 Ad",
-      tone: "available",
+      tone: "muted",
+      variant: "ad",
     });
   }
 
@@ -98,6 +101,7 @@ function getUnlockMethodMarkers(episode: ApiEpisode) {
       accessibilityLabel: "Plus",
       label: "+ Plus",
       tone: "available",
+      variant: "plus",
     });
   }
 

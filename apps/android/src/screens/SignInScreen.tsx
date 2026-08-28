@@ -1,16 +1,17 @@
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { Body, Button, Card, ErrorText, Field, Label, Title } from "../components/ui";
 import { useAuth } from "../lib/authContext";
 import { supabase } from "../lib/supabase";
 import type { RootStackScreenProps } from "../navigation/types";
+import { borders, colors } from "../theme/tokens";
 
 const INDIA_PHONE_PREFIX = "+91";
 const OTP_LENGTH = 6;
 const PHONE_LENGTH = 10;
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 45;
 
 type AuthStep = "phone" | "otp";
 
@@ -20,7 +21,8 @@ function normalizeDigits(value: string) {
 
 function maskPhoneNumber(phoneDigits: string) {
   const lastFour = phoneDigits.slice(-4);
-  return `${INDIA_PHONE_PREFIX} ${"•".repeat(Math.max(0, PHONE_LENGTH - 4))}${lastFour}`;
+  const hiddenDigits = "\u2022".repeat(Math.max(0, PHONE_LENGTH - 4));
+  return `${INDIA_PHONE_PREFIX} ${hiddenDigits}${lastFour}`;
 }
 
 function getSafeAuthErrorMessage(error: { code?: string; message: string }, action: "send" | "verify") {
@@ -66,7 +68,7 @@ export function SignInScreen() {
 
   const maskedPhone = useMemo(() => {
     if (!pendingPhone) {
-      return `${INDIA_PHONE_PREFIX} ••••••0000`;
+      return `${INDIA_PHONE_PREFIX} ${"\u2022".repeat(6)}0000`;
     }
 
     const digits = pendingPhone.replace(`${INDIA_PHONE_PREFIX}`, "");
@@ -143,9 +145,7 @@ export function SignInScreen() {
         return;
       }
 
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
+      navigation.replace("AgeDeclaration");
     } catch {
       setError("We couldn't verify that code right now. Please try again.");
     } finally {
@@ -168,9 +168,7 @@ export function SignInScreen() {
     try {
       await signIn(email, devPassword);
 
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      }
+      navigation.replace("AgeDeclaration");
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Development sign-in failed.");
     } finally {
@@ -201,8 +199,8 @@ export function SignInScreen() {
         <Label>Phone sign in</Label>
         {step === "phone" ? (
           <>
-            <Title>Continue with phone</Title>
-            <Body>We&apos;ll send a one-time code.</Body>
+            <Title>Sign in to 0nya</Title>
+            <Body>Enter your mobile number to continue.</Body>
             <View style={styles.phoneRow}>
               <View style={styles.prefix}>
                 <Text style={styles.prefixText}>{INDIA_PHONE_PREFIX}</Text>
@@ -215,7 +213,7 @@ export function SignInScreen() {
                   keyboardType="phone-pad"
                   maxLength={PHONE_LENGTH}
                   onChangeText={(value) => setPhoneDigits(normalizeDigits(value))}
-                  placeholder="10-digit number"
+                  placeholder="Mobile number"
                   textContentType="telephoneNumber"
                   value={phoneDigits}
                 />
@@ -228,8 +226,9 @@ export function SignInScreen() {
               disabled={!canSendCode}
               onPress={() => void sendCode()}
             >
-              {isSendingCode ? "Sending" : "Continue"}
+              {isSendingCode ? "Sending" : "Send OTP"}
             </Button>
+            <Body>We&apos;ll never share your number with anyone.</Body>
             <Pressable
               accessibilityLabel="Back"
               accessibilityRole="button"
@@ -241,27 +240,39 @@ export function SignInScreen() {
           </>
         ) : (
           <>
-            <Title>Enter verification code</Title>
-            <Body>{`Sent to ${maskedPhone}`}</Body>
-            <Field
-              accessibilityLabel="Verification code"
-              autoComplete="one-time-code"
-              autoCapitalize="none"
-              keyboardType="number-pad"
-              maxLength={OTP_LENGTH}
-              onChangeText={(value) => setOtp(normalizeDigits(value))}
-              placeholder="000000"
-              textContentType="oneTimeCode"
-              value={otp}
-            />
+            <Title>Enter OTP</Title>
+            <Body>{`We've sent a 6-digit code to ${maskedPhone}`}</Body>
+            <View style={styles.otpInputWrap}>
+              <View pointerEvents="none" style={styles.otpBoxes}>
+                {Array.from({ length: OTP_LENGTH }).map((_, index) => (
+                  <View
+                    key={`otp-box-${index}`}
+                    style={[styles.otpBox, otp[index] ? styles.otpBoxFilled : null]}
+                  >
+                    <Text style={styles.otpBoxText}>{otp[index] ?? ""}</Text>
+                  </View>
+                ))}
+              </View>
+              <TextInput
+                accessibilityLabel="Verification code"
+                autoComplete="one-time-code"
+                autoCapitalize="none"
+                keyboardType="number-pad"
+                maxLength={OTP_LENGTH}
+                onChangeText={(value) => setOtp(normalizeDigits(value))}
+                style={styles.otpInputOverlay}
+                textContentType="oneTimeCode"
+                value={otp}
+              />
+            </View>
             {message ? <Body>{message}</Body> : null}
             {error ? <ErrorText>{error}</ErrorText> : null}
             <Button
-              accessibilityLabel="Verify OTP"
+              accessibilityLabel="Verify and continue"
               disabled={!canVerifyCode}
               onPress={() => void verifyCode()}
             >
-              {isVerifyingCode ? "Verifying" : "Verify"}
+              {isVerifyingCode ? "Verifying" : "Verify & Continue"}
             </Button>
             <Pressable
               accessibilityLabel={resendAvailable ? "Resend code" : `Resend in ${resendSecondsRemaining} seconds`}
@@ -331,6 +342,49 @@ export function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
+  devSection: {
+    borderTopColor: "#2a312f",
+    borderTopWidth: 1,
+    gap: 10,
+    marginTop: 18,
+    paddingTop: 18,
+  },
+  inputWrap: {
+    flex: 1,
+  },
+  otpBox: {
+    alignItems: "center",
+    borderColor: "#2a312f",
+    borderWidth: borders.width,
+    flex: 1,
+    height: 50,
+    justifyContent: "center",
+    minWidth: 36,
+  },
+  otpBoxFilled: {
+    borderColor: colors.accent,
+  },
+  otpBoxes: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  otpBoxText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  otpInputOverlay: {
+    bottom: 0,
+    color: "transparent",
+    left: 0,
+    opacity: 0.02,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  otpInputWrap: {
+    minHeight: 50,
+  },
   phoneRow: {
     alignItems: "stretch",
     flexDirection: "row",
@@ -340,7 +394,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderColor: "#2a312f",
     borderRadius: 0,
-    borderWidth: 1,
+    borderWidth: borders.width,
     justifyContent: "center",
     minHeight: 48,
     minWidth: 58,
@@ -351,20 +405,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-  inputWrap: {
-    flex: 1,
-  },
-  devSection: {
-    gap: 10,
-    marginTop: 18,
-    paddingTop: 18,
-    borderTopColor: "#2a312f",
-    borderTopWidth: 1,
-  },
   textAction: {
     alignSelf: "flex-start",
-    minHeight: 48,
     justifyContent: "center",
+    minHeight: 48,
     paddingVertical: 10,
   },
   textActionDisabled: {
@@ -374,7 +418,7 @@ const styles = StyleSheet.create({
     opacity: 0.76,
   },
   textActionText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 14,
     fontWeight: "700",
   },

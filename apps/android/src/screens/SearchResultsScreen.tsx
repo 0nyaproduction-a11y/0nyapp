@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Image,
@@ -13,10 +13,12 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getCatalog, getSeries } from "../lib/api";
+import { getCatalog } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
 import { loadWatchHistory } from "../lib/playbackHistory";
+import { perfMark, perfNow } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
-import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
+import { findStartEpisode } from "../lib/seriesPlayback";
 import type { RootStackScreenProps, ExploreFormat } from "../navigation/types";
 import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
 import { borders, colors } from "../theme/tokens";
@@ -32,7 +34,7 @@ const formatOptions: Array<{ label: string; value: ExploreFormat }> = [
 ];
 
 function hasValidPoster(poster?: string) {
-  return typeof poster === "string" && poster.trim().length > 0 && !poster.startsWith("/");
+  return typeof poster === "string" && poster.trim().length > 0;
 }
 
 function matchesMicroDramaQuery(series: ApiSeries, normalizedQuery: string) {
@@ -53,6 +55,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
   const { width } = useWindowDimensions();
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
   const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
+  const [progress, setProgress] = useState<WatchProgressItem[]>([]);
   const [query, setQuery] = useState(initialQuery);
   const [selectedFormat, setSelectedFormat] = useState<ExploreFormat>(initialFormat);
   const [selectedGenre, setSelectedGenre] = useState(
@@ -62,20 +65,38 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
   const [isLoading, setIsLoading] = useState(true);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
 
+  useEffect(() => {
+    perfMark("SEARCH_RESULTS_MOUNT", {
+      format: initialFormat,
+      has_query: initialQuery.trim().length > 0,
+    });
+  }, [initialFormat, initialQuery]);
+
   const reloadCatalog = useCallback(async () => {
     setIsLoading(true);
 
     try {
-      const data = await getCatalog(accessToken);
+      const startedAt = perfNow();
+      const [data, progressData] = await Promise.all([
+        getCatalog(accessToken),
+        loadWatchHistory(session),
+      ]);
       setCatalog(data.catalog);
       setShortFilms(data.shortFilms);
+      setProgress(progressData);
       setError(null);
+      perfMark("SEARCH_RESULTS_DATA_READY", {
+        catalog_count: data.catalog.length,
+        duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
+        progress_count: progressData.length,
+        short_film_count: data.shortFilms.length,
+      });
     } catch {
       setError("We couldn't load this right now.");
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, session]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,7 +106,11 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
         setIsLoading(true);
 
         try {
-          const data = await getCatalog(accessToken);
+          const startedAt = perfNow();
+          const [data, progressData] = await Promise.all([
+            getCatalog(accessToken),
+            loadWatchHistory(session),
+          ]);
 
           if (!isActive) {
             return;
@@ -93,7 +118,14 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
 
           setCatalog(data.catalog);
           setShortFilms(data.shortFilms);
+          setProgress(progressData);
           setError(null);
+          perfMark("SEARCH_RESULTS_DATA_READY", {
+            catalog_count: data.catalog.length,
+            duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
+            progress_count: progressData.length,
+            short_film_count: data.shortFilms.length,
+          });
         } catch {
           if (!isActive) {
             return;
@@ -112,7 +144,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
       return () => {
         isActive = false;
       };
-    }, [accessToken]),
+    }, [accessToken, session]),
   );
 
   const effectiveGenre = selectedFormat === "micro-dramas" ? selectedGenre : ALL_GENRES_FILTER;
@@ -170,32 +202,34 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
       return;
     }
 
+    perfMark("CONTENT_TAP", {
+      content_type: "series_episode",
+      series_slug: series.slug,
+      source: "SEARCH_RESULTS",
+    });
     setResolvingKey(key);
 
     try {
-      const seriesData = await getSeries(series.slug, accessToken);
-      const progressData = await loadWatchHistory(session).catch(() => [] as WatchProgressItem[]);
-      const seriesProgress = progressData.filter(
+      const seriesProgress = progress.filter(
         (item) => item.contentType === "series_episode" && item.seriesSlug === series.slug,
       );
-      const resumeEpisode = findResumeEpisode(
-        seriesProgress,
-        seriesData.series.slug,
-        seriesData.series.episodes,
-        seriesData.episodeAccess,
-      );
-      const startEpisode = findStartEpisode(seriesData.series.episodes);
-      const targetEpisode = resumeEpisode ?? startEpisode;
-      const targetAccess = targetEpisode 
-        ? seriesData.episodeAccess[String(targetEpisode.number)]
+      const resumeProgress = seriesProgress
+        .sort(
+          (first, second) =>
+            new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
+        )
+        .find((item) => !item.completed && item.positionSeconds >= 5);
+      const resumeEpisode = resumeProgress
+        ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
         : undefined;
+      const startEpisode = findStartEpisode(series.episodes);
+      const targetEpisode = resumeEpisode ?? startEpisode;
 
-      if (targetEpisode && targetAccess) {
+      if (targetEpisode) {
         navigation.navigate("Watch", {
-          access: targetAccess,
-          episode: targetEpisode,
-          episodeAccess: seriesData.episodeAccess,
-          series: seriesData.series,
+          episodeNumber: targetEpisode.number,
+          resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
+          seriesSlug: series.slug,
         });
         return;
       }
@@ -228,6 +262,11 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
               return;
             }
 
+            perfMark("CONTENT_TAP", {
+              content_type: "short_film",
+              short_film_slug: item.slug,
+              source: "SEARCH_RESULTS",
+            });
             navigation.navigate("ShortFilm", { slug: item.slug });
           }}
           style={({ pressed }) => [styles.card, { width: cardWidth }, pressed && styles.cardPressed]}
@@ -238,7 +277,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
                 accessible
                 accessibilityLabel={`${title} poster`}
                 alt=""
-                source={{ uri: item.poster }}
+                source={{ uri: resolveMediaUrl(item.poster)! }}
                 style={styles.posterImage}
                 resizeMode="contain"
               />

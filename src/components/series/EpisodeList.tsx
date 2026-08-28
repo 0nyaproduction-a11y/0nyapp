@@ -19,9 +19,6 @@ export function EpisodeList({ series, episodeAccess }: EpisodeListProps) {
             Start watching
           </h2>
         </div>
-        <p className="hidden max-w-xs text-right font-mono text-[0.66rem] uppercase tracking-[0.12em] text-bone/48 sm:block">
-          First 3 episodes are free
-        </p>
       </div>
       <div>
         {series.episodes.map((episode) => (

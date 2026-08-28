@@ -102,20 +102,28 @@ export function AccountScreen({ navigation }: Props) {
   if (!token) {
     return (
       <Screen>
-        <Card>
-          <Label>Guest</Label>
-          <Body>Sign in to keep history and unlocks.</Body>
-          <Button accessibilityLabel="Sign in" onPress={() => navigation.navigate("SignIn")}>
+        <View style={styles.guestHeader}>
+          <Text style={styles.guestTitle}>Profile</Text>
+          <Text style={styles.guestStatus}>Guest</Text>
+          <Text style={styles.guestSubtitle}>Sign in to keep history and unlocks.</Text>
+          <Button
+            accessibilityLabel="Sign in"
+            onPress={() => navigation.navigate("SignIn")}
+            style={styles.signInButton}
+          >
             Sign In
           </Button>
-        </Card>
-        <Card>
-          <Label>Settings</Label>
-          <Body>Playback, subtitles, notifications, and privacy controls are available here.</Body>
-          <Button accessibilityLabel="Open settings" onPress={() => navigation.navigate("Settings")}>
-            Settings
-          </Button>
-        </Card>
+        </View>
+
+        <View style={styles.actionList}>
+          <ActionRow label="Settings" onPress={() => navigation.navigate("Settings")} />
+          <ActionRow label="Help" onPress={() => {}} />
+          <ActionRow label="Terms" onPress={() => {}} />
+          <ActionRow label="Privacy" onPress={() => {}} />
+          <View style={styles.versionRow}>
+            <Text style={styles.versionText}>Version 1.0.0</Text>
+          </View>
+        </View>
       </Screen>
     );
   }
@@ -240,22 +248,53 @@ function SecondaryAction({ accessibilityLabel, disabled, onPress, text, variant 
 }
 
 const styles = StyleSheet.create({
-  actionList: {
+  guestHeader: {
+    paddingVertical: 12,
     gap: 8,
+  },
+  guestTitle: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  guestStatus: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  guestSubtitle: {
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  signInButton: {
+    alignSelf: "flex-start",
+    minWidth: 140,
+    borderRadius: 8,
+  },
+  actionList: {
+    gap: 12,
+    marginTop: 12,
   },
   actionRow: {
     alignItems: "center",
-    backgroundColor: "rgba(232, 228, 218, 0.02)",
-    borderColor: "rgba(232, 228, 218, 0.12)",
+    backgroundColor: "rgba(232, 228, 218, 0.03)",
+    borderColor: "rgba(232, 228, 218, 0.10)",
     borderWidth: 1,
+    borderRadius: 8,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 52,
+    minHeight: 56,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   actionRowPressed: {
     backgroundColor: "rgba(13, 209, 188, 0.08)",
+    borderColor: "rgba(13, 209, 188, 0.20)",
   },
   actionLabel: {
     color: colors.text,
@@ -269,9 +308,9 @@ const styles = StyleSheet.create({
   },
   actionDetail: {
     color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.2,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   actionValue: {
@@ -281,8 +320,18 @@ const styles = StyleSheet.create({
   },
   chevron: {
     color: colors.muted,
-    fontSize: 22,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 20,
+    marginLeft: 4,
+  },
+  versionRow: {
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  versionText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
   },
   email: {
     color: colors.text,
@@ -306,13 +355,15 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderColor: "rgba(232, 228, 218, 0.18)",
     borderWidth: 1,
+    borderRadius: 8,
     justifyContent: "center",
     minHeight: 48,
     paddingHorizontal: 16,
     paddingVertical: 10,
+    marginTop: 12,
   },
   secondaryActionDestructive: {
-    borderColor: "rgba(232, 228, 218, 0.18)",
+    borderColor: "rgba(255, 141, 118, 0.22)",
   },
   secondaryActionDisabled: {
     opacity: 0.5,
@@ -326,6 +377,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   secondaryActionTextDestructive: {
-    color: colors.muted,
+    color: "#ff8d76",
   },
 });

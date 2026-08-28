@@ -24,6 +24,7 @@ const SHEET_HORIZONTAL_PADDING = 16;
 const TOUCH_TARGET_MIN = 48;
 const MIN_COLUMNS = 3;
 const PREFERRED_COLUMNS = 5;
+const PLUS_MARKER_COLOR = "#B91825";
 
 export function EpisodeListSheet({
   currentEpisodeNumber,
@@ -182,13 +183,16 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
             isCurrent && styles.markerCurrent,
           ]}
         >
-          {marker.icon === "coin" ? <CoinGlyph color={isCurrent ? colors.accent : colors.text} /> : null}
+          {marker.icon === "coin" ? <CoinGlyph /> : null}
           <Text
             numberOfLines={1}
             style={[
               styles.cellMeta,
               marker.tone === "available" && styles.cellMetaAvailable,
               marker.tone === "locked" && styles.cellMetaLocked,
+              marker.variant === "plus" && styles.cellMetaPlus,
+              marker.variant === "ad" && styles.cellMetaAd,
+              marker.variant === "coin" && styles.cellMetaCoin,
               isCurrent && styles.cellMetaCurrent,
             ]}
           >
@@ -200,10 +204,11 @@ function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boo
   );
 }
 
-function CoinGlyph({ color }: { color: string }) {
+function CoinGlyph() {
   return (
-    <View style={[styles.coinGlyph, { borderColor: color }]}>
-      <View style={[styles.coinGlyphInner, { backgroundColor: color }]} />
+    <View style={styles.coinGlyph}>
+      <View style={styles.coinGlyphInner} />
+      <View style={styles.coinGlyphHighlight} />
     </View>
   );
 }
@@ -330,8 +335,17 @@ const styles = StyleSheet.create({
   cellMetaAvailable: {
     color: colors.text,
   },
+  cellMetaAd: {
+    color: colors.muted,
+  },
+  cellMetaCoin: {
+    color: colors.text,
+  },
   cellMetaLocked: {
     color: colors.muted,
+  },
+  cellMetaPlus: {
+    color: PLUS_MARKER_COLOR,
   },
   cellMetaCurrent: {
     color: colors.accent,
@@ -346,6 +360,8 @@ const styles = StyleSheet.create({
   markerCurrent: {},
   coinGlyph: {
     alignItems: "center",
+    backgroundColor: "#F2B705",
+    borderColor: "#F6DD63",
     borderRadius: 999,
     borderWidth: 1.3,
     height: 8,
@@ -353,8 +369,18 @@ const styles = StyleSheet.create({
     width: 8,
   },
   coinGlyphInner: {
+    backgroundColor: "#D89100",
     borderRadius: 999,
-    height: 2.5,
-    width: 2.5,
+    height: 4.5,
+    width: 4.5,
+  },
+  coinGlyphHighlight: {
+    backgroundColor: "#FFF0A6",
+    borderRadius: 999,
+    height: 1.6,
+    left: 2,
+    position: "absolute",
+    top: 1.5,
+    width: 1.6,
   },
 });

@@ -9,7 +9,10 @@ import {
   type VideoPlayerStatus,
   type VideoSource,
 } from "expo-video";
+import { perfConsumeAutoNextPlaybackPending, perfMark } from "../lib/perf";
 import type { PlaybackContext, PlaybackEndedPayload } from "./types";
+
+/* eslint-disable react-hooks/immutability -- expo-video exposes its player as an imperative mutable object. */
 
 type UsePlaybackControllerOptions = {
   context: PlaybackContext;
@@ -19,6 +22,7 @@ type UsePlaybackControllerOptions = {
 };
 
 const INITIAL_STATUS: VideoPlayerStatus = "idle";
+const END_FRAME_HOLD_OFFSET_SECONDS = 0.05;
 
 function normalizeRetrySeekSeconds(position: number | null | undefined, duration?: number | null) {
   if (position === null || position === undefined || !Number.isFinite(position) || position < 0) {
@@ -41,6 +45,19 @@ function normalizeRetrySeekSeconds(position: number | null | undefined, duration
   return clampedPosition;
 }
 
+function getPerfContextFields(context: PlaybackContext) {
+  return context.type === "SERIES_EPISODE"
+    ? {
+        content_type: "series_episode",
+        episode_number: context.episodeNumber,
+        series_slug: context.seriesSlug,
+      }
+    : {
+        content_type: "short_film",
+        short_film_slug: context.filmSlug,
+      };
+}
+
 export function usePlaybackController({
   context,
   playbackLimitSeconds,
@@ -52,7 +69,7 @@ export function usePlaybackController({
   const [bufferedPosition, setBufferedPosition] = useState(0);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack | null>(null);
-  const [videoTracks, setVideoTracks] = useState<VideoTrack[]>([]);
+  const [videoTracks] = useState<VideoTrack[]>([]);
   const [videoTrack, setVideoTrack] = useState<VideoTrack | null>(null);
   const [hasEnded, setHasEnded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -64,6 +81,8 @@ export function usePlaybackController({
   const userPausedRef = useRef(false);
   const endedRef = useRef(false);
   const pendingRetrySeekRef = useRef<number | null>(null);
+  const hasMarkedPlaybackStartedRef = useRef(false);
+  const previousStatusRef = useRef<VideoPlayerStatus>(INITIAL_STATUS);
   const playbackLimit =
     typeof playbackLimitSeconds === "number" && Number.isFinite(playbackLimitSeconds) && playbackLimitSeconds > 0
       ? playbackLimitSeconds
@@ -92,11 +111,23 @@ export function usePlaybackController({
     }
 
     endedRef.current = true;
+    perfMark("PLAYBACK_ENDED", getPerfContextFields(context));
     setHasEnded(true);
     setIsPlaying(false);
     player.pause();
+    const endBoundary = (playbackLimit ?? duration) || player.duration;
+    const finalFramePosition =
+      Number.isFinite(endBoundary) && endBoundary > END_FRAME_HOLD_OFFSET_SECONDS
+        ? endBoundary - END_FRAME_HOLD_OFFSET_SECONDS
+        : null;
+    if (finalFramePosition !== null) {
+      // Android's native video surface can clear at exact EOS; hold the last
+      // decodable boundary frame while the existing completed overlay is shown.
+      player.currentTime = finalFramePosition;
+      setCurrentTime(finalFramePosition);
+    }
     onEnded?.({ context });
-  }, [context, onEnded, player]);
+  }, [context, duration, onEnded, playbackLimit, player]);
 
   useEffect(() => {
     // expo-video exposes playbackRate as a mutable player property.
@@ -111,27 +142,39 @@ export function usePlaybackController({
   }, [player]);
 
   const play = useCallback(() => {
+    perfMark("PLAY_REQUESTED", {
+      ...getPerfContextFields(context),
+      action: "play",
+    });
     userPausedRef.current = false;
     endedRef.current = false;
     setHasEnded(false);
     player.play();
-  }, [player]);
+  }, [context, player]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
       userPausedRef.current = true;
       player.pause();
     } else if (hasEnded) {
+      perfMark("PLAY_REQUESTED", {
+        ...getPerfContextFields(context),
+        action: "replay",
+      });
       userPausedRef.current = false;
       endedRef.current = false;
       player.replay();
       setHasEnded(false);
       player.play();
     } else {
+      perfMark("PLAY_REQUESTED", {
+        ...getPerfContextFields(context),
+        action: "toggle_play",
+      });
       userPausedRef.current = false;
       player.play();
     }
-  }, [hasEnded, isPlaying, player]);
+  }, [context, hasEnded, isPlaying, player]);
 
   const seekBy = useCallback(
     (seconds: number) => {
@@ -143,7 +186,6 @@ export function usePlaybackController({
 
       endedRef.current = false;
       setHasEnded(false);
-      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
       player.currentTime = nextTime;
       setCurrentTime(nextTime);
     },
@@ -157,7 +199,6 @@ export function usePlaybackController({
       const nextTime = Math.max(0, Math.min(seconds, maxAllowed));
       endedRef.current = false;
       setHasEnded(false);
-      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
       player.currentTime = nextTime;
       setCurrentTime(nextTime);
     },
@@ -165,16 +206,19 @@ export function usePlaybackController({
   );
 
   const replay = useCallback(() => {
+    perfMark("PLAY_REQUESTED", {
+      ...getPerfContextFields(context),
+      action: "replay",
+    });
     userPausedRef.current = false;
     endedRef.current = false;
     player.replay();
     setHasEnded(false);
     player.play();
-  }, [player]);
+  }, [context, player]);
 
   const setTemporaryRate = useCallback(
     (rate: number) => {
-      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes playback speed through mutable player properties.
       player.preservesPitch = true;
       player.playbackRate = rate;
     },
@@ -191,6 +235,10 @@ export function usePlaybackController({
   );
 
   const retry = useCallback(async (seekSeconds?: number | null) => {
+    perfMark("PLAY_REQUESTED", {
+      ...getPerfContextFields(context),
+      action: "retry",
+    });
     userPausedRef.current = false;
     endedRef.current = false;
     setHasEnded(false);
@@ -206,14 +254,13 @@ export function usePlaybackController({
     if (pendingRetrySeekRef.current !== null) {
       const retryPosition = pendingRetrySeekRef.current;
       pendingRetrySeekRef.current = null;
-      // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
       player.currentTime = retryPosition;
       setCurrentTime(retryPosition);
     }
     if (isMountedRef.current && !userPausedRef.current) {
       player.play();
     }
-  }, [player, source]);
+  }, [context, player, source]);
 
   useEffect(() => {
     userPausedRef.current = false;
@@ -226,18 +273,48 @@ export function usePlaybackController({
     setError(undefined);
     setSourceLoadCount(0);
     setStatus(INITIAL_STATUS);
+    hasMarkedPlaybackStartedRef.current = false;
+    previousStatusRef.current = INITIAL_STATUS;
+    perfMark("PLAYER_LOAD_START", getPerfContextFields(context));
     // A new player instance always constructs with subtitleTrack: null (expo-video default).
     setSubtitleTrack(null);
     pendingRetrySeekRef.current = null;
+    perfMark("PLAY_REQUESTED", {
+      ...getPerfContextFields(context),
+      action: "autoplay",
+    });
     player.play();
-  }, [player]);
+  }, [context, player]);
 
   useEventListener(player, "statusChange", (payload) => {
+    const previousStatus = previousStatusRef.current;
+    if (payload.status === "loading" && previousStatus !== "loading") {
+      perfMark("BUFFER_START", getPerfContextFields(context));
+    } else if (previousStatus === "loading" && payload.status !== "loading") {
+      perfMark("BUFFER_END", {
+        ...getPerfContextFields(context),
+        status: payload.status,
+      });
+    }
+    if (payload.status === "error") {
+      perfMark("PLAYBACK_ERROR", {
+        ...getPerfContextFields(context),
+        message: payload.error?.message,
+      });
+    }
+    previousStatusRef.current = payload.status;
     setStatus(payload.status);
     setError(payload.error);
   });
 
   useEventListener(player, "playingChange", (payload) => {
+    if (payload.isPlaying && !hasMarkedPlaybackStartedRef.current) {
+      hasMarkedPlaybackStartedRef.current = true;
+      perfMark("PLAYBACK_STARTED", getPerfContextFields(context));
+      if (perfConsumeAutoNextPlaybackPending()) {
+        perfMark("NEXT_PLAYBACK_STARTED", getPerfContextFields(context));
+      }
+    }
     setIsPlaying(payload.isPlaying);
   });
 
@@ -251,6 +328,11 @@ export function usePlaybackController({
   });
 
   useEventListener(player, "sourceLoad", (payload) => {
+    perfMark("PLAYER_LOADED", {
+      ...getPerfContextFields(context),
+      duration_seconds: Number.isFinite(payload.duration) ? payload.duration.toFixed(1) : null,
+      subtitle_track_count: payload.availableSubtitleTracks.length,
+    });
     setDuration(payload.duration);
     setSubtitleTracks(payload.availableSubtitleTracks);
     setSourceLoadCount((count) => count + 1);
@@ -260,7 +342,6 @@ export function usePlaybackController({
       pendingRetrySeekRef.current = null;
 
       if (retryPosition !== null) {
-        // eslint-disable-next-line react-hooks/immutability -- expo-video exposes exact seeking through this mutable player property.
         player.currentTime = retryPosition;
         setCurrentTime(retryPosition);
       }
