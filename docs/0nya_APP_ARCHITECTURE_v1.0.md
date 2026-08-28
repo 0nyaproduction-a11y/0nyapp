@@ -18,7 +18,7 @@ Evidence reviewed:
 - `docs/android-client-bootstrap.md`
 - `docs/mobile-api-readiness.md`
 
-Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is not present in this repo. Where CMS/product contract details are expected, this document marks the state as `UNKNOWN / NOT YET IMPLEMENTED` unless actual repository evidence exists.
+Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is present in this repo and remains the conceptual CMS product contract. This architecture document records implementation evidence only.
 
 ---
 
@@ -97,7 +97,8 @@ Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is not present in this 
 - The primary product app is a Next.js 16 app in `src/`.
 - The Android app is a separate Expo starter shell in `apps/android/`.
 - The real domain authority and transactional logic live in Supabase SQL migrations plus Next.js server code.
-- The repo contains a UI prototype / demo catalogue more than a full production-ready app architecture.
+- The repo now contains a verified Android development runtime for playback, monetization paths, rewarded unlock, Plus entitlement resolution, Short Film playback, Chai, and a development-only billing boundary.
+- Real Google Play production billing and production AdMob account/ad-unit setup remain externally blocked/incomplete.
 
 ---
 
@@ -1152,4 +1153,27 @@ The repository evidence is sufficient to document the actual architecture accura
 
 ## Final conclusion
 
-The actual repository shows a viable prototype foundation but not a full Build-15-compliant implementation. The workable base is the Next.js app plus Supabase SQL model; the missing and partial areas are real product gaps that must be addressed before the project matches the Bible and user-flow documents.
+The actual repository now shows a verified Build 15 Android development foundation for monetization and playback, backed by Next.js API routes and Supabase authority. It is still not a production Play/AdMob release: real Google Play Billing product configuration, purchase-token verification, acknowledge/consume, restore reconciliation, refund/revocation lifecycle, and production AdMob account/ad-unit setup remain externally blocked or incomplete.
+
+---
+
+## BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT
+
+Status: `VERIFIED` for local Android development runtime; `PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED` for production Google Play and AdMob.
+
+Evidence-backed implementation status:
+
+| Area | Current repository status |
+| --- | --- |
+| Android Expo runtime | `IMPLEMENTED` with `expo-video`, Hermes/new architecture runtime verified externally in this checkpoint. |
+| Mux playback authorization | `IMPLEMENTED` server-side through `POST /api/v1/playback` and signed Mux HLS URLs. |
+| Micro-drama interruptive ads | `NOT APPLICABLE / PROHIBITED`; no pre/mid/post-roll micro-drama ad path should be introduced. |
+| Coin episode unlock | `IMPLEMENTED` through server/RPC wallet debit, one ledger row, and permanent `episode_entitlements` ownership. |
+| Rewarded episode unlock | `IMPLEMENTED` for development/runtime verification: Android uses `react-native-google-mobile-ads`, creates an attempt, polls status, and grants only after AdMob SSV callback verification. Production AdMob setup remains externally blocked. |
+| Rewarded SSV | `IMPLEMENTED` in `src/app/api/webhooks/admob/ssv/route.ts` with Google ECDSA verifier-key signature validation and idempotent backend finalization. |
+| 0nya Plus runtime entitlement | `IMPLEMENTED` for local server-authoritative entitlement resolution and `/api/v1/me` reconciliation; real subscription store lifecycle remains incomplete. |
+| Quality entitlement tiering | `IMPLEMENTED` server-side: Guest/Free max 720p; active Plus max 1440p / 2K; no 4K promise. |
+| Short Film playback | `IMPLEMENTED` on Android with signed playback, always-playable access, Plus ad suppression, and no coin/subscriber lock. |
+| Chai | `IMPLEMENTED` for Short Films through `POST /api/v1/short-films/[slug]/chai` and `submit_short_film_chai_tip`, with atomic viewer debit, creator/film credit, idempotency, and insufficient-balance handling. |
+| Billing development boundary | `IMPLEMENTED` as a development-only boundary at `POST /api/v1/billing/google-play`; returns `DEVELOPMENT_TEST_BOUNDARY` and `entitlementChanged=false`. |
+| Real Google Play Billing | `PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED`; no production Play product setup, real purchase token verification, acknowledge/consume, or lifecycle reconciliation is complete. |

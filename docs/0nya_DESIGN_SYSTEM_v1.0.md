@@ -965,6 +965,15 @@ omit selectable quality controls
 
 rather than showing a dead button.
 
+Current quality behavior:
+
+```text
+Guest / Free: Auto/adaptive playback with a 720p maximum ceiling
+0nya Plus: Auto/adaptive playback with a 1440p / 2K maximum ceiling
+```
+
+Quality controls must render only actual available renditions or a truthful Auto/adaptive state. Do not add 4K UI.
+
 ---
 
 # 30. PLAYER PROGRESS BAR
@@ -2089,26 +2098,27 @@ Do not fake it.
 
 # 77. BILLING IMPLEMENTATION RULE
 
-Native Google Play Billing is currently not implemented / deferred in the audited repo.
+Real Google Play Billing is partially implemented / externally blocked in the audited repo.
 
 Therefore:
 
-- Design the billing UI.
-- Preserve backend-ready wallet/order architecture.
-- Do not silently add BillingClient during visual UI work.
-- Connect real store billing only in a separately approved implementation phase.
+- Preserve the current Buy Coins, 0nya Plus, and Restore / Sync surfaces.
+- Preserve the development billing harness boundary, which must never make the client wallet or Plus authority.
+- Keep real store purchase-token verification, acknowledge/consume, product IDs, license testers, Play Billing Lab, restore reconciliation, refunds, revocation, and subscription lifecycle as externally blocked/incomplete until Play Console setup is proven.
+- Do not silently replace the Google Play/AdMob architecture during visual UI work.
 
 ---
 
 # 78. AD IMPLEMENTATION RULE
 
-Current production ad integration is incomplete.
+Current production AdMob account/ad-unit configuration is externally blocked, while the rewarded unlock code path exists for development/runtime verification.
 
 Therefore:
 
-- design A02/A03, short-film mid-roll/post-roll states
-- do not simulate production ad verification
-- do not add ad SDKs during visual implementation unless explicitly approved
+- Keep A02/A03 tied to user-initiated rewarded unlock and server-side SSV confirmation.
+- Do not mark production AdMob live until account/ad-unit configuration is proven.
+- Do not insert pre-roll, mid-roll, or post-roll ads into micro-drama playback.
+- Short-film ad controls remain CMS/backend-driven and suppressed for Plus.
 
 ---
 

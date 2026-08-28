@@ -6,14 +6,14 @@ This document describes the video and playback implementation that actually exis
 
 ## Executive summary
 
-Status: PARTIALLY IMPLEMENTED
+Status: PARTIALLY IMPLEMENTED, with Android local runtime playback verified for Build 15.
 
 The repository contains two different playback implementations:
 
 - Android/mobile player: Expo app using `expo-video` with a development HLS source and player lifecycle management.
 - Web player: a custom Next.js mock player UI that tracks playback position in JavaScript but does not use an actual HTML video element.
 
-The repo now has a server-only Mux media foundation for production upload/webhook metadata, signed playback authorization, and a secure locked-preview backend foundation. Android playback continues to use `expo-video`, and the production player flow is still not wired into the native client.
+The repo now has a server-only Mux media foundation for production upload/webhook metadata, signed playback authorization, a secure locked-preview backend foundation, and Android client playback authorization wiring. Android playback continues to use `expo-video`.
 
 Important product constraint reminder:
 
@@ -50,7 +50,7 @@ Important caveat:
 
 ### 1.2 Android/mobile video implementation
 
-Status: PARTIALLY IMPLEMENTED
+Status: IMPLEMENTED for verified Android development playback; production media/account configuration remains partial.
 
 Evidence:
 
@@ -67,6 +67,8 @@ Behavior:
 - `VideoView` and `useVideoPlayer()` are used to create and manage playback.
 - A development HLS source is passed into `useVideoPlayer(source, ...)`.
 - Playback lifecycle, buffering, seeking, end-of-stream, retry, and watch-progress sync are implemented in the Android player layer.
+- `apps/android/src/player/usePlaybackSource.ts` calls the server playback boundary before playback when production Mux content is used.
+- Verified local runtime uses signed Mux playback for unlocked micro-drama and Short Film examples, with no interruptive micro-drama ads.
 
 ### 1.3 Shared code
 
@@ -164,13 +166,14 @@ Evidence found:
 
 ### 3.3 How playback URLs are obtained
 
-Status: IMPLEMENTED on the server, not yet wired into Android/web playback clients
+Status: IMPLEMENTED on the server and wired into Android playback source resolution
 
 Evidence:
 
 - `src/app/api/v1/playback/route.ts` resolves episodes and short films to a server-signed Mux playback URL
 - the helper keeps the signed playback URL server-only and does not expose provider IDs to the client
-- Android/web playback clients are still not wired to consume the new endpoint
+- `apps/android/src/player/usePlaybackSource.ts` consumes the playback authorization endpoint before handing the URL to `expo-video`
+- web parity remains separate and still uses its older player path
 
 ### 3.4 Signed/private URLs
 
@@ -435,22 +438,26 @@ The product Bible expects real preview behavior for some access models; this rep
 
 ## 8. Short Film playback
 
-Status: PARTIALLY IMPLEMENTED (server auth only)
+Status: IMPLEMENTED on Android for the verified development runtime; web parity remains partial.
 
 Evidence:
 
 - `apps/android/src/player/types.ts` includes `ShortFilmPlaybackContext`
 - `src/app/watch/[seriesSlug]/[episodeNumber]/page.tsx` is episode-specific and does not implement a short-film route
 - `src/app/api/v1/playback/route.ts` now authorizes signed playback for short films on the server
-- no short-film page or dedicated player flow was found in the repo
+- Android implements `ShortFilmDetailScreen`, `ShortFilmPlaybackScreen`, and `ShortFilmEndScreen`.
+- Short Films are always playable when published/playback-ready, are never coin locked, and are not subscriber-only.
+- Non-Plus ad behavior remains CMS-controlled; Plus suppresses Short Film ads.
+- Chai is available only on Short Film surfaces when backend returns eligible Chai configuration.
 
 Current state:
 
-- the enum and context type exist, but no actual short-film playback screen or video source pipeline was found
-- no mid-roll / post-roll ad logic was found
-- no short-film reward or Chai flow is implemented in this repo
+- Android has a dedicated Short Film playback screen and film-end state.
+- Short Film playback uses the same `expo-video` player layer and signed playback authorization path.
+- Chai is implemented for Short Films through Android screens plus `POST /api/v1/short-films/[slug]/chai`.
+- Production ad network configuration remains externally blocked; do not mark production ad units live from repository code alone.
 
-This is not a finished short-film architecture.
+This is a verified Android development implementation, not a complete production ad-network launch.
 
 ---
 
@@ -458,41 +465,51 @@ This is not a finished short-film architecture.
 
 ### 9.1 Rewarded-ad code related to video
 
-Status: MISSING
+Status: IMPLEMENTED for Android rewarded unlock handoff and backend SSV confirmation; production AdMob account/ad-unit setup remains externally blocked.
 
 Evidence:
 
 - `src/components/player/LockedEpisode.tsx` contains a disabled button labeled “Watch ad to unlock” with a comment:
   - “Rewarded-ad entitlements must be granted only after trusted server-side ad verification.”
 
-No actual rewarded ad SDK, ad completion watcher, or rewarded callback flow was found.
+Current Build 15 evidence supersedes the older placeholder-only finding:
+
+- `apps/android/package.json` includes `react-native-google-mobile-ads`.
+- `apps/android/src/screens/EpisodeAccessOptionsScreen.tsx` creates rewarded attempts, loads/shows the rewarded ad, and polls backend confirmation.
+- `src/app/api/v1/episodes/[episodeId]/rewarded/route.ts` creates attempts.
+- `src/app/api/v1/rewarded-ad-attempts/[customData]/route.ts` returns attempt status.
+- `src/app/api/webhooks/admob/ssv/route.ts` verifies the AdMob SSV signature and calls backend finalization.
+- Production AdMob account/ad-unit configuration remains externally blocked.
 
 ### 9.2 Short-film mid-roll implementation
 
-Status: MISSING
+Status: PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED
 
 Evidence:
 
-- no `midroll_enabled`, `midroll_timecodes`, or runtime ad scheduler found in the repo
-- no short-film player with scheduled ad insertion exists
+- Android Short Film playback supports the dedicated film player path.
+- Short Film ad behavior is CMS/backend controlled and Plus-suppressed.
+- Production AdMob account/ad-unit configuration remains externally blocked, so production ad delivery must not be marked live.
 
 ### 9.3 Short-film post-roll implementation
 
-Status: MISSING
+Status: PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED
 
 Evidence:
 
-- no post-roll ad flow found in the player source
-- no related completion screen with Chai / share flow exists for short films
+- Android has `ShortFilmEndScreen` with Chai/share/replay/home flow after completion.
+- Post-roll behavior remains CMS/backend controlled for non-Plus viewers.
+- Production ad delivery remains externally blocked until AdMob configuration is proven.
 
 ### 9.4 Existing ad SDK / player integration
 
-Status: MISSING / UNKNOWN / NOT FOUND
+Status: PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED
 
 Evidence:
 
-- no ad SDK dependency found in `package.json` or Android app dependencies
-- no ad provider integration (e.g., rewarded video SDK, VAST/VPAID, ad insertion SDK) was found
+- Android includes `react-native-google-mobile-ads` for rewarded unlock.
+- Production AdMob account/ad-unit configuration is externally blocked.
+- Short-film production ad units and any mid/post-roll ad provider configuration are not production-proven.
 
 ### Product rule check
 
@@ -758,21 +775,21 @@ This is a product access gate, not a fully secure streaming token system.
 | Shared playback access logic exists | IMPLEMENTED |
 | HLS support exists | IMPLEMENTED (dev source only) |
 | MP4/direct URL support | UNKNOWN / NOT FOUND |
-| Signed/private playback URLs | MISSING |
+| Signed/private playback URLs | IMPLEMENTED for Mux signed playback authorization |
 | CDN/storage integration | UNKNOWN / NOT FOUND |
 | Playback lifecycle methods | PARTIALLY IMPLEMENTED |
 | Resume / continue watching | IMPLEMENTED |
 | Auto-next | PARTIALLY IMPLEMENTED |
 | Locked preview | PARTIALLY IMPLEMENTED (backend foundation only) |
-| Short-film playback | MISSING |
-| Rewarded-ad unlock flow | MISSING |
-| Mid-roll ad insertion | MISSING |
-| Post-roll ad insertion | MISSING |
+| Short-film playback | IMPLEMENTED on Android; web parity partial |
+| Rewarded-ad unlock flow | IMPLEMENTED for Android/backend SSV; production AdMob blocked |
+| Mid-roll ad insertion | PARTIALLY IMPLEMENTED / CMS-controlled, production AdMob blocked |
+| Post-roll ad insertion | PARTIALLY IMPLEMENTED / CMS-controlled, production AdMob blocked |
 | Subtitle support | PARTIALLY IMPLEMENTED |
 | Quality selection | MISSING |
 | Error retry logic | PARTIALLY IMPLEMENTED |
 | Playback analytics | MISSING |
-| Secure signed streaming | MISSING |
+| Secure signed streaming | IMPLEMENTED for `/api/v1/playback` Mux URLs |
 
 ---
 
@@ -904,13 +921,13 @@ This section compares the implemented player architecture to the Product Bible v
 
 ## Final conclusion
 
-The repository contains a meaningful playback foundation, but it is not a complete production-grade video architecture. The implemented system is best described as a partial, development-stage player shell with access control and hydrated watch-progress logic.
+The repository contains a verified Android development playback foundation and a partial web playback foundation. The Android path has real `expo-video`, signed Mux playback authorization, resume/progress, Short Film playback, rewarded unlock handoff, and Plus/Free quality ceilings. It is still not a complete production Play/AdMob launch because real production ad-unit/account configuration and full store billing lifecycle remain externally blocked.
 
 The most important repository reality is this:
 
 - The repo has real access logic and watch-progress persistence.
-- The repo has a development HLS player on Android using `expo-video`.
+- The repo has a verified Android HLS player using `expo-video`.
 - The repo has a custom web progress model that is not a true media player.
-- The repo does not yet implement production video delivery, signed playback URLs, short-film ads, rewarded ads, or the full product-Bible playback contract.
+- The repo implements signed Mux playback authorization and Android rewarded unlock/Short Film paths, while production ad configuration and web parity remain incomplete.
 
 This should be treated as a working foundation to extend, not as a completed build-ready video platform.

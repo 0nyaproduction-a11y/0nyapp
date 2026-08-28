@@ -4,6 +4,7 @@ type MobileEnv = {
   apiBaseUrl: string;
   canonicalSiteUrl: string | null;
   admobRewardedAdUnitId: string | null;
+  devBillingHarnessEnabled: boolean;
   muxTestPlaybackEnabled: boolean;
   shortFilmMuxTestPlaybackEnabled: boolean;
 };
@@ -23,6 +24,7 @@ function readBooleanEnv(value: string | undefined) {
 export function getMobileEnv(): MobileEnv {
   const canonicalSiteUrl = process.env.EXPO_PUBLIC_ONYA_CANONICAL_URL?.trim();
   const admobRewardedAdUnitId = process.env.EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID?.trim();
+  const devBillingHarnessEnabled = readBooleanEnv(process.env.EXPO_PUBLIC_ONYA_DEV_BILLING_HARNESS);
   const muxTestPlaybackEnabled = readBooleanEnv(process.env.EXPO_PUBLIC_ONYA_TEST_MUX_PLAYBACK);
   const shortFilmMuxTestPlaybackEnabled = readBooleanEnv(
     process.env.EXPO_PUBLIC_ONYA_TEST_SHORT_FILM_MUX_PLAYBACK,
@@ -43,6 +45,7 @@ export function getMobileEnv(): MobileEnv {
     ).replace(/\/$/, ""),
     canonicalSiteUrl: canonicalSiteUrl ? canonicalSiteUrl.replace(/\/$/, "") : null,
     admobRewardedAdUnitId: admobRewardedAdUnitId ? admobRewardedAdUnitId : null,
+    devBillingHarnessEnabled,
     muxTestPlaybackEnabled,
     shortFilmMuxTestPlaybackEnabled,
   };

@@ -235,9 +235,10 @@ Current repo audit status:
 
 ```text
 backend wallet/order foundation = present
-native Google Play Billing = not yet implemented / deferred
+development billing boundary = implemented, non-mutating
+native Google Play Billing = partially implemented / externally blocked
 production Play verification = incomplete
-Restore / Sync = not yet implemented
+Restore / Sync = development boundary only
 ```
 
 When Play Billing implementation resumes:
@@ -257,7 +258,9 @@ Do not implement native billing casually during unrelated UI work.
 
 # 9. REWARDED-AD SECURITY
 
-When rewarded ads are implemented:
+Current Build 15 evidence shows rewarded-ad unlock implemented for Android/backend development verification. Production AdMob account/ad-unit configuration remains externally blocked.
+
+Rewarded-ad security requirements:
 
 ```text
 viewer intentionally chooses reward
@@ -1156,7 +1159,7 @@ This is consistent with a public client configuration model. The repo does not s
 ### Wallet / coin / transaction security
 
 ```text
-Status: IMPLEMENTED (server-authoritative foundation)
+Status: IMPLEMENTED (server-authoritative foundation; coin unlock runtime verified)
 ```
 
 The repo contains server-side wallet, coin products, payment orders, and transaction tables in SQL and strongly-enforced payment logic in `public.credit_verified_coin_purchase(...)`.
@@ -1173,19 +1176,23 @@ coin product placeholder definitions
 
 This is a solid foundation for a backend-authoritative economy. It is not equivalent to a live, production billing implementation.
 
+Build 15 verified evidence also confirms `purchase_episode_with_coins` performs exactly one wallet debit, writes the coin transaction ledger row, creates a permanent `episode_entitlements` row with `source = purchase` and `expires_at = null`, and returns duplicate unlocks as already owned without duplicate debit or entitlement creation.
+
 ### Purchase verification / Google Play billing
 
 ```text
-Status: MISSING / EXTERNALLY BLOCKED
+Status: PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED
 ```
 
-The repo does not contain a native Google Play Billing integration. There is no evidence of:
+The repo contains Android Buy Coins, Plus, and Restore / Sync UI plus a development-only server boundary at `POST /api/v1/billing/google-play`. That boundary returns trusted wallet/Plus state, `DEVELOPMENT_TEST_BOUNDARY` in development, and `entitlementChanged=false`; it does not accept client authority for wallet or subscription changes.
+
+The repo still does not contain production-complete evidence of:
 
 ```text
-com.android.billingclient:billing
-Google Play Billing client setup
 purchase token verification endpoint tied to Play
-Restore/Sync Purchases flow
+acknowledge / consume
+real restore reconciliation
+refund / revocation lifecycle
 Google Play Console org / D-U-N-S setup
 ```
 
@@ -1194,10 +1201,10 @@ The payment-order schema references `provider = 'google_play'`, but the actual P
 ### Rewarded ads / entitlement security
 
 ```text
-Status: MISSING / NOT PROVEN
+Status: IMPLEMENTED for development/backend verification; production AdMob externally blocked
 ```
 
-The repo contains entitlement types and wallet logic, but no rewarded-ad provider implementation, completion verification flow, or production grant endpoint evidence. This remains a future implementation item and must not be treated as live.
+The repo contains Android rewarded attempt creation/loading, AdMob rewarded SDK usage, SSV confirmation polling, `POST /api/v1/episodes/[episodeId]/rewarded`, `GET /api/v1/rewarded-ad-attempts/[customData]`, and `POST /api/webhooks/admob/ssv`. The webhook fetches Google verifier keys, verifies the ECDSA signature, checks the expected ad unit when configured, and finalizes through `finalize_rewarded_ad_callback`. Duplicate provider transactions are guarded server-side. Production AdMob account/ad-unit setup remains externally blocked and must not be advertised as live.
 
 ### Account deletion / privacy/legal surfaces
 
@@ -1234,16 +1241,16 @@ The repo does not contain the required public grievance mechanism or officer con
 ### Video playback security and production delivery
 
 ```text
-Status: PARTIALLY IMPLEMENTED
+Status: PARTIALLY IMPLEMENTED / VERIFIED for Android signed-playback development runtime
 ```
 
-The Android app includes `expo-video`, and the repo includes development video source examples in `apps/android/src/player/devSources.ts`. The web app includes a custom player shell but no production media/CDN pipeline evidence. There is no evidence of:
+The Android app includes `expo-video`, calls the server playback authorization boundary, and uses signed Mux playback for verified runtime examples. `resolvePlaybackMaxResolution` enforces Free/Guest max 720p and active Plus max 1440p / 2K via the Mux signed playback token. The web app includes a custom player shell and remains a separate parity gap.
+
+Still unresolved for production:
 
 ```text
-signed streaming URLs
-tokenized playback authorization
 CDN hardening / hotlink protection
-media storage + transcode pipeline
+full production media storage + transcode operations
 CORS and origin controls for production media
 subtitle access/distribution policy
 ```

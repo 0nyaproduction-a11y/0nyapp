@@ -889,6 +889,23 @@ Do not rename production fields merely to match this document.
 
 ---
 
+# 28A. CURRENT IMPLEMENTATION EVIDENCE NOTES
+
+These notes do not replace the conceptual CMS requirements above. They record current repository evidence only.
+
+Implemented or proven fields/functions include:
+
+- Episodes expose `rewarded_unlock_enabled`, `rewarded_access_mode`, and Plus/free/coin access data through the backend catalog/access serializers.
+- Short Films expose `chai_enabled`, playback readiness, signed playback authorization, and backend Chai availability.
+- Chai allowed amounts are backend-controlled through `get_short_film_chai_details`; the verified configured values are `5`, `10`, `20`, and `50` coins.
+- Chai creator/film ledger mapping exists through the Chai ledger foundation and `submit_short_film_chai_tip`.
+- Short Film ad behavior remains backend/CMS controlled and Plus-suppressed; production AdMob setup is still externally blocked.
+- Quality entitlement is not a CMS override: server playback authorization enforces Free/Guest up to 720p and active Plus up to 1440p / 2K where renditions exist.
+
+Do not infer new CMS fields from these notes.
+
+---
+
 # 29. COPILOT CMS AUDIT PROMPT
 
 Use before any CMS implementation:

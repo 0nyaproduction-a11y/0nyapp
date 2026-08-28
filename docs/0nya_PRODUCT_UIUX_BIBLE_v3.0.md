@@ -319,6 +319,12 @@ This replaces the old mandatory 'first three free' model.
 | Resume | Save periodically, on pause/background, and on clean exit opportunities. |
 | Not in MVP | No Like/Comment, brightness/volume gestures, Previous/Next, fullscreen/landscape, wallet/coin badge, or Plus promotional overlay in the main player. |
 
+Approved quality entitlement rule:
+
+- Guest / Registered Free: up to 720p.
+- 0nya Plus: up to 1440p / 2K where the asset rendition exists.
+- This remains one 0nya Plus tier, creates no 4K promise, and is enforced by the backend/signed playback boundary.
+
 
 # 10. Auto-Next & Resume
 

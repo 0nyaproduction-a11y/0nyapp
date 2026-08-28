@@ -292,6 +292,26 @@ export type WalletResponse = {
   }[];
 };
 
+export type GooglePlayBillingBoundaryResponse = {
+  backendStatus: "DEVELOPMENT_TEST_BOUNDARY" | "EXTERNALLY_BLOCKED_NOT_CONFIGURED";
+  entitlementChanged: boolean;
+  googleProductConfigured: boolean;
+  kind: "coin_pack" | "subscription" | null;
+  mode: "purchase" | "restore";
+  productCode: string | null;
+  scenario: string | null;
+  subscription: {
+    endsAt: string | null;
+    planCode: string | null;
+    status: "active" | "none";
+  };
+  testOnly: boolean;
+  verificationStatus: "test_only_not_google_verified" | "not_configured";
+  wallet: {
+    coinBalance: number;
+  };
+};
+
 export type WatchProgressItem = {
   contentType: "series_episode" | "short_film";
   seriesSlug: string | null;

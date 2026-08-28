@@ -1,6 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState, type ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import {
   Body,
@@ -12,8 +12,9 @@ import {
   RecoveryState,
   Title,
 } from "../components/ui";
-import { getMe } from "../lib/api";
+import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { getBillingService, type BillingHarnessScenario, type StoreProduct } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
 import { borders, colors, radii } from "../theme/tokens";
@@ -33,7 +34,10 @@ export function PlusScreen({ navigation }: Props) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [billingMessage, setBillingMessage] = useState<string | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
   const token = session?.access_token;
+  const billingService = getBillingService();
 
   const loadSubscription = useCallback(async () => {
     if (!token) {
@@ -65,6 +69,52 @@ export function PlusScreen({ navigation }: Props) {
 
   function handleSignIn() {
     navigation.navigate("SignIn");
+  }
+
+  async function handlePlusPurchase(scenario?: BillingHarnessScenario) {
+    if (!token || isPurchasing) {
+      return;
+    }
+
+    setIsPurchasing(true);
+    setBillingMessage(null);
+
+    const [product] = await billingService.getProducts("subscription");
+    const plusProduct: StoreProduct =
+      product ?? {
+        billingPeriodLabel: "Store price not configured",
+        coinAmount: null,
+        displayName: "0nya Plus",
+        googleProductId: null,
+        kind: "subscription",
+        localizedPrice: null,
+        productCode: "0nya_plus",
+        status: "not_configured",
+      };
+
+    try {
+      const result = await billingService.purchase(plusProduct, scenario);
+      const boundary = await submitGooglePlayBillingBoundary(token, {
+        googleProductId: result.googleProductId,
+        kind: "subscription",
+        mode: "purchase",
+        productCode: result.productCode,
+        scenario: result.scenario ?? result.status,
+        testOnly: result.testOnly,
+      });
+      const meData = await getMe(token);
+
+      setMe(meData);
+      setBillingMessage(
+        boundary.testOnly
+          ? `Test-only ${result.status.replace(/_/g, " ")}. Google verification was not performed; Plus state remains ${boundary.subscription.status}.`
+          : "Google Play Billing is not configured yet. No Plus entitlement was changed.",
+      );
+    } catch {
+      setBillingMessage("We couldn't complete the billing check. Your Plus state was not changed.");
+    } finally {
+      setIsPurchasing(false);
+    }
   }
 
   const isPlus = me?.subscription.status === "active";
@@ -114,21 +164,30 @@ export function PlusScreen({ navigation }: Props) {
             <Label>Membership</Label>
             <Text style={styles.membershipHeadline}>{membershipHeadline}</Text>
             {membershipBody ? <Body>{membershipBody}</Body> : null}
-           {!isPlus ? (
-             <Body>Purchasing is not available in this build.</Body>
-           ) : null}
-           <View
-             accessibilityLabel={membershipStatusText}
-             accessibilityRole="text"
-             style={[styles.statusPill, isPlus ? styles.statusPillActive : null]}
-           >
-             <View style={[styles.statusDot, isPlus ? styles.statusDotActive : null]} />
-             <Text style={[styles.statusText, isPlus ? styles.statusTextActive : null]}>
-               {membershipStatusText}
-             </Text>
-           </View>
-         </View>
-       ) : null
+            {!isPlus ? (
+              <Body>Purchasing needs Google Play product configuration before production use.</Body>
+            ) : null}
+            {!isPlus ? (
+              <Button
+                accessibilityLabel="Continue with 0nya Plus"
+                disabled={isPurchasing}
+                onPress={() => void handlePlusPurchase()}
+              >
+                Continue
+              </Button>
+            ) : null}
+            <View
+              accessibilityLabel={membershipStatusText}
+              accessibilityRole="text"
+              style={[styles.statusPill, isPlus ? styles.statusPillActive : null]}
+            >
+              <View style={[styles.statusDot, isPlus ? styles.statusDotActive : null]} />
+              <Text style={[styles.statusText, isPlus ? styles.statusTextActive : null]}>
+                {membershipStatusText}
+              </Text>
+            </View>
+          </View>
+        ) : null
       ) : (
         <Card>
           <Label>Guest</Label>
@@ -139,9 +198,54 @@ export function PlusScreen({ navigation }: Props) {
           </Button>
         </Card>
       )}
+      {__DEV__ && token && billingService.isHarness ? (
+        <Card>
+          <Label>Development billing harness</Label>
+          <Body>Exercise Plus billing outcomes without Google UI or production entitlement changes.</Body>
+          <View style={styles.harnessGrid}>
+            {plusHarnessScenarios.map((scenario) => (
+              <Pressable
+                accessibilityLabel={`Run ${scenario}`}
+                accessibilityRole="button"
+                disabled={isPurchasing}
+                key={scenario}
+                onPress={() => void handlePlusPurchase(scenario)}
+                style={({ pressed }) => [
+                  styles.harnessChip,
+                  pressed && styles.harnessChipPressed,
+                  isPurchasing && styles.harnessChipDisabled,
+                ]}
+              >
+                <Text style={styles.harnessChipText}>{scenario}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Card>
+      ) : null}
+      {billingMessage ? (
+        <Card>
+          <Label>Billing status</Label>
+          <Body>{billingMessage}</Body>
+        </Card>
+      ) : null}
     </Screen>
   );
 }
+
+const plusHarnessScenarios: BillingHarnessScenario[] = [
+  "PURCHASE_SUCCESS",
+  "USER_CANCELLED",
+  "PURCHASE_DECLINED",
+  "PURCHASE_PENDING",
+  "SERVICE_DISCONNECTED",
+  "NETWORK_ERROR",
+  "PRODUCT_UNAVAILABLE",
+  "ALREADY_PROCESSED",
+  "INVALID_PRODUCT",
+  "SUBSCRIPTION_ACTIVE",
+  "SUBSCRIPTION_EXPIRED",
+  "SUBSCRIPTION_CANCELLED",
+];
 
 type BenefitRowProps = {
   body: ReactNode;
@@ -239,5 +343,28 @@ const styles = StyleSheet.create({
   },
   statusTextActive: {
     color: colors.text,
+  },
+  harnessGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  harnessChip: {
+    borderColor: "rgba(13, 209, 188, 0.24)",
+    borderWidth: borders.width,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  harnessChipPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.10)",
+  },
+  harnessChipDisabled: {
+    opacity: 0.5,
+  },
+  harnessChipText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
   },
 });

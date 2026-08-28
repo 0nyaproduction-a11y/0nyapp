@@ -4,6 +4,33 @@
 
 This document records the API contract evidence that actually exists in the repository. It is intentionally limited to implementation evidence from the codebase and SQL migrations and does not assume a billing client that is not present in the repository.
 
+## Build 15 verified endpoint inventory
+
+Current proven endpoints/functions:
+
+| Surface | Contract |
+| --- | --- |
+| `POST /api/v1/playback` | Server-authorizes Series Episode or Short Film playback and returns signed Mux HLS URL data when allowed. |
+| `POST /api/v1/playback/preview` | Server-authorizes locked preview playback where configured. |
+| `POST /api/v1/episodes/[episodeId]/purchase` | Authenticated coin unlock path backed by `purchase_episode_with_coins`. |
+| `POST /api/v1/episodes/[episodeId]/rewarded` | Authenticated rewarded-ad attempt creation backed by `create_rewarded_ad_attempt`. |
+| `GET /api/v1/rewarded-ad-attempts/[customData]` | Authenticated rewarded-attempt status polling backed by `get_rewarded_ad_attempt_status`. |
+| `POST /api/webhooks/admob/ssv` | AdMob SSV callback verification using Google ECDSA verifier keys and `finalize_rewarded_ad_callback`. |
+| `GET /api/v1/short-films/[slug]` | Short Film detail response including backend Chai availability. |
+| `POST /api/v1/short-films/[slug]/chai` | Authenticated Chai coin tip using `submit_short_film_chai_tip`. |
+| `POST /api/v1/billing/google-play` | Development/blocked production Google Play boundary; never credits wallet or Plus from client state. |
+| `GET /api/v1/me` | Authenticated account summary, wallet, and Plus reconciliation. |
+| `GET /api/v1/wallet` | Authenticated wallet/coin product/ledger summary. |
+
+Server-authoritative invariants:
+
+- Wallet balance and coin deductions are backend/RPC controlled.
+- Coin episode unlock is idempotent and creates a permanent entitlement with `expires_at = null`.
+- Rewarded unlock depends on AdMob SSV verification and backend finalization; duplicate provider transactions do not duplicate grants.
+- Plus access is resolved server-side and remains independent of permanent coin/rewarded episode entitlements.
+- Chai uses one wallet, validates allowed amounts, debits the viewer, credits the creator/film ledger, and uses an idempotency key.
+- The Google Play boundary is not real Play purchase verification; real token verification, acknowledge/consume, restore, refund/revocation, and subscription lifecycle remain incomplete.
+
 ## Google Play Billing / Purchase Contracts
 
 ### 1. purchase verification endpoint/function
@@ -117,14 +144,18 @@ This appears to be only a backend entitlement model and UI shell, not a real sub
 
 ### 6. restore / sync flow
 
-Status: `MISSING` / `UNKNOWN / NOT FOUND`
+Status: `PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED`
 
 Evidence:
 
-- No Android `queryPurchases` implementation was found.
-- No Android restore-purchases screen or sync route was found.
-- No server endpoint named for restore/sync purchase state was found.
-- No `restore` or `syncPurchases` logic was found in `src/**` or `apps/android/src/**`.
+- Android has `apps/android/src/screens/RestoreSyncScreen.tsx`.
+- `POST /api/v1/billing/google-play` accepts `mode: "restore"` and reports current trusted wallet/Plus state.
+- In development, the boundary returns `DEVELOPMENT_TEST_BOUNDARY`, `entitlementChanged=false`, and does not mutate wallet or Plus.
+
+Not complete:
+
+- No real Google Play `queryPurchasesAsync` reconciliation.
+- No production purchase-token verification, acknowledge/consume, refund, revocation, or subscription lifecycle processing.
 
 ### 7. subscription expiration / cancellation / refund handling
 

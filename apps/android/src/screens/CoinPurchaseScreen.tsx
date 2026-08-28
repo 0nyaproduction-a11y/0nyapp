@@ -1,5 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import {
   Body,
@@ -10,10 +11,12 @@ import {
   RecoveryState,
   Title,
 } from "../components/ui";
-import { getWallet } from "../lib/api";
+import { getWallet, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { getBillingService, type BillingHarnessScenario, type StoreProduct } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { WalletResponse } from "../types/api";
+import { borders, colors } from "../theme/tokens";
 
 type Props = RootStackScreenProps<"CoinPurchase">;
 
@@ -22,8 +25,11 @@ export function CoinPurchaseScreen({ route }: Props) {
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [billingMessage, setBillingMessage] = useState<string | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
   const token = session?.access_token;
   const chaiReturn = route.params?.returnToChai ?? null;
+  const billingService = getBillingService(wallet);
 
   const loadCoinProducts = useCallback(async () => {
     if (!token) {
@@ -53,6 +59,39 @@ export function CoinPurchaseScreen({ route }: Props) {
     }, [loadCoinProducts]),
   );
 
+  async function handlePurchase(product: StoreProduct, scenario?: BillingHarnessScenario) {
+    if (!token || isPurchasing) {
+      return;
+    }
+
+    setIsPurchasing(true);
+    setBillingMessage(null);
+
+    try {
+      const result = await billingService.purchase(product, scenario);
+      const boundary = await submitGooglePlayBillingBoundary(token, {
+        googleProductId: result.googleProductId,
+        kind: result.kind,
+        mode: "purchase",
+        productCode: result.productCode,
+        scenario: result.scenario ?? result.status,
+        testOnly: result.testOnly,
+      });
+      const refreshedWallet = await getWallet(token);
+
+      setWallet(refreshedWallet);
+      setBillingMessage(
+        boundary.testOnly
+          ? `Test-only ${result.status.replace(/_/g, " ")}. Google verification was not performed; server balance is ${boundary.wallet.coinBalance} coins.`
+          : "Google Play Billing is not configured yet. No wallet change was made.",
+      );
+    } catch {
+      setBillingMessage("We couldn't complete the billing check. Your wallet was not changed.");
+    } finally {
+      setIsPurchasing(false);
+    }
+  }
+
   return (
     <Screen>
       {isLoading && !wallet && !error ? <LoadingState /> : null}
@@ -73,10 +112,20 @@ export function CoinPurchaseScreen({ route }: Props) {
           {wallet.coinProducts.length > 0 ? (
             <Card>
               <Label>Coin packs</Label>
-              <Body>Coin packs are not available in this test build yet.</Body>
-              <Button accessibilityLabel="Coin packs unavailable" disabled onPress={() => undefined}>
-                UNAVAILABLE IN THIS BUILD
-              </Button>
+              <Body>
+                Prices come from Google Play once product IDs are configured. This build keeps
+                wallet credit server-authoritative.
+              </Body>
+              <View style={styles.productList}>
+                {getStoreProducts(wallet).map((product) => (
+                  <CoinPackRow
+                    disabled={isPurchasing}
+                    key={product.productCode}
+                    onPress={() => void handlePurchase(product)}
+                    product={product}
+                  />
+                ))}
+              </View>
             </Card>
           ) : (
             <Card>
@@ -87,6 +136,39 @@ export function CoinPurchaseScreen({ route }: Props) {
               </Button>
             </Card>
           )}
+          {__DEV__ && billingService.isHarness ? (
+            <Card>
+              <Label>Development billing harness</Label>
+              <Body>Run billing outcomes without Google UI or production entitlement changes.</Body>
+              <View style={styles.harnessGrid}>
+                {coinHarnessScenarios.map((scenario) => (
+                  <Pressable
+                    accessibilityLabel={`Run ${scenario}`}
+                    accessibilityRole="button"
+                    disabled={isPurchasing}
+                    key={scenario}
+                    onPress={() => {
+                      const firstProduct = getStoreProducts(wallet)[0] ?? defaultHarnessProduct;
+                      void handlePurchase(firstProduct, scenario);
+                    }}
+                    style={({ pressed }) => [
+                      styles.harnessChip,
+                      pressed && styles.harnessChipPressed,
+                      isPurchasing && styles.harnessChipDisabled,
+                    ]}
+                  >
+                    <Text style={styles.harnessChipText}>{scenario}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+          ) : null}
+          {billingMessage ? (
+            <Card>
+              <Label>Billing status</Label>
+              <Body>{billingMessage}</Body>
+            </Card>
+          ) : null}
         </>
       ) : null}
       {!token ? (
@@ -103,3 +185,134 @@ export function CoinPurchaseScreen({ route }: Props) {
     </Screen>
   );
 }
+
+const coinHarnessScenarios: BillingHarnessScenario[] = [
+  "PURCHASE_SUCCESS",
+  "USER_CANCELLED",
+  "PURCHASE_DECLINED",
+  "PURCHASE_PENDING",
+  "SERVICE_DISCONNECTED",
+  "NETWORK_ERROR",
+  "PRODUCT_UNAVAILABLE",
+  "ALREADY_PROCESSED",
+  "INVALID_PRODUCT",
+];
+
+const defaultHarnessProduct: StoreProduct = {
+  billingPeriodLabel: null,
+  coinAmount: 100,
+  displayName: "100 Coins",
+  googleProductId: null,
+  kind: "coin_pack",
+  localizedPrice: null,
+  productCode: "coins_100",
+  status: "not_configured",
+};
+
+function getStoreProducts(wallet: WalletResponse): StoreProduct[] {
+  return wallet.coinProducts.map((product) => ({
+    billingPeriodLabel: null,
+    coinAmount: product.coinAmount,
+    displayName: product.displayName,
+    googleProductId: null,
+    kind: "coin_pack",
+    localizedPrice: null,
+    productCode: product.code,
+    status: "not_configured",
+  }));
+}
+
+type CoinPackRowProps = {
+  disabled: boolean;
+  onPress: () => void;
+  product: StoreProduct;
+};
+
+function CoinPackRow({ disabled, onPress, product }: CoinPackRowProps) {
+  const priceLabel = product.localizedPrice ?? "Google Play price not configured";
+
+  return (
+    <Pressable
+      accessibilityLabel={`${product.displayName}. ${priceLabel}`}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.productRow,
+        pressed && styles.productRowPressed,
+        disabled && styles.productRowDisabled,
+      ]}
+    >
+      <View style={styles.productCopy}>
+        <Text style={styles.productTitle}>{product.displayName}</Text>
+        <Text style={styles.productMeta}>{priceLabel}</Text>
+      </View>
+      <Text style={styles.productAmount}>{`${product.coinAmount ?? 0} Coins`}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  productList: {
+    gap: 10,
+  },
+  productRow: {
+    alignItems: "center",
+    borderColor: borders.color,
+    borderWidth: borders.width,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    minHeight: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  productRowPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.08)",
+  },
+  productRowDisabled: {
+    opacity: 0.62,
+  },
+  productCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  productTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  productMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  productAmount: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  harnessGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  harnessChip: {
+    borderColor: "rgba(13, 209, 188, 0.24)",
+    borderWidth: borders.width,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  harnessChipPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.10)",
+  },
+  harnessChipDisabled: {
+    opacity: 0.5,
+  },
+  harnessChipText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+});

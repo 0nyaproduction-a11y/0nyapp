@@ -400,6 +400,7 @@ Plus:
 - one paid tier
 - unlocks applicable released micro-drama episodes
 - removes short-film mid/post-roll ads
+- raises the server-authorized playback ceiling from Free/Guest 720p to 1440p / 2K where the asset rendition exists
 - does not remove coins
 - does not remove permanent coin/ad unlocks
 

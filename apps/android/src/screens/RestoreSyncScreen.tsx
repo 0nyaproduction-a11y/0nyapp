@@ -1,5 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import {
   Body,
@@ -10,10 +11,12 @@ import {
   RecoveryState,
   Title,
 } from "../components/ui";
-import { getMe } from "../lib/api";
+import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { getBillingService, type BillingHarnessScenario } from "../billing";
 import type { ProfileStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
+import { borders, colors } from "../theme/tokens";
 
 type Props = ProfileStackScreenProps<"RestoreSync">;
 
@@ -30,7 +33,10 @@ export function RestoreSyncScreen({ navigation }: Props) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const token = session?.access_token;
+  const billingService = getBillingService();
 
   const loadStatus = useCallback(async () => {
     if (!token) {
@@ -60,6 +66,36 @@ export function RestoreSyncScreen({ navigation }: Props) {
     }, [loadStatus]),
   );
 
+  async function handleRestore(scenario?: BillingHarnessScenario) {
+    if (!token || isSyncing) {
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncMessage(null);
+
+    try {
+      const result = await billingService.restore(scenario);
+      const boundary = await submitGooglePlayBillingBoundary(token, {
+        mode: "restore",
+        scenario: result.scenario ?? result.status,
+        testOnly: result.testOnly,
+      });
+      const meData = await getMe(token);
+
+      setMe(meData);
+      setSyncMessage(
+        boundary.testOnly
+          ? `Test-only ${result.status.replace(/_/g, " ")}. Server reconciliation did not grant wallet or Plus changes.`
+          : "Google Play restore is not configured yet. No account state was changed.",
+      );
+    } catch {
+      setSyncMessage("We couldn't complete restore/sync. Your account state was not changed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   return (
     <Screen>
       {isLoading && !me && !error ? <LoadingState /> : null}
@@ -83,11 +119,45 @@ export function RestoreSyncScreen({ navigation }: Props) {
           ) : null}
           <Card>
             <Label>Restore purchases</Label>
-            <Body>{"Purchase restoration isn't available in this test build yet."}</Body>
-            <Button accessibilityLabel="Restore unavailable" disabled onPress={() => undefined}>
-              RESTORE UNAVAILABLE
+            <Body>Restore sends device purchase state to the trusted backend boundary before account state changes.</Body>
+            <Button
+              accessibilityLabel="Restore and sync purchases"
+              disabled={isSyncing}
+              onPress={() => void handleRestore()}
+            >
+              Restore / Sync
             </Button>
           </Card>
+          {__DEV__ && billingService.isHarness ? (
+            <Card>
+              <Label>Development billing harness</Label>
+              <Body>Exercise restore outcomes without trusting device purchase state.</Body>
+              <View style={styles.harnessGrid}>
+                {restoreHarnessScenarios.map((scenario) => (
+                  <Pressable
+                    accessibilityLabel={`Run ${scenario}`}
+                    accessibilityRole="button"
+                    disabled={isSyncing}
+                    key={scenario}
+                    onPress={() => void handleRestore(scenario)}
+                    style={({ pressed }) => [
+                      styles.harnessChip,
+                      pressed && styles.harnessChipPressed,
+                      isSyncing && styles.harnessChipDisabled,
+                    ]}
+                  >
+                    <Text style={styles.harnessChipText}>{scenario}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+          ) : null}
+          {syncMessage ? (
+            <Card>
+              <Label>Sync status</Label>
+              <Body>{syncMessage}</Body>
+            </Card>
+          ) : null}
         </>
       ) : (
         <Card>
@@ -102,3 +172,39 @@ export function RestoreSyncScreen({ navigation }: Props) {
     </Screen>
   );
 }
+
+const restoreHarnessScenarios: BillingHarnessScenario[] = [
+  "RESTORE_FOUND",
+  "RESTORE_EMPTY",
+  "SERVICE_DISCONNECTED",
+  "NETWORK_ERROR",
+  "SUBSCRIPTION_ACTIVE",
+  "SUBSCRIPTION_EXPIRED",
+  "SUBSCRIPTION_CANCELLED",
+];
+
+const styles = StyleSheet.create({
+  harnessGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  harnessChip: {
+    borderColor: "rgba(13, 209, 188, 0.24)",
+    borderWidth: borders.width,
+    minHeight: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  harnessChipPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.10)",
+  },
+  harnessChipDisabled: {
+    opacity: 0.5,
+  },
+  harnessChipText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+});

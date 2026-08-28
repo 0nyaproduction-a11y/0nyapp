@@ -7,6 +7,7 @@ import type {
   CatalogResponse,
   ChaiTipResponse,
   EpisodePurchaseResponse,
+  GooglePlayBillingBoundaryResponse,
   MeResponse,
   ParentalControlActionResponse,
   ParentalControlStatusResponse,
@@ -30,13 +31,20 @@ type ApiRequestOptions = {
 };
 
 const CATALOG_CACHE_TTL_MS = 15000;
+const SERIES_CACHE_TTL_MS = 15000;
 
 type CatalogCacheEntry = {
   expiresAt: number;
   value: CatalogResponse;
 };
 
+type SeriesCacheEntry = {
+  expiresAt: number;
+  value: SeriesResponse;
+};
+
 const catalogCache = new Map<string, CatalogCacheEntry>();
+const seriesCache = new Map<string, SeriesCacheEntry>();
 const catalogInFlight = new Map<string, Promise<CatalogResponse>>();
 const seriesInFlight = new Map<string, Promise<SeriesResponse>>();
 const loggedApiBaseUrls = new Set<string>();
@@ -271,6 +279,20 @@ export function getCatalog(accessToken?: string | null) {
 export function getSeries(slug: string, accessToken?: string | null) {
   const normalizedSlug = slug.trim();
   const requestKey = `${getAuthScopedCacheKey(accessToken)}:${normalizedSlug}`;
+  const cached = seriesCache.get(requestKey);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now) {
+    perfMark("API_REQUEST_END", {
+      duration_ms: 0,
+      method: "GET",
+      path: "/api/v1/series/:slug",
+      source: "CACHE",
+      status: 200,
+    });
+    return Promise.resolve(cached.value);
+  }
+
   const inFlight = seriesInFlight.get(requestKey);
 
   if (inFlight) {
@@ -288,6 +310,10 @@ export function getSeries(slug: string, accessToken?: string | null) {
     accessToken,
   })
     .then((seriesResponse) => {
+      seriesCache.set(requestKey, {
+        expiresAt: Date.now() + SERIES_CACHE_TTL_MS,
+        value: seriesResponse,
+      });
       publishConfirmedSeriesAccess(seriesResponse);
       return seriesResponse;
     })
@@ -352,6 +378,24 @@ export function getMe(accessToken: string) {
 
 export function getWallet(accessToken: string) {
   return requestApi<WalletResponse>("/api/v1/wallet", { accessToken });
+}
+
+export function submitGooglePlayBillingBoundary(
+  accessToken: string,
+  body: {
+    googleProductId?: string | null;
+    kind?: "coin_pack" | "subscription";
+    mode: "purchase" | "restore";
+    productCode?: string | null;
+    scenario?: string | null;
+    testOnly?: boolean;
+  },
+) {
+  return requestApi<GooglePlayBillingBoundaryResponse>("/api/v1/billing/google-play", {
+    accessToken,
+    body,
+    method: "POST",
+  });
 }
 
 export function getWatchProgress(accessToken: string) {

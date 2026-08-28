@@ -9,6 +9,7 @@ import {
   authorizePlayback,
   getCatalog,
   getRequestRecoveryCopy,
+  getSeries,
   getWallet,
   type RecoveryCopy,
 } from "../lib/api";
@@ -876,6 +877,7 @@ export function HomeScreen({ navigation }: Props) {
       return;
     }
 
+    void getSeries(entry.seriesSlug, session?.access_token);
     navigation.navigate("Watch", {
       episodeNumber: entry.episodeNumber,
       resumeAtSeconds: entry.positionSeconds,
@@ -911,6 +913,7 @@ export function HomeScreen({ navigation }: Props) {
     const targetEpisode = resumeEpisode ?? findStartEpisode(series.episodes);
 
     if (targetEpisode) {
+      void getSeries(series.slug, session?.access_token);
       navigation.navigate("Watch", {
         episodeNumber: targetEpisode.number,
         resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
