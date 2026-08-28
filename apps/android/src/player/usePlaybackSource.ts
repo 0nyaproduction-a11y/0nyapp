@@ -7,6 +7,7 @@ import {
   type PlaybackAuthorizationRequest,
   type PreviewPlaybackAuthorizationRequest,
 } from "../lib/api";
+import { resolveMediaUrl } from "../lib/media";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
 import { perfMark, perfNow } from "../lib/perf";
 import type { PlaybackAuthorizationResponse, PreviewPlaybackAuthorizationResponse } from "../types/api";
@@ -86,9 +87,11 @@ function buildProductionPlaybackSource(
   context: PlaybackContext,
   playbackUrl: string,
 ): PlaybackSource {
+  const resolvedPlaybackUrl = resolveMediaUrl(playbackUrl) ?? playbackUrl;
+
   return {
     isDevelopmentOnly: false,
-    playbackUri: playbackUrl,
+    playbackUri: resolvedPlaybackUrl,
     source: {
       contentType: "hls",
       metadata: {
@@ -98,10 +101,75 @@ function buildProductionPlaybackSource(
             ? `${context.seriesTitle} - Episode ${context.episodeNumber}`
             : context.title,
       },
-      uri: playbackUrl,
+      uri: resolvedPlaybackUrl,
       useCaching: false,
     },
   };
+}
+
+function hasLocalhost(value: string) {
+  return /(^|\/\/)localhost(?::|\/|$)/i.test(value);
+}
+
+function hasLoopback(value: string) {
+  return /(^|\/\/)(127\.0\.0\.1|\[?::1\]?)(?::|\/|$)/i.test(value);
+}
+
+function describePlaybackUrlForDiagnostics(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const queryKeys = Array.from(parsed.searchParams.keys()).sort();
+
+    return {
+      containsLocalhost: hasLocalhost(value),
+      containsLoopback: hasLoopback(value),
+      hasQuery: parsed.search.length > 0,
+      host: parsed.hostname,
+      pathname: parsed.pathname,
+      port: parsed.port || null,
+      protocol: parsed.protocol.replace(/:$/, ""),
+      queryKeys,
+      safeUrl: `${parsed.origin}${parsed.pathname}${queryKeys.length > 0 ? "?<redacted>" : ""}`,
+    };
+  } catch {
+    return {
+      containsLocalhost: hasLocalhost(value),
+      containsLoopback: hasLoopback(value),
+      hasQuery: value.includes("?"),
+      host: null,
+      pathname: null,
+      port: null,
+      protocol: null,
+      queryKeys: [],
+      safeUrl: value.includes("?") ? `${value.split("?")[0]}?<redacted>` : value,
+    };
+  }
+}
+
+function logPlaybackSourceDiagnostics(input: {
+  context: string;
+  playbackMode: PlaybackMode;
+  resolvedPlaybackUrl?: string | null;
+  sourcePlaybackUrl?: string | null;
+  sourceType: "backend" | "backend_preview";
+  status: string;
+}) {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.info("[0nya playback source diagnostics]", {
+    context: input.context,
+    playbackMode: input.playbackMode,
+    resolvedPlaybackUrl: describePlaybackUrlForDiagnostics(input.resolvedPlaybackUrl),
+    sourcePlaybackUrl: describePlaybackUrlForDiagnostics(input.sourcePlaybackUrl),
+    sourceType: input.sourceType,
+    status: input.status,
+  });
 }
 
 function getContextKey(context: PlaybackContext | null) {
@@ -214,17 +282,33 @@ export function usePlaybackSource(
           }
 
           if (fullResponse.status === "ok") {
+            const source = buildProductionPlaybackSource(context, fullResponse.playbackUrl);
+
+            logPlaybackSourceDiagnostics({
+              context: contextKey,
+              playbackMode: "full",
+              resolvedPlaybackUrl: source.playbackUri,
+              sourcePlaybackUrl: fullResponse.playbackUrl,
+              sourceType: "backend",
+              status: "ok",
+            });
             markSourceResolved("ok", "full");
             setState({
               expiresAt: fullResponse.expiresAt,
               playbackMode: "full",
               previewSeconds: null,
-              source: buildProductionPlaybackSource(context, fullResponse.playbackUrl),
+              source,
               status: "ok",
             });
             return;
           }
 
+          logPlaybackSourceDiagnostics({
+            context: contextKey,
+            playbackMode: "full",
+            sourceType: "backend",
+            status: fullResponse.status,
+          });
           markSourceResolved(fullResponse.status, "full");
           setState({
             expiresAt: null,
@@ -237,17 +321,33 @@ export function usePlaybackSource(
         }
 
         if (response.status === "ok") {
+          const source = buildProductionPlaybackSource(context, response.previewUrl);
+
+          logPlaybackSourceDiagnostics({
+            context: contextKey,
+            playbackMode: "preview",
+            resolvedPlaybackUrl: source.playbackUri,
+            sourcePlaybackUrl: response.previewUrl,
+            sourceType: "backend_preview",
+            status: "ok",
+          });
           markSourceResolved("ok", "preview");
           setState({
             expiresAt: response.expiresAt,
             playbackMode: "preview",
             previewSeconds: response.previewSeconds,
-            source: buildProductionPlaybackSource(context, response.previewUrl),
+            source,
             status: "ok",
           });
           return;
         }
 
+        logPlaybackSourceDiagnostics({
+          context: contextKey,
+          playbackMode: "preview",
+          sourceType: "backend_preview",
+          status: response.status,
+        });
         markSourceResolved(response.status, "preview");
         setState({
           expiresAt: null,
@@ -280,17 +380,33 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            const source = buildProductionPlaybackSource(context, response.playbackUrl);
+
+            logPlaybackSourceDiagnostics({
+              context: contextKey,
+              playbackMode: "full",
+              resolvedPlaybackUrl: source.playbackUri,
+              sourcePlaybackUrl: response.playbackUrl,
+              sourceType: "backend",
+              status: "ok",
+            });
             markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
               previewSeconds: null,
-              source: buildProductionPlaybackSource(context, response.playbackUrl),
+              source,
               status: "ok",
             });
             return;
           }
 
+          logPlaybackSourceDiagnostics({
+            context: contextKey,
+            playbackMode: "full",
+            sourceType: "backend",
+            status: response.status,
+          });
           markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
@@ -321,17 +437,33 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            const source = buildProductionPlaybackSource(shortFilmContext, response.playbackUrl);
+
+            logPlaybackSourceDiagnostics({
+              context: contextKey,
+              playbackMode: "full",
+              resolvedPlaybackUrl: source.playbackUri,
+              sourcePlaybackUrl: response.playbackUrl,
+              sourceType: "backend",
+              status: "ok",
+            });
             markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
               previewSeconds: null,
-              source: buildProductionPlaybackSource(shortFilmContext, response.playbackUrl),
+              source,
               status: "ok",
             });
             return;
           }
 
+          logPlaybackSourceDiagnostics({
+            context: contextKey,
+            playbackMode: "full",
+            sourceType: "backend",
+            status: response.status,
+          });
           markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
@@ -360,17 +492,33 @@ export function usePlaybackSource(
           });
 
           if (response.status === "ok") {
+            const source = buildProductionPlaybackSource(shortFilmContext, response.playbackUrl);
+
+            logPlaybackSourceDiagnostics({
+              context: contextKey,
+              playbackMode: "full",
+              resolvedPlaybackUrl: source.playbackUri,
+              sourcePlaybackUrl: response.playbackUrl,
+              sourceType: "backend",
+              status: "ok",
+            });
             markSourceResolved("ok", "full");
             setState({
               expiresAt: response.expiresAt,
               playbackMode: "full",
               previewSeconds: null,
-              source: buildProductionPlaybackSource(shortFilmContext, response.playbackUrl),
+              source,
               status: "ok",
             });
             return;
           }
 
+          logPlaybackSourceDiagnostics({
+            context: contextKey,
+            playbackMode: "full",
+            sourceType: "backend",
+            status: response.status,
+          });
           markSourceResolved(response.status, "full");
           setState({
             expiresAt: null,
@@ -390,17 +538,33 @@ export function usePlaybackSource(
       }
 
       if (response.status === "ok") {
+        const source = buildProductionPlaybackSource(context, response.playbackUrl);
+
+        logPlaybackSourceDiagnostics({
+          context: contextKey,
+          playbackMode: "full",
+          resolvedPlaybackUrl: source.playbackUri,
+          sourcePlaybackUrl: response.playbackUrl,
+          sourceType: "backend",
+          status: "ok",
+        });
         markSourceResolved("ok", "full");
         setState({
           expiresAt: response.expiresAt,
           playbackMode: "full",
           previewSeconds: null,
-          source: buildProductionPlaybackSource(context, response.playbackUrl),
+          source,
           status: "ok",
         });
         return;
       }
 
+      logPlaybackSourceDiagnostics({
+        context: contextKey,
+        playbackMode: "full",
+        sourceType: "backend",
+        status: response.status,
+      });
       markSourceResolved(response.status, "full");
       setState({
         expiresAt: null,
@@ -419,6 +583,12 @@ export function usePlaybackSource(
         playbackMode,
         previewSeconds: null,
         source: null,
+        status: playbackMode === "preview" ? "preview_unavailable" : "playback_unavailable",
+      });
+      logPlaybackSourceDiagnostics({
+        context: contextKey,
+        playbackMode,
+        sourceType: playbackMode === "preview" ? "backend_preview" : "backend",
         status: playbackMode === "preview" ? "preview_unavailable" : "playback_unavailable",
       });
       markSourceResolved(playbackMode === "preview" ? "preview_unavailable" : "playback_unavailable");

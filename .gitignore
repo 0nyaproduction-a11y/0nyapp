@@ -44,6 +44,18 @@ next-env.d.ts
 
 # local backup/restore artifacts
 .local-backups/
+0nyapp_backup_*/
 
 # Android performance capture artifacts
 /perf/
+
+# IDE / Editor
+.idea/
+.vscode/
+
+# Supabase CLI local runtime state
+supabase/.temp/
+
+# Android / binary artifacts
+*.apk
+*.aab

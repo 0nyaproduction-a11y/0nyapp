@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useEffect } from "react";
 import {
@@ -250,7 +250,7 @@ export function ExploreScreen({ navigation }: Props) {
 
     void saveRecentSearch(trimmedQuery).then(() => loadRecentSearches().then(setRecentSearches));
     Keyboard.dismiss();
-    navigation.push("SearchResults", {
+    navigation.navigate("SearchResults", {
       format: selectedFormat,
       genre: shouldShowGenreFilter && effectiveGenre !== ALL_GENRES_FILTER ? effectiveGenre : undefined,
       query: trimmedQuery,
@@ -268,7 +268,7 @@ export function ExploreScreen({ navigation }: Props) {
       setQuery(trimmed);
       void saveRecentSearch(trimmed).then(() => loadRecentSearches().then(setRecentSearches));
       Keyboard.dismiss();
-      navigation.push("SearchResults", {
+      navigation.navigate("SearchResults", {
         format: selectedFormat,
         genre: shouldShowGenreFilter && effectiveGenre !== ALL_GENRES_FILTER ? effectiveGenre : undefined,
         query: trimmed,

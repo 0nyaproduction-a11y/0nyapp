@@ -39,6 +39,7 @@ type CatalogCacheEntry = {
 const catalogCache = new Map<string, CatalogCacheEntry>();
 const catalogInFlight = new Map<string, Promise<CatalogResponse>>();
 const seriesInFlight = new Map<string, Promise<SeriesResponse>>();
+const loggedApiBaseUrls = new Set<string>();
 
 function getAuthScopedCacheKey(accessToken?: string | null) {
   return accessToken ? `auth:${accessToken}` : "guest";
@@ -125,6 +126,15 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
   const { apiBaseUrl } = getMobileEnv();
   const method = options.method ?? "GET";
   const safePath = getSafeApiPath(path);
+
+  if (__DEV__ && !loggedApiBaseUrls.has(apiBaseUrl)) {
+    loggedApiBaseUrls.add(apiBaseUrl);
+    console.info("[0nya api diagnostics]", {
+      apiBaseUrl,
+      source: "EXPO_PUBLIC_ONYA_API_BASE_URL",
+    });
+  }
+
   const requestMeasure = perfStart("API_REQUEST", {
     method,
     path: safePath,
