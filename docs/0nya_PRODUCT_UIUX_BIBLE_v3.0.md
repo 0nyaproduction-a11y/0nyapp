@@ -569,7 +569,7 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 
 | State | Top area | Items |
 | --- | --- | --- |
-| Guest | Sign in to keep history/unlocks | Sign In, local history controls, playback/subtitle settings, Help/Legal, app version |
+| Guest | Sign in to keep history/unlocks | Sign In, playback/subtitle settings, Help/Legal, app version |
 | Registered Free | Account + Free badge | Restore/Sync, Settings, Delete Account, Sign Out |
 | 0nya Plus | Account + Plus badge | Restore/Sync, Settings, Delete Account, Sign Out |
 

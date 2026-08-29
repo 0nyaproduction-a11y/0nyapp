@@ -35,6 +35,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
   const [parentalControlState, setParentalControlState] = useState<ParentalControlState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [resumeSeconds, setResumeSeconds] = useState<number | null>(null);
   const didOpenEndScreenRef = useRef(false);
   const shouldGateForParentalRestrictions = shouldRequireParentalGate(
     shortFilm?.contentRating ?? null,
@@ -360,10 +361,16 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       shortFilm={shortFilm}
       shortFilmChai={chai}
       initialSeekSeconds={
-        shouldStartFromBeginning
+        resumeSeconds !== null
+          ? resumeSeconds
+          : shouldStartFromBeginning
           ? 0
           : normalEntryInitialSeekSeconds
       }
+      onRefreshSource={(currentTime) => {
+        setResumeSeconds(currentTime);
+        playback.refresh();
+      }}
       source={playback.source}
     />
   );

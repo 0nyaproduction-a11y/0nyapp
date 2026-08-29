@@ -54,6 +54,7 @@ type PlayerScreenProps = {
   ) => void;
   onSelectEpisode?: (episodeNumber: number) => void;
   onSeeOptions?: () => void;
+  onRefreshSource?: (currentTime: number) => void;
   isProgressResolved?: boolean;
   initialSeekSeconds?: number | null;
   playbackMode?: PlaybackMode;
@@ -145,6 +146,7 @@ export function PlayerScreen({
   onEnded,
   onSelectEpisode,
   onSeeOptions,
+  onRefreshSource,
   initialSeekSeconds,
   playbackMode = "full",
   previewSeconds,
@@ -1096,14 +1098,18 @@ export function PlayerScreen({
                       accessibilityLabel="Try again"
                       accessibilityRole="button"
                       onPress={() => {
-                        void controller.retry(
-                          getRetrySeekSeconds({
-                            currentTime: controller.currentTime,
-                            duration: controller.duration,
-                            initialSeekSeconds,
-                            savedProgress,
-                          }),
-                        );
+                        const targetSeconds = getRetrySeekSeconds({
+                          currentTime: controller.currentTime,
+                          duration: controller.duration,
+                          initialSeekSeconds,
+                          savedProgress,
+                        });
+
+                        if (onRefreshSource) {
+                          onRefreshSource(targetSeconds ?? 0);
+                        } else {
+                          void controller.retry(targetSeconds);
+                        }
                       }}
                       style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
                     >

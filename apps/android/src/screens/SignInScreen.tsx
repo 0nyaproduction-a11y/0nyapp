@@ -307,17 +307,16 @@ export function SignInScreen() {
             </Pressable>
           </>
         )}
-        {__DEV__ ? (
-          <View style={styles.devSection}>
+        <View style={styles.devSection}>
             <Label>Development sign-in</Label>
-            <Body>Use a local QA email/password session only in dev builds.</Body>
+            <Body>Sign in with a Supabase developer or test account.</Body>
             <Field
               accessibilityLabel="Development email"
               autoCapitalize="none"
               autoComplete="email"
               keyboardType="email-address"
               onChangeText={setDevEmail}
-              placeholder="androidtest@0nya.com"
+              placeholder="Email"
               textContentType="emailAddress"
               value={devEmail}
             />
@@ -335,7 +334,6 @@ export function SignInScreen() {
               {isDevSigningIn ? "Signing in" : "Development sign-in"}
             </Button>
           </View>
-        ) : null}
       </Card>
     </Screen>
   );

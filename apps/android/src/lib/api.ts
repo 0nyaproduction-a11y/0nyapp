@@ -23,11 +23,13 @@ import type {
 } from "../types/api";
 import { publishConfirmedSeriesAccess } from "./confirmedSeriesAccess";
 import { perfEnd, perfMark, perfStart } from "./perf";
+import { supabase } from "./supabase";
 
 type ApiRequestOptions = {
   accessToken?: string | null;
   body?: unknown;
   method?: "GET" | "POST" | "PUT";
+  _isRetry?: boolean;
 };
 
 const CATALOG_CACHE_TTL_MS = 15000;
@@ -183,6 +185,32 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
     throw new ApiError("network_error", "Could not reach 0nya.", 0);
   }
 
+  if (response.status === 401 && options.accessToken && !options._isRetry) {
+    try {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (!refreshError && refreshData.session) {
+        const newAccessToken = refreshData.session.access_token;
+        return await requestApi<T>(path, {
+          ...options,
+          accessToken: newAccessToken,
+          _isRetry: true,
+        });
+      } else if (refreshError) {
+        const isAuthError = refreshError.status && refreshError.status >= 400 && refreshError.status < 500;
+        if (isAuthError) {
+          await supabase.auth.signOut({ scope: "local" });
+        } else {
+          throw new ApiError("network_error", "Could not reach 0nya during session refresh.", 0);
+        }
+      }
+    } catch (refreshException) {
+      if (refreshException instanceof ApiError) {
+        throw refreshException;
+      }
+      throw new ApiError("network_error", "Could not reach 0nya during session refresh.", 0);
+    }
+  }
+
   let body: ApiEnvelope<T> | T;
 
   try {
@@ -207,6 +235,32 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
   }
 
   if (body && typeof body === "object" && "error" in body) {
+    if (body.error.code === "not_authenticated" && options.accessToken && !options._isRetry) {
+      try {
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        if (!refreshError && refreshData.session) {
+          const newAccessToken = refreshData.session.access_token;
+          return await requestApi<T>(path, {
+            ...options,
+            accessToken: newAccessToken,
+            _isRetry: true,
+          });
+        } else if (refreshError) {
+          const isAuthError = refreshError.status && refreshError.status >= 400 && refreshError.status < 500;
+          if (isAuthError) {
+            await supabase.auth.signOut({ scope: "local" });
+          } else {
+            throw new ApiError("network_error", "Could not reach 0nya during session refresh.", 0);
+          }
+        }
+      } catch (refreshException) {
+        if (refreshException instanceof ApiError) {
+          throw refreshException;
+        }
+        throw new ApiError("network_error", "Could not reach 0nya during session refresh.", 0);
+      }
+    }
+
     perfEnd(requestMeasure, {
       method,
       path: safePath,

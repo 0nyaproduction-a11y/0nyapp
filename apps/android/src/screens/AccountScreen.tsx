@@ -14,8 +14,11 @@ import {
 import { getMe } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import type { ProfileStackScreenProps } from "../navigation/types";
+import appJson from "../../app.json";
 import type { MeResponse } from "../types/api";
 import { colors } from "../theme/tokens";
+
+const appVersion = appJson.expo?.version ?? "1.0.0";
 
 type Props = ProfileStackScreenProps<"Account">;
 
@@ -117,11 +120,8 @@ export function AccountScreen({ navigation }: Props) {
 
         <View style={styles.actionList}>
           <ActionRow label="Settings" onPress={() => navigation.navigate("Settings")} />
-          <ActionRow label="Help" onPress={() => {}} />
-          <ActionRow label="Terms" onPress={() => {}} />
-          <ActionRow label="Privacy" onPress={() => {}} />
           <View style={styles.versionRow}>
-            <Text style={styles.versionText}>Version 1.0.0</Text>
+            <Text style={styles.versionText}>Version {appVersion}</Text>
           </View>
         </View>
       </Screen>

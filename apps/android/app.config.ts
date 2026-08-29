@@ -53,9 +53,44 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   );
   const androidAdMobAppId = resolveAndroidAdMobAppId();
 
+  const androidAppLinkHost = (() => {
+    const raw = process.env.EXPO_PUBLIC_ONYA_CANONICAL_URL?.trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(raw);
+      return parsed.protocol === "https:" && parsed.hostname ? parsed.hostname : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const androidIntentFilters =
+    androidAppLinkHost != null
+      ? [
+          {
+            action: "VIEW",
+            autoVerify: true,
+            categories: ["BROWSABLE", "DEFAULT"],
+            data: [
+              { scheme: "https", host: androidAppLinkHost, pathPrefix: "/series/" },
+              { scheme: "https", host: androidAppLinkHost, pathPrefix: "/short-films/" },
+              { scheme: "https", host: androidAppLinkHost, pathPrefix: "/watch/" },
+            ],
+          },
+        ]
+      : undefined;
+
   return {
     ...baseExpoConfig,
     userInterfaceStyle: "light",
+    android: {
+      ...baseExpoConfig.android,
+      ...(androidIntentFilters ? { intentFilters: androidIntentFilters } : {}),
+    },
     extra: {
       ...baseExpoConfig.extra,
       ...(admobRewardedAdUnitId ? { admobRewardedAdUnitId } : {}),

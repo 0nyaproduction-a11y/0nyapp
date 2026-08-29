@@ -37,6 +37,15 @@ function resolveRewardedUnlockAdUnitId() {
   return getMobileEnv().admobRewardedAdUnitId;
 }
 
+export function hasRewardedAdUnitId() {
+  if (__DEV__) {
+    return true;
+  }
+
+  const unitId = getMobileEnv().admobRewardedAdUnitId;
+  return Boolean(unitId && unitId.trim().length > 0);
+}
+
 function createRewardedUnlockAd(customData?: string | null) {
   const adUnitId = resolveRewardedUnlockAdUnitId();
 
@@ -122,15 +131,26 @@ export function useEpisodeRewardedUnlockAd({
 
   useEffect(() => {
     if (!enabled) {
-      return;
+      return undefined;
     }
 
-    const ad = ensureAd();
+    let ad: RewardedAd | null = null;
+    try {
+      ad = ensureAd();
+    } catch (adError) {
+      const message = adError instanceof Error ? adError.message : "Unable to configure rewarded ad.";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStatus("failed");
+      setError(message);
+      setLastEvent("failed");
+    }
 
     return () => {
       pendingShowRef.current = false;
       clearListeners();
-      ad.removeAllListeners();
+      if (ad) {
+        ad.removeAllListeners();
+      }
       adRef.current = null;
       setStatus("idle");
       setError(null);

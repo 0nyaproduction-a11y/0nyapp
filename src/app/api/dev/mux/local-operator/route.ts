@@ -1,3 +1,5 @@
+import path from "node:path";
+import { realpath, stat, readFile } from "node:fs/promises";
 import { getShortFilmBySlug as getMockShortFilmBySlug } from "@/data/content";
 import { errorResponse } from "@/lib/api/responses";
 import { authorizeMuxPlayback } from "@/lib/playback";
@@ -42,7 +44,10 @@ type UploadResult = {
 };
 
 function isDevelopmentRequestAllowed() {
-  return process.env.NODE_ENV === "development";
+  return (
+    process.env.NODE_ENV === "development" &&
+    process.env.ONYA_DEV_LOCAL_OPERATOR_ENABLED === "true"
+  );
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -57,6 +62,23 @@ function jsonResponse(body: unknown, status = 200) {
 
 function normalizeFilePath(value: string) {
   return value.trim();
+}
+
+function getAllowedMediaBaseDir(): string {
+  const configured = process.env.ONYA_DEV_LOCAL_OPERATOR_MEDIA_DIR?.trim();
+
+  return configured ? path.resolve(configured) : path.resolve(process.cwd(), "local-media");
+}
+
+function resolveAllowedMediaPath(rawPath: string): string {
+  const baseDir = getAllowedMediaBaseDir();
+  const candidate = path.resolve(baseDir, rawPath);
+
+  if (candidate !== baseDir && !candidate.startsWith(baseDir + path.sep)) {
+    throw new Error("Access denied.");
+  }
+
+  return candidate;
 }
 
 async function loadEpisode(seriesSlug: string, episodeNumber: number): Promise<LoadedEpisode | null> {
@@ -151,11 +173,36 @@ function getUploadContentType(filePath: string) {
 }
 
 async function uploadFileToMux(uploadUrl: string, filePath: string) {
-  const { readFile } = await import("node:fs/promises");
+  let resolvedPath: string;
 
-  const fileBytes = await readFile(filePath);
+  try {
+    resolvedPath = resolveAllowedMediaPath(filePath);
+  } catch {
+    throw new Error("Access denied.");
+  }
+
+  let realPath: string;
+
+  try {
+    realPath = await realpath(resolvedPath);
+  } catch {
+    throw new Error("Unable to read local media file.");
+  }
+
+  const baseDir = getAllowedMediaBaseDir();
+  if (realPath !== baseDir && !realPath.startsWith(baseDir + path.sep)) {
+    throw new Error("Access denied.");
+  }
+
+  let fileBytes: Buffer;
+  try {
+    fileBytes = await readFile(realPath);
+  } catch {
+    throw new Error("Unable to read local media file.");
+  }
+
   const response = await fetch(uploadUrl, {
-    body: fileBytes,
+    body: fileBytes as unknown as BodyInit,
     headers: {
       "Content-Type": getUploadContentType(filePath),
     },
@@ -344,8 +391,29 @@ export async function POST(request: Request) {
   }
 
   const targetType = body.targetType ?? (body.shortFilmSlug ? "SHORT_FILM" : "SERIES_EPISODE");
-  const filePath = body.filePath ? normalizeFilePath(body.filePath) : "";
+  const rawFilePath = body.filePath ? normalizeFilePath(body.filePath) : "";
   const mediaAssetId = body.mediaAssetId?.trim() ?? "";
+
+  let filePath = "";
+  if (rawFilePath) {
+    let resolvedPath: string;
+    try {
+      resolvedPath = resolveAllowedMediaPath(rawFilePath);
+    } catch {
+      return errorResponse("forbidden", "Access denied.", 403);
+    }
+
+    try {
+      const fileStat = await stat(resolvedPath);
+      if (!fileStat.isFile()) {
+        return errorResponse("invalid_request", "Invalid file path.", 400);
+      }
+    } catch {
+      return errorResponse("invalid_request", "File not found.", 400);
+    }
+
+    filePath = resolvedPath;
+  }
 
   if (targetType === "SHORT_FILM") {
     const shortFilmSlug = body.shortFilmSlug?.trim();

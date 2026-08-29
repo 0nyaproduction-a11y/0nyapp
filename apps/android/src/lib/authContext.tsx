@@ -48,11 +48,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { error: userError } = await supabase.auth.getUser();
 
         if (userError) {
-          await supabase.auth.signOut({ scope: "local" });
-          if (isMounted) {
-            syncParentalUnlocks(null);
-            setSession(null);
-            setIsLoading(false);
+          const isAuthError = userError.status && userError.status >= 400 && userError.status < 500;
+          if (isAuthError) {
+            await supabase.auth.signOut({ scope: "local" });
+            if (isMounted) {
+              syncParentalUnlocks(null);
+              setSession(null);
+              setIsLoading(false);
+            }
+          } else {
+            if (isMounted) {
+              syncParentalUnlocks(data.session);
+              setSession(data.session);
+              setIsLoading(false);
+            }
           }
           return;
         }
@@ -61,12 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(data.session);
         setIsLoading(false);
       })
-      .catch(async () => {
+      .catch(async (error) => {
         if (!isMounted) {
           return;
         }
 
-        await supabase.auth.signOut({ scope: "local" });
+        const status = error && typeof error === "object" && "status" in error ? (error as Record<string, unknown>).status : null;
+        const isAuthError = typeof status === "number" && status >= 400 && status < 500;
+
+        if (isAuthError) {
+          await supabase.auth.signOut({ scope: "local" });
+        }
         syncParentalUnlocks(null);
         setSession(null);
         setIsLoading(false);

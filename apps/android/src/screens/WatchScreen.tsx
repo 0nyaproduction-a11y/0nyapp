@@ -72,6 +72,7 @@ export function WatchScreen({ navigation, route }: Props) {
   const [progressByEpisode, setProgressByEpisode] = useState<Record<number, WatchProgressItem>>({});
   const [loadedProgressToken, setLoadedProgressToken] = useState<string | null>(null);
   const [parentalControlState, setParentalControlState] = useState<ParentalControlState | null>(null);
+  const [resumeSeconds, setResumeSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     perfMark("WATCH_MOUNT", {
@@ -753,12 +754,16 @@ export function WatchScreen({ navigation, route }: Props) {
   return (
     <PlayerScreen
       key={playback.source.playbackUri}
-      initialSeekSeconds={route.params.resumeAtSeconds ?? null}
+      initialSeekSeconds={resumeSeconds !== null ? resumeSeconds : (route.params.resumeAtSeconds ?? null)}
       context={context}
       episodeAccess={targetEpisodeAccess}
       episodes={targetSeries!.episodes}
       isProgressResolved={accessTokenReady}
       onSeeOptions={openEpisodeAccessOptions}
+      onRefreshSource={(currentTime) => {
+        setResumeSeconds(currentTime);
+        playback.refresh();
+      }}
       onAdvanceToNext={(nextEpisode) => {
         activateTargetFromEpisode(nextEpisode.episodeNumber, "auto_next");
       }}

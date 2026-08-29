@@ -8,7 +8,7 @@ import { ApiError, createRewardedAdAttempt, getRewardedAdAttemptStatus, getSerie
 import { useAdMob } from "../lib/adMob";
 import { useAuth } from "../lib/authContext";
 import { publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
-import { useEpisodeRewardedUnlockAd } from "../lib/episodeRewardedUnlockAd";
+import { useEpisodeRewardedUnlockAd, hasRewardedAdUnitId } from "../lib/episodeRewardedUnlockAd";
 import type { RootStackParamList } from "../navigation/types";
 import type { RewardedAdAttemptResponse, SeriesResponse } from "../types/api";
 import { borders, colors, radii, spacing } from "../theme/tokens";
@@ -89,7 +89,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
   const coinUnlockEnabled = episode.coinUnlockEnabled && episode.coinPrice > 0;
   const rewardedUnlockEnabled = episode.rewardedUnlockEnabled;
   const plusAccessEnabled = episode.plusAccess;
-  const rewardedAdsReady = adMob.canRequestAds && adMob.isInitialized;
+  const rewardedAdsReady = adMob.canRequestAds && adMob.isInitialized && hasRewardedAdUnitId();
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -358,9 +358,21 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
 
     let active = true;
     pollingInFlightRef.current = false;
+    const startTime = Date.now();
 
     const pollAttemptStatus = async () => {
       if (!active || pollingInFlightRef.current) {
+        return;
+      }
+
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs >= 60000) {
+        if (active) {
+          setRewardedRecovery("expired");
+          setRewardedFlowState("failed");
+          setRewardedFlowMessage("Confirmation timed out. Please try the rewarded ad again.");
+          setRewardedAttempt(null);
+        }
         return;
       }
 
@@ -553,7 +565,11 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
           : "Loading wallet balance..."
       : null;
   const rewardedDetailText =
-    rewardedFlowState === "idle" ? null : rewardedFlowMessage ?? "Unlock this episode.";
+    rewardedFlowState === "idle"
+      ? !rewardedAdsReady
+        ? "Rewarded ads are currently unavailable."
+        : null
+      : rewardedFlowMessage ?? "Unlock this episode.";
 
   const handleRewardedRetry = useCallback(() => {
     setRewardedRecovery(null);

@@ -1121,7 +1121,6 @@ No separate cash/UPI checkout.
 │                                      │
 │ Playback Settings                    │
 │ Subtitle Settings                    │
-│ Local History                        │
 │ Help                                 │
 │ Report Content Issue                 │
 │ Grievance                            │
