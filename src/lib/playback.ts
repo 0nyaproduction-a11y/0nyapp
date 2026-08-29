@@ -8,6 +8,7 @@ import {
   type ContentRating,
 } from "@/lib/classification";
 import { canUserWatchEpisode, resolvePlaybackMaxResolution } from "@/lib/entitlements";
+import { getPerfCollector, timePerf } from "@/lib/api/perf";
 import {
   createMuxPreviewClip,
   createMuxSignedPlaybackUrl,
@@ -177,24 +178,28 @@ async function loadEpisodePlaybackContext(
   auth: PlaybackAuthContext,
 ): Promise<LoadedEpisodePlaybackContext> {
   const supabase = getSupabase(auth.supabase);
-  const { data: series, error: seriesError } = await supabase
-    .from("series")
-    .select("*")
-    .eq("slug", target.seriesSlug)
-    .eq("status", "published")
-    .maybeSingle();
+  const { data: series, error: seriesError } = await timePerf("content_lookup", () =>
+    supabase
+      .from("series")
+      .select("*")
+      .eq("slug", target.seriesSlug)
+      .eq("status", "published")
+      .maybeSingle()
+  );
 
   if (seriesError || !series) {
     return { status: "not_found" };
   }
 
-  const { data: episode, error: episodeError } = await supabase
-    .from("episodes")
-    .select("*")
-    .eq("series_id", series.id)
-    .eq("episode_number", target.episodeNumber)
-    .eq("status", "published")
-    .maybeSingle();
+  const { data: episode, error: episodeError } = await timePerf("episodes_lookup", () =>
+    supabase
+      .from("episodes")
+      .select("*")
+      .eq("series_id", series.id)
+      .eq("episode_number", target.episodeNumber)
+      .eq("status", "published")
+      .maybeSingle()
+  );
 
   if (episodeError || !episode || !isReleased(episode.published_at)) {
     return { status: "not_found" };
@@ -302,11 +307,13 @@ async function resolveEpisodePlayback(
     return { status: "playback_unavailable" };
   }
 
-  const { data: mediaAsset, error: mediaAssetError } = await supabase
-    .from("media_assets")
-    .select("*")
-    .eq("id", episode.media_asset_id)
-    .maybeSingle();
+  const { data: mediaAsset, error: mediaAssetError } = await timePerf("media_lookup", () =>
+    supabase
+      .from("media_assets")
+      .select("*")
+      .eq("id", episode.media_asset_id)
+      .maybeSingle()
+  );
 
   if (mediaAssetError) {
     return { status: "playback_unavailable" };
@@ -331,11 +338,16 @@ async function resolveEpisodePlayback(
   }
 
   const maxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
+  const tMux0 = performance.now();
   const signedPlayback = createMuxSignedPlaybackUrl(
     playbackReference,
     episode.duration_seconds,
     maxResolution,
   );
+  timePerf("mux_sign", async () => {}).catch(() => {});
+  const tMux1 = performance.now();
+  const collector = getPerfCollector();
+  if (collector) collector.addMarker("mux_sign", tMux1 - tMux0);
   let stillUrl: string | undefined;
 
   if (typeof stillAtSeconds === "number" && Number.isFinite(stillAtSeconds)) {
@@ -473,12 +485,14 @@ async function resolveShortFilmPlayback(
   stillAtSeconds?: number | null,
 ): Promise<PlaybackAuthorizationResult> {
   const supabase = getSupabase(auth.supabase);
-  const { data: shortFilm, error: shortFilmError } = await supabase
-    .from("short_films")
-    .select("*")
-    .eq("slug", target.slug)
-    .eq("status", "published")
-    .maybeSingle();
+  const { data: shortFilm, error: shortFilmError } = await timePerf("content_lookup", () =>
+    supabase
+      .from("short_films")
+      .select("*")
+      .eq("slug", target.slug)
+      .eq("status", "published")
+      .maybeSingle()
+  );
 
   if (shortFilmError || !shortFilm || !isReleased(shortFilm.publish_at)) {
     return { status: "not_found" };
@@ -518,11 +532,13 @@ async function resolveShortFilmPlayback(
     return { status: "playback_unavailable" };
   }
 
-  const { data: mediaAsset, error: mediaAssetError } = await supabase
-    .from("media_assets")
-    .select("*")
-    .eq("id", shortFilm.media_asset_id)
-    .maybeSingle();
+  const { data: mediaAsset, error: mediaAssetError } = await timePerf("media_lookup", () =>
+    supabase
+      .from("media_assets")
+      .select("*")
+      .eq("id", shortFilm.media_asset_id)
+      .maybeSingle()
+  );
 
   if (mediaAssetError) {
     return { status: "playback_unavailable" };
@@ -547,11 +563,15 @@ async function resolveShortFilmPlayback(
   }
 
   const shortFilmMaxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
+  const tMux0 = performance.now();
   const signedPlayback = createMuxSignedPlaybackUrl(
     playbackReference,
     shortFilm.duration_seconds,
     shortFilmMaxResolution,
   );
+  const tMux1 = performance.now();
+  const collector = getPerfCollector();
+  if (collector) collector.addMarker("mux_sign", tMux1 - tMux0);
   let stillUrl: string | undefined;
 
   if (typeof stillAtSeconds === "number" && Number.isFinite(stillAtSeconds)) {

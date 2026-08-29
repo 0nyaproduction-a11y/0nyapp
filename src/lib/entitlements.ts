@@ -1,5 +1,6 @@
 import type { Episode } from "@/data/content";
 import { createClient } from "@/lib/supabase/server";
+import { timePerf } from "@/lib/api/perf";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -45,11 +46,13 @@ export async function getUserWallet(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("wallets")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
+  const { data, error } = await timePerf("wallet_q", () =>
+    supabase
+      .from("wallets")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle()
+  );
 
   if (error) {
     console.warn("Unable to load wallet.");
@@ -64,13 +67,15 @@ export async function getUserSubscription(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const activeResult = await supabase
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .limit(10);
+  const activeResult = await timePerf("subscription_q", () =>
+    supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
 
   if (activeResult.error) {
     console.warn("Unable to load subscription.");
@@ -86,13 +91,15 @@ export async function getUserSubscription(
     return currentActiveSubscription;
   }
 
-  const { data, error } = await supabase
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await timePerf("subscription_q", () =>
+    supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  );
 
   if (error) {
     console.warn("Unable to load subscription.");
@@ -142,12 +149,14 @@ export async function hasValidEpisodeEntitlement(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("episode_entitlements")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("episode_id", episodeId)
-    .maybeSingle();
+  const { data, error } = await timePerf("entitlement_q", () =>
+    supabase
+      .from("episode_entitlements")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("episode_id", episodeId)
+      .maybeSingle()
+  );
 
   if (error) {
     console.warn("Unable to load episode entitlement.");
@@ -175,11 +184,13 @@ export async function getValidEpisodeEntitlementIds(
   }
 
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("episode_entitlements")
-    .select("episode_id, expires_at")
-    .eq("user_id", userId)
-    .in("episode_id", episodeIds);
+  const { data, error } = await timePerf("entitlement_q", () =>
+    supabase
+      .from("episode_entitlements")
+      .select("episode_id, expires_at")
+      .eq("user_id", userId)
+      .in("episode_id", episodeIds)
+  );
 
   if (error) {
     console.warn("Unable to load episode entitlements.");

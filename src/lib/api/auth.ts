@@ -5,6 +5,7 @@ import {
 } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import { timePerf } from "@/lib/api/perf";
 import type { Database } from "@/types/database";
 
 export type RequestSupabaseClient = SupabaseClient<Database>;
@@ -72,7 +73,7 @@ export async function getApiAuth(request: Request): Promise<ApiAuthResult> {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser(bearer.token);
+    } = await timePerf("auth", () => supabase.auth.getUser(bearer.token));
 
     return {
       supabase,
@@ -85,7 +86,7 @@ export async function getApiAuth(request: Request): Promise<ApiAuthResult> {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await timePerf("auth", () => supabase.auth.getUser());
 
   return {
     supabase,

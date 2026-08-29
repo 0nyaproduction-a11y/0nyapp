@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { timePerf } from "@/lib/api/perf";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -61,8 +62,12 @@ export async function getHomeState(
   const supabase = supabaseClient ?? createAdminClient();
 
   const [{ data: settingsRow }, { data: rows }] = await Promise.all([
-    supabase.from("home_settings").select("value").eq("key", "low_history_threshold").maybeSingle(),
-    supabase.from("home_rows").select("*").eq("enabled", true).order("sort_order", { ascending: true }),
+    timePerf("home_settings_q", () =>
+      supabase.from("home_settings").select("value").eq("key", "low_history_threshold").maybeSingle()
+    ),
+    timePerf("home_rows_q", () =>
+      supabase.from("home_rows").select("*").eq("enabled", true).order("sort_order", { ascending: true })
+    ),
   ]);
 
   const lowHistoryThreshold = getConfiguredLowHistoryThreshold(settingsRow);
@@ -81,11 +86,13 @@ export async function getHomeState(
 
   let completedCount = 0;
   if (userId) {
-    const { data: completedProgress } = await supabase
-      .from("watch_progress")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("completed", true);
+    const { data: completedProgress } = await timePerf("watch_progress_q", () =>
+      supabase
+        .from("watch_progress")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("completed", true)
+    );
     completedCount = completedProgress?.length ?? 0;
   }
 
@@ -106,11 +113,13 @@ export async function getHomeState(
 
   const rowIds = enabledRows.map((row) => row.id);
   const { data: memberships } = rowIds.length
-    ? await supabase
-        .from("home_row_items")
-        .select("*")
-        .in("row_id", rowIds)
-        .order("sort_order", { ascending: true })
+    ? await timePerf("home_items_q", () =>
+        supabase
+          .from("home_row_items")
+          .select("*")
+          .in("row_id", rowIds)
+          .order("sort_order", { ascending: true })
+      )
     : { data: [] as HomeMembershipRow[] };
 
   const seriesIds = (memberships ?? [])
@@ -122,10 +131,14 @@ export async function getHomeState(
 
   const [seriesRows, shortFilmRows] = await Promise.all([
     seriesIds.length
-      ? supabase.from("series").select("*").in("id", seriesIds).eq("status", "published")
+      ? timePerf("home_series_refetch", () =>
+          supabase.from("series").select("*").in("id", seriesIds).eq("status", "published")
+        )
       : { data: [] as SeriesRow[] },
     shortFilmIds.length
-      ? supabase.from("short_films").select("*").in("id", shortFilmIds).eq("status", "published")
+      ? timePerf("home_short_films_refetch", () =>
+          supabase.from("short_films").select("*").in("id", shortFilmIds).eq("status", "published")
+        )
       : { data: [] as ShortFilmRow[] },
   ]);
 

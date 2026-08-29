@@ -10,6 +10,7 @@ import {
   resolveContentClassification,
 } from "@/lib/classification";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { timePerf } from "@/lib/api/perf";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -181,12 +182,14 @@ async function getPublishedEpisodeRows(
   }
 
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("episodes")
-    .select("*")
-    .in("series_id", seriesIds)
-    .eq("status", "published")
-    .order("episode_number", { ascending: true });
+  const { data, error } = await timePerf("episodes_q", () =>
+    supabase
+      .from("episodes")
+      .select("*")
+      .in("series_id", seriesIds)
+      .eq("status", "published")
+      .order("episode_number", { ascending: true })
+  );
 
   if (error) {
     console.warn("Unable to load catalog episodes.");
@@ -198,11 +201,13 @@ async function getPublishedEpisodeRows(
 
 export async function getPublishedSeries(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("series")
-    .select("*")
-    .eq("status", "published")
-    .order("sort_order", { ascending: true });
+  const { data, error } = await timePerf("series_q", () =>
+    supabase
+      .from("series")
+      .select("*")
+      .eq("status", "published")
+      .order("sort_order", { ascending: true })
+  );
 
   if (error) {
     console.warn("Unable to load published series.");
@@ -221,14 +226,16 @@ export async function getPublishedSeries(supabaseClient?: SupabaseClient<Databas
 
 export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("series")
-    .select("*")
-    .eq("status", "published")
-    .eq("featured", true)
-    .order("sort_order", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await timePerf("series_q", () =>
+    supabase
+      .from("series")
+      .select("*")
+      .eq("status", "published")
+      .eq("featured", true)
+      .order("sort_order", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+  );
 
   if (error || !data) {
     if (error) {
@@ -251,12 +258,14 @@ export async function getSeriesBySlug(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("series")
-    .select("*")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
+  const { data, error } = await timePerf("series_q", () =>
+    supabase
+      .from("series")
+      .select("*")
+      .eq("slug", slug)
+      .eq("status", "published")
+      .maybeSingle()
+  );
 
   if (error || !data) {
     if (error) {
@@ -278,12 +287,14 @@ export async function getSeriesBySlug(
 
 export async function getPublishedShortFilms(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("short_films")
-    .select("*")
-    .eq("status", "published")
-    .order("publish_at", { ascending: true, nullsFirst: true })
-    .order("title", { ascending: true });
+  const { data, error } = await timePerf("short_films_q", () =>
+    supabase
+      .from("short_films")
+      .select("*")
+      .eq("status", "published")
+      .order("publish_at", { ascending: true, nullsFirst: true })
+      .order("title", { ascending: true })
+  );
 
   if (error) {
     console.warn("Unable to load published short films.");
@@ -300,12 +311,14 @@ export async function getShortFilmBySlug(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("short_films")
-    .select("*")
-    .eq("slug", slug)
-    .eq("status", "published")
-    .maybeSingle();
+  const { data, error } = await timePerf("short_films_q", () =>
+    supabase
+      .from("short_films")
+      .select("*")
+      .eq("slug", slug)
+      .eq("status", "published")
+      .maybeSingle()
+  );
 
   if (error || !data) {
     if (error) {
@@ -333,12 +346,14 @@ export async function getEpisodesForSeries(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
-  const { data, error } = await supabase
-    .from("episodes")
-    .select("*")
-    .eq("series_id", seriesId)
-    .eq("status", "published")
-    .order("episode_number", { ascending: true });
+  const { data, error } = await timePerf("episodes_q", () =>
+    supabase
+      .from("episodes")
+      .select("*")
+      .eq("series_id", seriesId)
+      .eq("status", "published")
+      .order("episode_number", { ascending: true })
+  );
 
   if (error) {
     console.warn("Unable to load series episodes.");

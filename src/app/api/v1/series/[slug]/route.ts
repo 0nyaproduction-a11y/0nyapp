@@ -3,26 +3,38 @@ import { dataResponse, errorResponse } from "@/lib/api/responses";
 import { serializeEpisodeAccess, serializeSeries } from "@/lib/api/serializers";
 import { getSeriesBySlug } from "@/lib/catalog";
 import { getEpisodeAccessStates } from "@/lib/entitlements";
+import { PerfCollector, runWithPerf, timePerf } from "@/lib/api/perf";
 
 type SeriesApiRouteProps = {
   params: Promise<{ slug: string }>;
 };
 
 export async function GET(request: Request, { params }: SeriesApiRouteProps) {
-  const { slug } = await params;
-  const auth = await getApiAuth(request);
-  const series = await getSeriesBySlug(slug, auth.error ? undefined : auth.supabase);
+  const collector = new PerfCollector();
 
-  if (!series) {
-    return errorResponse("not_found", "Series not found.", 404);
-  }
+  return runWithPerf(collector, async () => {
+    const { slug } = await params;
+    const auth = await getApiAuth(request);
+    const series = await getSeriesBySlug(slug, auth.error ? undefined : auth.supabase);
 
-  const episodeAccess = auth.user
-    ? await getEpisodeAccessStates(auth.user.id, series.episodes, auth.supabase)
-    : await getEpisodeAccessStates(null, series.episodes, auth.error ? undefined : auth.supabase);
+    if (!series) {
+      const errRes = errorResponse("not_found", "Series not found.", 404);
+      return collector.applyHeaders(errRes);
+    }
 
-  return dataResponse({
-    series: serializeSeries(series),
-    episodeAccess: serializeEpisodeAccess(episodeAccess),
+    const episodeAccess = await timePerf("access", async () =>
+      auth.user
+        ? getEpisodeAccessStates(auth.user.id, series.episodes, auth.supabase)
+        : getEpisodeAccessStates(null, series.episodes, auth.error ? undefined : auth.supabase)
+    );
+
+    const res = await timePerf("serialize", async () =>
+      dataResponse({
+        series: serializeSeries(series),
+        episodeAccess: serializeEpisodeAccess(episodeAccess),
+      })
+    );
+
+    return collector.applyHeaders(res);
   });
 }

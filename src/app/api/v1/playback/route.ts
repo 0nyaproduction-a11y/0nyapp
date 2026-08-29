@@ -1,6 +1,7 @@
 import { getApiAuth } from "@/lib/api/auth";
 import { dataResponse, errorResponse } from "@/lib/api/responses";
 import { authorizeMuxPlayback, type PlaybackTarget } from "@/lib/playback";
+import { PerfCollector, runWithPerf, timePerf } from "@/lib/api/perf";
 
 export const runtime = "nodejs";
 
@@ -31,42 +32,55 @@ function isPlaybackTarget(body: PlaybackRequestBody): body is PlaybackTarget {
 }
 
 export async function POST(request: Request) {
-  const auth = await getApiAuth(request);
+  const collector = new PerfCollector();
 
-  if (auth.error) {
-    return errorResponse("not_authenticated", "Authentication is required.", 401);
-  }
+  return runWithPerf(collector, async () => {
+    const auth = await getApiAuth(request);
 
-  let body: PlaybackRequestBody;
+    if (auth.error) {
+      const errRes = errorResponse("not_authenticated", "Authentication is required.", 401);
+      return collector.applyHeaders(errRes);
+    }
 
-  try {
-    body = (await request.json()) as PlaybackRequestBody;
-  } catch {
-    return errorResponse("invalid_request", "A valid JSON body is required.", 400);
-  }
+    let body: PlaybackRequestBody;
 
-  if (!isPlaybackTarget(body)) {
-    return errorResponse("invalid_request", "A valid playback target is required.", 400);
-  }
+    try {
+      body = await timePerf("body_parse", async () => (await request.json()) as PlaybackRequestBody);
+    } catch {
+      const errRes = errorResponse("invalid_request", "A valid JSON body is required.", 400);
+      return collector.applyHeaders(errRes);
+    }
 
-  const result = await authorizeMuxPlayback(body, {
-    guestCredential: typeof body.guestCredential === "string" ? body.guestCredential : null,
-    parentalSessionToken:
-      typeof body.parentalSessionToken === "string" ? body.parentalSessionToken : null,
-    userId: auth.user?.id ?? null,
-  }, typeof body.stillAtSeconds === "number" ? body.stillAtSeconds : null);
+    if (!isPlaybackTarget(body)) {
+      const errRes = errorResponse("invalid_request", "A valid playback target is required.", 400);
+      return collector.applyHeaders(errRes);
+    }
 
-  if (result.status === "not_found") {
-    return errorResponse("not_found", "Content not found.", 404);
-  }
+    const result = await authorizeMuxPlayback(body, {
+      guestCredential: typeof body.guestCredential === "string" ? body.guestCredential : null,
+      parentalSessionToken:
+        typeof body.parentalSessionToken === "string" ? body.parentalSessionToken : null,
+      userId: auth.user?.id ?? null,
+    }, typeof body.stillAtSeconds === "number" ? body.stillAtSeconds : null);
 
-  if (result.status !== "ok") {
-    return dataResponse({ status: result.status });
-  }
+    if (result.status === "not_found") {
+      const errRes = errorResponse("not_found", "Content not found.", 404);
+      return collector.applyHeaders(errRes);
+    }
 
-  return dataResponse({
-    expiresAt: result.expiresAt,
-    playbackUrl: result.playbackUrl,
-    ...(result.status === "ok" && result.stillUrl ? { stillUrl: result.stillUrl } : {}),
+    if (result.status !== "ok") {
+      const res = dataResponse({ status: result.status });
+      return collector.applyHeaders(res);
+    }
+
+    const res = await timePerf("serialize", async () =>
+      dataResponse({
+        expiresAt: result.expiresAt,
+        playbackUrl: result.playbackUrl,
+        ...(result.status === "ok" && result.stillUrl ? { stillUrl: result.stillUrl } : {}),
+      })
+    );
+
+    return collector.applyHeaders(res);
   });
 }
