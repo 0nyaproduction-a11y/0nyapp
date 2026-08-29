@@ -136,7 +136,6 @@ rewarded_unlock_enabled
 rewarded_access_mode
 plus_access
 locked_preview_seconds
-
 content_rating_override?
 content_descriptors_override?
 status
@@ -161,6 +160,10 @@ Episode 6  free
 ```
 
 or any other approved combination.
+
+### Founder-approved episode coin price
+
+`coin_price` is backend/CMS controlled per episode. Allowed CMS range is **5–15 coins**; the working/reference default is **9 coins** where a CMS default is required. 9 is not a global client-side price — individual episodes remain independently configured, and finales/climaxes/episode 4 are not auto-priced higher.
 
 The client must render what CMS/backend resolves.
 
@@ -558,6 +561,19 @@ Localized price should come from the applicable store/billing source rather than
 
 CMS/admin may store product mapping, but consumer price display should use verified localized store data.
 
+### Founder-approved launch coin packs
+
+Coin quantities are backend-authoritative (`public.coin_products`); localized prices come from store/product metadata, not hardcoded client presentation.
+
+```text
+30 coins   — ₹29
+50 coins   — ₹49
+100 coins  — ₹99
+250 coins  — ₹199
+```
+
+Display/sort order: 30 < 50 < 100 < 250.
+
 ---
 
 # 17. PLUS CONFIGURATION
@@ -568,14 +584,17 @@ There is one paid consumer tier:
 0nya Plus
 ```
 
+Launch configuration: weekly auto-renewing membership, single tier only, no free trial. Localized price (launch reference ₹49/week) is Google Play / store product metadata, authoritative in the UI when available; the offer communicates weekly auto-renew and cancel-anytime in Google Play.
+
 CMS/backend may maintain mappings for:
 
 ```text
-monthly product
-yearly product
+weekly product (launch)
 other approved billing periods
 enabled/disabled
 ```
+
+Do not create monthly/yearly consumer Plus products or additional consumer tiers without a Bible revision.
 
 Do not create:
 

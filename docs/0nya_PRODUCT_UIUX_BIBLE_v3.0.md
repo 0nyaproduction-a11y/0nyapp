@@ -452,6 +452,20 @@ Approved quality entitlement rule:
 > **POLICY** — Subscription purchase UI must remain truthful to the active implementation. In the current MVP build, Plus is a weekly membership model and the app must not invent or display fake monthly/yearly pricing or renewal claims.
 
 
+## 15.1 Founder-approved launch commercial configuration
+
+This founder decision supersedes any older working-price examples elsewhere in project documentation. Prices and configuration remain backend/store driven rather than hardcoded client/layout presentation.
+
+| Product / area | Launch configuration |
+| --- | --- |
+| 0nya Plus | One paid tier only. Weekly auto-renewing membership. Launch reference ₹49/week. No free trial. Localized price is Google Play / store product metadata and is authoritative in the UI when available; the offer communicates weekly auto-renew and "cancel anytime in Google Play". |
+| Coin packs | 30 coins / ₹29, 50 coins / ₹49, 100 coins / ₹99, 250 coins / ₹199 — sorted 30 < 50 < 100 < 250. Coin quantities are backend-authoritative (`public.coin_products`); localized prices come from store/product metadata, not hardcoded client presentation. |
+| Episode coin price | Backend/CMS controlled per episode. Working/reference default 9 coins; allowed CMS range 5–15 coins. 9 is not a global client-side price; individual episodes remain independently configured. |
+| Chai | Same 0nya coin wallet, Short-Film only, coin tip only. Allowed amounts: 5 / 10 / 20 / 50 coins (backend `chai_allowed_coin_amounts`). No separate currency, no cash/UPI Chai. |
+
+Google Play / store product creation and production purchase verification remain externally blocked (D-U-N-S / organisation setup). Until store metadata is available, the client renders the established "store price not configured" / unavailable state and must not invent prices.
+
+
 # 16. Vertical Short Films
 
 

@@ -143,6 +143,7 @@ insert into public.coin_products (
   sort_order
 )
 values
+  ('coins_30', 30, '30 coins', true, 5),
   ('coins_50', 50, '50 coins', true, 10),
   ('coins_100', 100, '100 coins', true, 20),
   ('coins_250', 250, '250 coins', true, 30)

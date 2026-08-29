@@ -149,6 +149,11 @@ export function PlusScreen({ navigation }: Props) {
         />
       </View>
 
+      <View style={styles.disclosure}>
+        <Body>Auto-renews weekly until cancelled.</Body>
+        <Body>Cancel anytime in Google Play.</Body>
+      </View>
+
       {isLoading && !me && !error ? <LoadingState /> : null}
       {error ? (
         <RecoveryState
@@ -274,6 +279,9 @@ const styles = StyleSheet.create({
   },
   benefits: {
     gap: 14,
+  },
+  disclosure: {
+    gap: 2,
   },
   benefitRow: {
     alignItems: "flex-start",
