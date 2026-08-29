@@ -9,7 +9,10 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ONYA_API_BASE_URL": "https://onya-qa-api-gwkke6nq5a-el.a.run.app"
+      }
     },
     "production": {
       "autoIncrement": true
