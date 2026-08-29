@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   normalizeContentDescriptors,
   normalizeContentRating,
@@ -104,6 +105,12 @@ export function validateShortFilmInput(input: ShortFilmInput): ShortFilmValidati
     if (!Number.isInteger(timecode) || timecode < 0) {
       errors.push({ field: "midrollTimecodes", message: "Mid-roll timecodes must be zero or positive whole numbers." });
       break;
+    }
+  }
+
+  if (input.status === "published") {
+    if (!input.posterUrl || !input.posterUrl.trim()) {
+      errors.push({ field: "posterUrl", message: "Poster artwork is required to publish." });
     }
   }
 
@@ -220,6 +227,57 @@ export async function updateShortFilm(id: string, input: ShortFilmInput): Promis
   return { success: true, shortFilm: data };
 }
 
+export async function verifyShortFilmPublishIntegrity(
+  row: Pick<ShortFilmRow, "poster_url" | "playback_reference" | "media_asset_id">,
+  supabase = getAdminClient(),
+): Promise<ShortFilmValidationError[]> {
+  const errors: ShortFilmValidationError[] = [];
+
+  if (!row.poster_url || !row.poster_url.trim()) {
+    errors.push({ field: "posterUrl", message: "Poster artwork is required to publish." });
+  } else {
+    const posterUrl = row.poster_url.trim();
+    if (posterUrl.includes("/storage/v1/object/public/")) {
+      const parts = posterUrl.split("/storage/v1/object/public/");
+      const pathParts = parts[1]?.split("/");
+      const bucket = pathParts?.[0];
+      const objectPath = pathParts?.slice(1).join("/");
+      if (bucket && objectPath) {
+        const storageSupabase = supabase as unknown as SupabaseClient;
+        const { data: storageObj } = await storageSupabase
+          .schema("storage")
+          .from("objects")
+          .select("id")
+          .eq("bucket_id", bucket)
+          .eq("name", objectPath)
+          .maybeSingle();
+
+        if (!storageObj) {
+          errors.push({ field: "posterUrl", message: "Poster artwork file is missing or unavailable." });
+        }
+      }
+    }
+  }
+
+  if (!row.playback_reference || !row.playback_reference.trim()) {
+    errors.push({ field: "playbackReference", message: "Playback reference is required to publish." });
+  }
+
+  if (row.media_asset_id) {
+    const { data: mediaAsset } = await supabase
+      .from("media_assets")
+      .select("status")
+      .eq("id", row.media_asset_id)
+      .maybeSingle();
+
+    if (mediaAsset && mediaAsset.status !== "ready") {
+      errors.push({ field: "mediaAsset", message: "Playback media is not ready." });
+    }
+  }
+
+  return errors;
+}
+
 export async function updateShortFilmStatus(
   id: string,
   status: ShortFilmStatus,
@@ -229,6 +287,19 @@ export async function updateShortFilmStatus(
   }
 
   const supabase = getAdminClient();
+  const existing = await getShortFilmForAdminById(id);
+
+  if (status === "published") {
+    if (!existing) {
+      return { success: false, errors: [{ field: "status", message: "Short film not found." }] };
+    }
+
+    const integrityErrors = await verifyShortFilmPublishIntegrity(existing, supabase);
+    if (integrityErrors.length > 0) {
+      return { success: false, errors: integrityErrors };
+    }
+  }
+
   const { data, error } = await supabase
     .from("short_films")
     .update({ status })
