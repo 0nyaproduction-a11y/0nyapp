@@ -307,11 +307,12 @@ async function resolveEpisodePlayback(
     return { status: "playback_unavailable" };
   }
 
+  const mediaAssetId = episode.media_asset_id as string;
   const { data: mediaAsset, error: mediaAssetError } = await timePerf("media_lookup", () =>
     supabase
       .from("media_assets")
       .select("*")
-      .eq("id", episode.media_asset_id)
+      .eq("id", mediaAssetId)
       .maybeSingle()
   );
 
@@ -532,11 +533,12 @@ async function resolveShortFilmPlayback(
     return { status: "playback_unavailable" };
   }
 
+  const shortFilmMediaAssetId = shortFilm.media_asset_id as string;
   const { data: mediaAsset, error: mediaAssetError } = await timePerf("media_lookup", () =>
     supabase
       .from("media_assets")
       .select("*")
-      .eq("id", shortFilm.media_asset_id)
+      .eq("id", shortFilmMediaAssetId)
       .maybeSingle()
   );
 

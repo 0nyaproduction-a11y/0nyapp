@@ -19,7 +19,7 @@ export class PerfCollector {
     this.markers.push({ name, durationMs });
   }
 
-  async time<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  async time<T>(name: string, fn: () => PromiseLike<T> | Promise<T>): Promise<T> {
     const start = performance.now();
     try {
       return await fn();
@@ -55,7 +55,7 @@ export function runWithPerf<T>(collector: PerfCollector, fn: () => Promise<T>): 
   return perfStorage.run(collector, fn);
 }
 
-export async function timePerf<T>(name: string, fn: () => Promise<T>): Promise<T> {
+export async function timePerf<T>(name: string, fn: () => PromiseLike<T> | Promise<T>): Promise<T> {
   const collector = getPerfCollector();
   if (collector) {
     return collector.time(name, fn);
