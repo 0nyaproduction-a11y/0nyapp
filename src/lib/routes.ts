@@ -21,6 +21,7 @@ export const plansPath = "/plans";
 export const loginPath = "/login";
 export const adminPath = "/admin";
 export const adminLoginPath = "/admin/login";
+export const adminResetPasswordPath = "/admin/reset-password";
 
 export const seriesListPath = "/admin/series";
 export const seriesNewPath = "/admin/series/new";
