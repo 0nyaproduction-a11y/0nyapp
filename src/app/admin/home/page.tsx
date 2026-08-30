@@ -3,18 +3,26 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
+import { CmsAutoSubmitCheckbox } from "@/components/cms/CmsAutoSubmitCheckbox";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   addHomeRowItem,
+  addSpotlightItem,
   createHomeEditorialRow,
+  deleteHomeEditorialRow,
   getHomeAdminData,
   listHomeContentChoices,
+  moveHomeRow,
+  moveHomeRowItem,
+  moveSpotlightItem,
   removeHomeRowItem,
+  removeSpotlightItem,
+  toggleHomeSpotlight,
   updateHomeLowHistoryThreshold,
   updateHomeRow,
   updateHomeRowItem,
+  updateSpotlightItemShowTitle,
 } from "@/lib/cms/home";
-import { getFeaturedSeries } from "@/lib/catalog";
 import { homeListPath } from "@/lib/routes";
 
 type HomeAdminPageProps = {
@@ -42,16 +50,19 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     );
   }
 
-  const [homeData, contentChoices, featuredSeries] = await Promise.all([
+  const [homeData, allContentChoices, publishedChoices] = await Promise.all([
     getHomeAdminData(),
-    listHomeContentChoices(),
-    getFeaturedSeries(),
+    listHomeContentChoices(false),
+    listHomeContentChoices(true),
   ]);
   const flashMessage = typeof params.flash === "string" ? params.flash : null;
   const errorMessage = typeof params.error === "string" ? params.error : null;
 
-  const seriesChoices = contentChoices.filter((choice) => choice.contentType === "series");
-  const shortFilmChoices = contentChoices.filter((choice) => choice.contentType === "short_film");
+  const seriesChoices = allContentChoices.filter((choice) => choice.contentType === "series");
+  const shortFilmChoices = allContentChoices.filter((choice) => choice.contentType === "short_film");
+
+  const publishedSeriesChoices = publishedChoices.filter((choice) => choice.contentType === "series");
+  const publishedShortFilmChoices = publishedChoices.filter((choice) => choice.contentType === "short_film");
 
   async function updateHomeSettingsAction(formData: FormData) {
     "use server";
@@ -75,6 +86,136 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     revalidatePath("/");
     revalidatePath("/api/v1/catalog");
     redirect(buildFlashUrl("flash", "Low-history threshold saved."));
+  }
+
+  async function addSpotlightItemAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const contentRef = String(formData.get("contentRef") ?? "").trim();
+    if (!contentRef) {
+      redirect(buildFlashUrl("error", "Please select published content for Spotlight."));
+    }
+
+    const [contentType, contentId] = contentRef.split(":", 2);
+    if (!contentId || (contentType !== "series" && contentType !== "short_film")) {
+      redirect(buildFlashUrl("error", "Invalid content selection."));
+    }
+
+    const result = await addSpotlightItem({
+      contentId,
+      contentType: contentType as "series" | "short_film",
+    });
+
+    if (!result || "error" in result) {
+      redirect(buildFlashUrl("error", "Unable to add Spotlight item."));
+    }
+
+    if ("invalidContent" in result) {
+      redirect(buildFlashUrl("error", "Selected content is not published."));
+    }
+
+    if ("duplicate" in result) {
+      redirect(buildFlashUrl("error", "That content is already in Spotlight."));
+    }
+
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Spotlight item added."));
+  }
+
+  async function removeSpotlightItemAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    if (!itemId) {
+      redirect(buildFlashUrl("error", "Item ID is required."));
+    }
+
+    const success = await removeSpotlightItem(itemId);
+    if (!success) {
+      redirect(buildFlashUrl("error", "Unable to remove Spotlight item."));
+    }
+
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Spotlight item removed."));
+  }
+
+  async function moveSpotlightItemAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    const direction = formData.get("direction") === "up" ? "up" : "down";
+
+    if (!itemId) {
+      redirect(buildFlashUrl("error", "Item ID is required."));
+    }
+
+    await moveSpotlightItem(itemId, direction);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Spotlight order updated."));
+  }
+
+  async function toggleSpotlightShowTitleAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    const showTitle = formData.get("showTitle") === "on";
+
+    if (!itemId) {
+      redirect(buildFlashUrl("error", "Item ID is required."));
+    }
+
+    const result = await updateSpotlightItemShowTitle(itemId, showTitle);
+    if (!result) {
+      redirect(buildFlashUrl("error", "Unable to update title visibility."));
+    }
+
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Title visibility updated."));
+  }
+
+  async function toggleSpotlightAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const enabled = formData.get("enabled") === "on";
+    await toggleHomeSpotlight(enabled);
+
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", enabled ? "Spotlight enabled." : "Spotlight disabled."));
   }
 
   async function createHomeRowAction(formData: FormData) {
@@ -103,6 +244,8 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     }
 
     revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
     redirect(buildFlashUrl("flash", "Home row created."));
   }
 
@@ -140,6 +283,52 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     revalidatePath("/");
     revalidatePath("/api/v1/catalog");
     redirect(buildFlashUrl("flash", "Home row saved."));
+  }
+
+  async function deleteHomeRowAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const rowId = String(formData.get("rowId") ?? "").trim();
+    if (!rowId) {
+      redirect(buildFlashUrl("error", "Row ID is required."));
+    }
+
+    const success = await deleteHomeEditorialRow(rowId);
+    if (!success) {
+      redirect(buildFlashUrl("error", "Unable to delete row (Start Here and Spotlight cannot be deleted)."));
+    }
+
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Home row deleted."));
+  }
+
+  async function moveRowAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const rowId = String(formData.get("rowId") ?? "").trim();
+    const direction = formData.get("direction") === "up" ? "up" : "down";
+
+    if (!rowId) {
+      redirect(buildFlashUrl("error", "Row ID is required."));
+    }
+
+    await moveHomeRow(rowId, direction);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Row order updated."));
   }
 
   async function addHomeRowItemAction(formData: FormData) {
@@ -226,6 +415,28 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     redirect(buildFlashUrl("flash", "Home row item saved."));
   }
 
+  async function moveItemAction(formData: FormData) {
+    "use server";
+
+    const guard = await requireCmsAdmin(homeListPath);
+    if (guard.status !== "authorized") {
+      redirect(buildFlashUrl("error", "Not authorized."));
+    }
+
+    const itemId = String(formData.get("itemId") ?? "").trim();
+    const direction = formData.get("direction") === "up" ? "up" : "down";
+
+    if (!itemId) {
+      redirect(buildFlashUrl("error", "Item ID is required."));
+    }
+
+    await moveHomeRowItem(itemId, direction);
+    revalidatePath(homeListPath);
+    revalidatePath("/");
+    revalidatePath("/api/v1/catalog");
+    redirect(buildFlashUrl("flash", "Item order updated."));
+  }
+
   async function removeHomeRowItemAction(formData: FormData) {
     "use server";
 
@@ -250,6 +461,9 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     redirect(buildFlashUrl("flash", "Home row item removed."));
   }
 
+  const spotlightItems = homeData.spotlight?.items ?? [];
+  const isSpotlightEnabled = homeData.spotlight?.enabled ?? true;
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -257,7 +471,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
             0nya CMS
           </p>
-          <h1 className="mt-2 text-2xl font-semibold">Home</h1>
+          <h1 className="mt-2 text-2xl font-semibold">Home Composer</h1>
           <Link href="/admin" className="mt-1 inline-block text-sm text-teal">
             ← Back to admin
           </Link>
@@ -274,21 +488,160 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           </div>
         )}
 
-        <section className="grid gap-4 sm:grid-cols-3">
-          <div className="border border-bone/10 bg-bone/[0.03] p-4">
-            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
-              Featured series
-            </p>
-            <p className="mt-2 text-sm text-bone/70">
-              {featuredSeries?.slug ? (
-                <>
-                  Managed in Series CMS: <span className="text-bone">/{featuredSeries.slug}</span>
-                </>
-              ) : (
-                "No featured series detected."
-              )}
-            </p>
+        {/* SPOTLIGHT SECTION */}
+        <section className="border border-teal/30 bg-teal/[0.03] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-teal">
+                Authoritative Spotlight (9:16)
+              </p>
+              <h2 className="mt-1 text-lg font-semibold">Home Spotlight Stage</h2>
+              <p className="mt-1 text-xs text-bone/60">
+                Ordered CMS-controlled stage. One or more published Series / Short Films, manually swiped in Android.
+              </p>
+            </div>
+            {homeData.spotlight ? (
+              <span className={`border px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.14em] ${
+                isSpotlightEnabled ? "border-teal/50 text-teal" : "border-bone/30 text-bone/50"
+              }`}>
+                {isSpotlightEnabled
+                  ? `Spotlight Active · ${spotlightItems.length} item${spotlightItems.length === 1 ? "" : "s"}`
+                  : "Spotlight Disabled"}
+              </span>
+            ) : (
+              <span className="border border-bone/20 px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.14em] text-bone/40">
+                No Spotlight Row
+              </span>
+            )}
           </div>
+
+          {homeData.spotlight && (
+            <form action={toggleSpotlightAction} className="mt-4 flex items-center gap-2">
+              <CmsAutoSubmitCheckbox
+                name="enabled"
+                defaultChecked={isSpotlightEnabled}
+                inputClassName="h-4 w-4 border border-bone/20 bg-bone/[0.03]"
+                labelClassName="flex items-center gap-2 text-xs text-bone/70"
+              >
+                Spotlight enabled (controls whether stage is shown to consumers)
+              </CmsAutoSubmitCheckbox>
+            </form>
+          )}
+
+          {/* Spotlight items (ordered) */}
+          <div className="mt-4 space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-bone/70">
+              Spotlight Items ({spotlightItems.length}) · ordered
+            </h3>
+            {spotlightItems.length === 0 && (
+              <p className="text-sm text-bone/60">
+                No Spotlight items yet. Add published content below.
+              </p>
+            )}
+            {spotlightItems.map((item, itemIndex) => (
+              <div key={item.id} className="border border-bone/10 bg-bone/[0.03] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <span className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-teal">
+                      #{itemIndex + 1} · {item.content_type}
+                    </span>
+                    <p className="mt-1 text-base font-semibold text-bone">
+                      {item.contentTitle ?? item.slug ?? item.id}
+                    </p>
+                    <p className="mt-0.5 text-xs text-bone/50">
+                      Status: <span className={item.consumerVisible ? "text-teal" : "text-amber-400"}>
+                        {item.contentStatus ?? "unknown"}
+                        {item.consumerVisible ? " (Published)" : " (Hidden)"}
+                      </span>
+                      {item.sharePath && (
+                        <> · Path: <span className="text-bone/70">{item.sharePath}</span></>
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <form action={moveSpotlightItemAction} className="flex">
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <input type="hidden" name="direction" value="up" />
+                      <button
+                        type="submit"
+                        disabled={itemIndex === 0}
+                        className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        ▲
+                      </button>
+                    </form>
+                    <form action={moveSpotlightItemAction} className="flex">
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <input type="hidden" name="direction" value="down" />
+                      <button
+                        type="submit"
+                        disabled={itemIndex === spotlightItems.length - 1}
+                        className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                      >
+                        ▼
+                      </button>
+                    </form>
+                    <form action={removeSpotlightItemAction}>
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <Button type="submit">Remove</Button>
+                    </form>
+                  </div>
+                </div>
+
+                <form action={toggleSpotlightShowTitleAction} className="mt-3 flex items-center gap-2">
+                  <input type="hidden" name="itemId" value={item.id} />
+                  <CmsAutoSubmitCheckbox
+                    name="showTitle"
+                    defaultChecked={item.show_title}
+                    inputClassName="h-4 w-4 border border-bone/20 bg-bone/[0.03]"
+                    labelClassName="flex items-center gap-2 text-xs text-bone/70"
+                  >
+                    Show title below artwork
+                  </CmsAutoSubmitCheckbox>
+                </form>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-bone/10">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-bone/70">
+              Add Spotlight Content
+            </h3>
+            <form action={addSpotlightItemAction} className="mt-3 flex flex-wrap items-end gap-3">
+              <label className="block space-y-1.5 min-w-[280px] flex-1">
+                <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
+                  Published Content
+                </span>
+                <CmsSelect
+                  name="contentRef"
+                  defaultValue=""
+                  className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+                  placeholderLabel="Choose published series or short film"
+                  options={[
+                    { label: "Choose published series or short film", value: "" },
+                    ...publishedSeriesChoices.map((choice) => ({
+                      group: "Published Series",
+                      label: choice.label,
+                      value: choice.value,
+                    })),
+                    ...publishedShortFilmChoices.map((choice) => ({
+                      group: "Published Short films",
+                      label: choice.label,
+                      value: choice.value,
+                    })),
+                  ]}
+                />
+              </label>
+              <Button type="submit" variant="secondary">
+                Add to Spotlight
+              </Button>
+            </form>
+          </div>
+        </section>
+
+        {/* OVERVIEW METRICS */}
+        <section className="grid gap-4 sm:grid-cols-2">
           <div className="border border-bone/10 bg-bone/[0.03] p-4">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
               Threshold
@@ -299,14 +652,15 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           </div>
           <div className="border border-bone/10 bg-bone/[0.03] p-4">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
-              Rows
+              Editorial Rows
             </p>
             <p className="mt-2 text-sm text-bone/70">
-              {homeData.homeRows.length} row{homeData.homeRows.length === 1 ? "" : "s"} configured
+              {homeData.homeRows.length} editorial row{homeData.homeRows.length === 1 ? "" : "s"} configured
             </p>
           </div>
         </section>
 
+        {/* LOW-HISTORY THRESHOLD */}
         <section className="border border-bone/10 bg-bone/[0.03] p-4">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
             Low-history threshold
@@ -330,6 +684,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           </form>
         </section>
 
+        {/* CREATE EDITORIAL ROW */}
         <section className="border border-bone/10 bg-bone/[0.03] p-4">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
             Create editorial row
@@ -342,7 +697,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
               <input
                 className="w-56 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
                 name="title"
-                placeholder="Staff Picks"
+                placeholder="e.g. Micro Dramas, Staff Picks"
                 required
               />
             </label>
@@ -363,12 +718,13 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           </form>
         </section>
 
+        {/* HOME ROWS LIST */}
         <section className="space-y-5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-              Home rows
+              Home Rows (Ordered)
             </h2>
-            <p className="text-xs text-bone/40">Published content is what consumers can actually see.</p>
+            <p className="text-xs text-bone/40">Only published items within enabled rows are consumer-visible.</p>
           </div>
 
           {homeData.homeRows.length === 0 && (
@@ -377,7 +733,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
             </div>
           )}
 
-          {homeData.homeRows.map((row) => (
+          {homeData.homeRows.map((row, rowIndex) => (
             <article key={row.id} className="border border-bone/10 bg-bone/[0.03] p-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -385,14 +741,45 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                   <p className="mt-1 text-xs text-bone/50">
                     role: <span className="text-bone">{row.row_role}</span> ·{" "}
                     <span className="text-bone">{row.enabled ? "enabled" : "disabled"}</span> · sort{" "}
-                    <span className="text-bone">{row.sort_order}</span>
+                    <span className="text-bone">{row.sort_order}</span> · items:{" "}
+                    <span className="text-bone">{row.items.length}</span>
                   </p>
                 </div>
-                {row.row_role === "start_here" && (
-                  <span className="border border-teal/40 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-teal">
-                    Canonical Start Here
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {row.row_role === "start_here" && (
+                    <span className="border border-teal/40 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-teal">
+                      Canonical Start Here
+                    </span>
+                  )}
+                  <form action={moveRowAction} className="flex gap-1">
+                    <input type="hidden" name="rowId" value={row.id} />
+                    <input type="hidden" name="direction" value="up" />
+                    <button
+                      type="submit"
+                      disabled={rowIndex === 0}
+                      className="border border-bone/20 px-2 py-0.5 text-xs text-bone/70 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      ▲ Up
+                    </button>
+                  </form>
+                  <form action={moveRowAction} className="flex gap-1">
+                    <input type="hidden" name="rowId" value={row.id} />
+                    <input type="hidden" name="direction" value="down" />
+                    <button
+                      type="submit"
+                      disabled={rowIndex === homeData.homeRows.length - 1}
+                      className="border border-bone/20 px-2 py-0.5 text-xs text-bone/70 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      ▼ Down
+                    </button>
+                  </form>
+                  {row.row_role === "editorial" && (
+                    <form action={deleteHomeRowAction}>
+                      <input type="hidden" name="rowId" value={row.id} />
+                      <Button type="submit">Delete row</Button>
+                    </form>
+                  )}
+                </div>
               </div>
 
               <form action={updateHomeRowAction} className="mt-4 flex flex-wrap items-end gap-3">
@@ -433,10 +820,11 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                 </Button>
               </form>
 
-              <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+              <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.3fr]">
+                {/* ADD ITEM TO ROW */}
                 <form action={addHomeRowItemAction} className="space-y-3 border border-bone/10 p-4">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-                    Add content
+                    Add content to row
                   </h4>
                   <input type="hidden" name="rowId" value={row.id} />
                   <label className="block space-y-1.5">
@@ -447,9 +835,9 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                       name="contentRef"
                       defaultValue=""
                       className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-                      placeholderLabel="Choose existing content"
+                      placeholderLabel="Choose content (Series or Short Film)"
                       options={[
-                        { label: "Choose existing content", value: "" },
+                        { label: "Choose content (Series or Short Film)", value: "" },
                         ...seriesChoices.map((choice) => ({
                           group: "Series",
                           label: choice.label,
@@ -479,15 +867,16 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                   </Button>
                 </form>
 
+                {/* ROW ITEMS LIST */}
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-                    Items
+                    Row Items ({row.items.length})
                   </h4>
                   {row.items.length === 0 && (
                     <p className="text-sm text-bone/60">No items in this row yet.</p>
                   )}
-                  {row.items.map((item) => (
-                    <div key={item.id} className="border border-bone/10 p-3">
+                  {row.items.map((item, itemIndex) => (
+                    <div key={item.id} className="border border-bone/10 p-3 bg-bone/[0.02]">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-medium">{item.contentTitle ?? item.slug ?? item.id}</p>
@@ -496,20 +885,44 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                             {item.consumerVisible ? " · visible" : " · hidden"}
                           </p>
                         </div>
-                        <span className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-bone/40">
-                          {item.sort_order}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <form action={moveItemAction} className="flex">
+                            <input type="hidden" name="itemId" value={item.id} />
+                            <input type="hidden" name="direction" value="up" />
+                            <button
+                              type="submit"
+                              disabled={itemIndex === 0}
+                              className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                              ▲
+                            </button>
+                          </form>
+                          <form action={moveItemAction} className="flex">
+                            <input type="hidden" name="itemId" value={item.id} />
+                            <input type="hidden" name="direction" value="down" />
+                            <button
+                              type="submit"
+                              disabled={itemIndex === row.items.length - 1}
+                              className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                              ▼
+                            </button>
+                          </form>
+                          <span className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-bone/40 pl-1">
+                            sort: {item.sort_order}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-end gap-3">
-                        <form action={updateHomeRowItemAction} className="flex items-end gap-3">
+                        <form action={updateHomeRowItemAction} className="flex items-end gap-2">
                           <input type="hidden" name="itemId" value={item.id} />
-                          <label className="block space-y-1.5">
-                            <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
-                              Sort order
+                          <label className="block space-y-1">
+                            <span className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-bone/40">
+                              Sort
                             </span>
                             <input
-                              className="w-24 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
+                              className="w-20 border border-bone/15 bg-bone/[0.03] px-2 py-1.5 text-xs text-bone"
                               type="number"
                               name="sortOrder"
                               defaultValue={item.sort_order}
@@ -523,10 +936,10 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                           <input type="hidden" name="itemId" value={item.id} />
                           <Button type="submit">Remove</Button>
                         </form>
-                        <p className="text-xs text-bone/40">
+                        <p className="text-xs text-bone/40 self-center ml-auto">
                           {item.sharePath ? (
                             <>
-                              Consumer path: <span className="text-bone">{item.sharePath}</span>
+                              Path: <span className="text-bone/70">{item.sharePath}</span>
                             </>
                           ) : (
                             "Orphaned item"

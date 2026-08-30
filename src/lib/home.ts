@@ -5,6 +5,17 @@ import type { Database } from "@/types/database";
 
 export type HomeContentType = "series" | "short_film";
 
+export type HomeSpotlight = {
+  id: string;
+  contentType: HomeContentType;
+  slug: string;
+  title: string;
+  poster: string | null;
+  synopsis: string | null;
+  sharePath: string;
+  showTitle: boolean;
+};
+
 export type HomeRowItem = {
   id: string;
   contentType: HomeContentType;
@@ -17,7 +28,7 @@ export type HomeRowItem = {
 export type HomeRow = {
   id: string;
   title: string;
-  role: "start_here" | "editorial";
+  role: "start_here" | "editorial" | "spotlight";
   enabled: boolean;
   sortOrder: number;
   items: HomeRowItem[];
@@ -30,6 +41,8 @@ export type HomeState = {
   lowHistoryThreshold: number | null;
   completedCount: number;
   isGuest: boolean;
+  spotlight: HomeSpotlight | null;
+  spotlights: HomeSpotlight[];
   rows: HomeRow[];
 };
 
@@ -53,6 +66,48 @@ function isPublishedSeries(row: Pick<SeriesRow, "status">) {
 
 function isPublishedShortFilm(row: Pick<ShortFilmRow, "status" | "publish_at">) {
   return row.status === "published" && (!row.publish_at || new Date(row.publish_at).getTime() <= Date.now());
+}
+
+function resolveSpotlightItem(
+  item: HomeMembershipRow,
+  seriesById: Map<string, SeriesRow>,
+  shortFilmsById: Map<string, ShortFilmRow>,
+): HomeSpotlight | null {
+  if (item.content_type === "series" && item.series_id) {
+    const series = seriesById.get(item.series_id);
+    if (series && isPublishedSeries(series)) {
+      return {
+        id: series.id,
+        contentType: "series",
+        slug: series.slug,
+        title: series.title,
+        poster: series.poster_url ?? series.hero_image_url ?? null,
+        synopsis: series.synopsis ?? null,
+        sharePath: `/series/${series.slug}`,
+        showTitle: item.show_title,
+      };
+    }
+    return null;
+  }
+
+  if (item.content_type === "short_film" && item.short_film_id) {
+    const shortFilm = shortFilmsById.get(item.short_film_id);
+    if (shortFilm && isPublishedShortFilm(shortFilm)) {
+      return {
+        id: shortFilm.id,
+        contentType: "short_film",
+        slug: shortFilm.slug,
+        title: shortFilm.title,
+        poster: shortFilm.poster_url ?? shortFilm.hero_image_url ?? null,
+        synopsis: shortFilm.synopsis ?? null,
+        sharePath: `/short-films/${shortFilm.slug}`,
+        showTitle: item.show_title,
+      };
+    }
+    return null;
+  }
+
+  return null;
 }
 
 export async function getHomeState(
@@ -107,6 +162,8 @@ export async function getHomeState(
       lowHistoryThreshold,
       completedCount,
       isGuest: !userId,
+      spotlight: null,
+      spotlights: [],
       rows: [],
     };
   }
@@ -152,7 +209,26 @@ export async function getHomeState(
     membershipsByRow.set(item.row_id, current);
   }
 
-  const rowsWithItems: HomeRow[] = enabledRows.map((row) => {
+  // Resolve Spotlight collection from the single enabled spotlight row.
+  // ALL valid (published) items are returned in home_row_items.sort_order ASC.
+  // `spotlight` remains the backward-compatible first valid item (or null).
+  const spotlights: HomeSpotlight[] = [];
+  const spotlightRow = enabledRows.find((row) => row.role === "spotlight");
+  if (spotlightRow) {
+    const spotlightItems = membershipsByRow.get(spotlightRow.id) ?? [];
+    for (const item of spotlightItems) {
+      const resolved = resolveSpotlightItem(item, seriesById, shortFilmsById);
+      if (resolved) {
+        spotlights.push(resolved);
+      }
+    }
+  }
+  const spotlight: HomeSpotlight | null = spotlights[0] ?? null;
+
+  // Exclude spotlight row from standard consumer rows list
+  const consumerRows = enabledRows.filter((row) => row.role !== "spotlight");
+
+  const rowsWithItems: HomeRow[] = consumerRows.map((row) => {
     const rowItems: HomeRowItem[] = [];
 
     for (const item of membershipsByRow.get(row.id) ?? []) {
@@ -211,6 +287,8 @@ export async function getHomeState(
     lowHistoryThreshold,
     completedCount,
     isGuest: !userId,
+    spotlight,
+    spotlights,
     rows: rowsWithItems,
   };
 }

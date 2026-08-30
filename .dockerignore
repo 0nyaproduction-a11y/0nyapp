@@ -1,0 +1,77 @@
+# Docker build context exclusions for the root Next.js application image.
+#
+# Keep: src/, public/, package.json, package-lock.json, next.config.ts,
+#       tsconfig.json, next-env.d.ts, postcss.config.mjs, eslint.config.mjs
+
+# Version control
+.git
+.gitignore
+.github
+
+# Dependencies (reinstalled from package-lock.json inside the image)
+node_modules
+**/node_modules
+
+# Local/stale Next.js build output (the image runs its own next build)
+.next
+out
+build
+
+# Secrets and environment files - never copy these into the image
+.env
+.env.*
+
+# Android app (separate Expo/React Native workspace, not part of this build)
+apps
+
+# Supabase CLI local state and SQL (no migration runs from this image)
+supabase
+
+# Local operator / maintenance scripts (development-only code paths)
+scripts
+check-db.mjs
+test-api.mjs
+
+# Documentation and audit/QA artifacts
+docs
+ui-audit
+perf
+.local-backups
+.local-docs
+.remember
+AGENTS.md
+CLAUDE.md
+README.md
+
+# Local screenshot captures dropped at the repository root by UI audit runs.
+# Root-anchored on purpose: public/*.png application assets must be kept.
+/ui-*.png
+
+# Binaries and large local artifacts
+*.apk
+*.aab
+*.zip
+*.pem
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tmp
+tmp
+temp
+
+# TypeScript incremental build state
+*.tsbuildinfo
+
+# IDE / editor / OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Container files themselves
+Dockerfile
+.dockerignore

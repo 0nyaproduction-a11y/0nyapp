@@ -26,6 +26,7 @@ export type Database = {
           coin_unlock_enabled: boolean;
           rewarded_unlock_enabled: boolean;
           rewarded_access_mode: "permanent" | "session";
+          required_rewarded_completions: number;
           plus_access: boolean;
           locked_preview_seconds: number;
           content_rating_override: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
@@ -51,6 +52,7 @@ export type Database = {
           coin_unlock_enabled?: boolean;
           rewarded_unlock_enabled?: boolean;
           rewarded_access_mode?: "permanent" | "session";
+          required_rewarded_completions?: number;
           plus_access?: boolean;
           locked_preview_seconds?: number;
           content_rating_override?: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
@@ -76,6 +78,7 @@ export type Database = {
           coin_unlock_enabled?: boolean;
           rewarded_unlock_enabled?: boolean;
           rewarded_access_mode?: "permanent" | "session";
+          required_rewarded_completions?: number;
           plus_access?: boolean;
           locked_preview_seconds?: number;
           content_rating_override?: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
@@ -200,6 +203,7 @@ export type Database = {
           provider: string;
           custom_data: string;
           rewarded_access_mode_snapshot: "permanent" | "session";
+          required_completions_snapshot: number;
           status: "pending" | "granted" | "expired" | "failed" | "unsupported_pending_policy";
           expires_at: string;
           verified_at: string | null;
@@ -214,6 +218,7 @@ export type Database = {
           provider?: string;
           custom_data: string;
           rewarded_access_mode_snapshot: "permanent" | "session";
+          required_completions_snapshot: number;
           status?: "pending" | "granted" | "expired" | "failed" | "unsupported_pending_policy";
           expires_at: string;
           verified_at?: string | null;
@@ -228,6 +233,7 @@ export type Database = {
           provider?: string;
           custom_data?: string;
           rewarded_access_mode_snapshot?: "permanent" | "session";
+          required_completions_snapshot?: number;
           status?: "pending" | "granted" | "expired" | "failed" | "unsupported_pending_policy";
           expires_at?: string;
           verified_at?: string | null;
@@ -245,6 +251,57 @@ export type Database = {
           },
           {
             foreignKeyName: "rewarded_ad_attempts_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      rewarded_monetization_events: {
+        Row: {
+          id: string;
+          event_type: string;
+          user_id: string | null;
+          episode_id: string | null;
+          ad_index: number | null;
+          required_count: number | null;
+          resulting_progress: number | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_type: string;
+          user_id?: string | null;
+          episode_id?: string | null;
+          ad_index?: number | null;
+          required_count?: number | null;
+          resulting_progress?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_type?: string;
+          user_id?: string | null;
+          episode_id?: string | null;
+          ad_index?: number | null;
+          required_count?: number | null;
+          resulting_progress?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "rewarded_monetization_events_episode_id_fkey";
+            columns: ["episode_id"];
+            isOneToOne: false;
+            referencedRelation: "episodes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "rewarded_monetization_events_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
@@ -600,7 +657,7 @@ export type Database = {
         Row: {
           id: string;
           title: string;
-          row_role: "start_here" | "editorial";
+          row_role: "start_here" | "editorial" | "spotlight";
           enabled: boolean;
           sort_order: number;
           created_at: string;
@@ -609,7 +666,7 @@ export type Database = {
         Insert: {
           id?: string;
           title: string;
-          row_role: "start_here" | "editorial";
+          row_role: "start_here" | "editorial" | "spotlight";
           enabled?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -618,7 +675,7 @@ export type Database = {
         Update: {
           id?: string;
           title?: string;
-          row_role?: "start_here" | "editorial";
+          row_role?: "start_here" | "editorial" | "spotlight";
           enabled?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -634,6 +691,7 @@ export type Database = {
           series_id: string | null;
           short_film_id: string | null;
           sort_order: number;
+          show_title: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -644,6 +702,7 @@ export type Database = {
           series_id?: string | null;
           short_film_id?: string | null;
           sort_order?: number;
+          show_title?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -654,6 +713,7 @@ export type Database = {
           series_id?: string | null;
           short_film_id?: string | null;
           sort_order?: number;
+          show_title?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1427,6 +1487,8 @@ export type Database = {
           status: string;
           custom_data: string | null;
           expires_at: string | null;
+          verified_progress: number;
+          required_completions: number;
         }[];
       };
       get_rewarded_ad_attempt_status: {
@@ -1437,6 +1499,8 @@ export type Database = {
           status: string;
           custom_data: string | null;
           expires_at: string | null;
+          verified_progress: number;
+          required_completions: number;
         }[];
       };
       finalize_rewarded_ad_callback: {
@@ -1449,6 +1513,32 @@ export type Database = {
           status: string;
           custom_data: string | null;
           expires_at: string | null;
+          verified_progress: number;
+          required_completions: number;
+        }[];
+      };
+      get_rewarded_progress: {
+        Args: {
+          p_episode_id: string;
+        };
+        Returns: {
+          verified_progress: number;
+          required_completions: number;
+          state: string;
+        }[];
+      };
+      record_rewarded_event: {
+        Args: {
+          p_event_type: string;
+          p_user_id: string;
+          p_episode_id?: string | null;
+          p_ad_index?: number | null;
+          p_required_count?: number | null;
+          p_resulting_progress?: number | null;
+          p_metadata?: Json | null;
+        };
+        Returns: {
+          id: string;
         }[];
       };
       publish_series_with_episodes: {

@@ -46,7 +46,14 @@ export type ShortFilm = {
 const fallbackPoster = "/logo-og.jpg";
 
 async function getSupabase(supabase?: SupabaseClient<Database>) {
-  return supabase ?? createAdminClient();
+  if (supabase) {
+    return supabase;
+  }
+  try {
+    return createAdminClient();
+  } catch {
+    return null;
+  }
 }
 
 function toContentFormat(format: string | null): ContentFormat {
@@ -175,13 +182,17 @@ function mapShortFilm(row: ShortFilmRow): ShortFilm {
 
 async function getPublishedEpisodeRows(
   seriesIds: string[],
-  supabaseClient?: SupabaseClient<Database>,
+  supabaseClient?: SupabaseClient<Database> | null,
 ) {
   if (!seriesIds.length) {
     return [];
   }
 
-  const supabase = await getSupabase(supabaseClient);
+  const supabase = await getSupabase(supabaseClient ?? undefined);
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await timePerf("episodes_q", () =>
     supabase
       .from("episodes")
@@ -201,6 +212,10 @@ async function getPublishedEpisodeRows(
 
 export async function getPublishedSeries(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await timePerf("series_q", () =>
     supabase
       .from("series")
@@ -226,6 +241,10 @@ export async function getPublishedSeries(supabaseClient?: SupabaseClient<Databas
 
 export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return null;
+  }
+
   const { data, error } = await timePerf("series_q", () =>
     supabase
       .from("series")
@@ -258,6 +277,10 @@ export async function getSeriesBySlug(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return null;
+  }
+
   const { data, error } = await timePerf("series_q", () =>
     supabase
       .from("series")
@@ -287,6 +310,10 @@ export async function getSeriesBySlug(
 
 export async function getPublishedShortFilms(supabaseClient?: SupabaseClient<Database>) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await timePerf("short_films_q", () =>
     supabase
       .from("short_films")
@@ -311,6 +338,10 @@ export async function getShortFilmBySlug(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return null;
+  }
+
   const { data, error } = await timePerf("short_films_q", () =>
     supabase
       .from("short_films")
@@ -346,6 +377,10 @@ export async function getEpisodesForSeries(
   supabaseClient?: SupabaseClient<Database>,
 ) {
   const supabase = await getSupabase(supabaseClient);
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await timePerf("episodes_q", () =>
     supabase
       .from("episodes")
