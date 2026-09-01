@@ -74,7 +74,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           {
             action: "VIEW",
             autoVerify: true,
-            categories: ["BROWSABLE", "DEFAULT"],
+            category: ["BROWSABLE", "DEFAULT"],
             data: [
               { scheme: "https", host: androidAppLinkHost, pathPrefix: "/series/" },
               { scheme: "https", host: androidAppLinkHost, pathPrefix: "/short-films/" },
