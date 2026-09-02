@@ -8,6 +8,7 @@ export type BulkEpisodeDefaults = {
   coinPrice: number;
   rewardedUnlockEnabled: boolean;
   rewardedAccessMode: RewardedAccessMode;
+  requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
   contentRatingOverride: ContentRating | null;
@@ -64,6 +65,7 @@ export function buildEpisodeInputForBulkCreate(input: BulkEpisodeCreateInput): E
     coinUnlockEnabled: input.defaults.coinUnlockEnabled,
     rewardedUnlockEnabled: input.defaults.rewardedUnlockEnabled,
     rewardedAccessMode: input.defaults.rewardedAccessMode,
+    requiredRewardedCompletions: input.defaults.requiredRewardedCompletions,
     plusAccess: input.defaults.plusAccess,
     lockedPreviewSeconds: input.defaults.lockedPreviewSeconds,
     contentRatingOverride: input.defaults.contentRatingOverride,

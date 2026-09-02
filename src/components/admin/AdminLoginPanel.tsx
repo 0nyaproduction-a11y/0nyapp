@@ -14,7 +14,7 @@ export function AdminLoginPanel({ redirectTo, errorMessage }: AdminLoginPanelPro
   const [forgot, setForgot] = useState(false);
 
   if (forgot) {
-    return <AdminForgotPassword />;
+    return <AdminForgotPassword onBackToSignIn={() => setForgot(false)} />;
   }
 
   return (

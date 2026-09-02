@@ -2,6 +2,7 @@ import { CommonActions } from "@react-navigation/native";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
+import { consumeAuthReturnIntent, resolveReturnRoutes } from "../lib/authReturnIntentStorage";
 import type { RootStackScreenProps } from "../navigation/types";
 import { borders, colors, radii } from "../theme/tokens";
 
@@ -38,12 +39,13 @@ export function AgeDeclarationScreen({ navigation }: Props) {
     });
   }
 
-  function handleContinue() {
+  async function handleContinue() {
+    const intent = await consumeAuthReturnIntent();
+
     navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: "MainTabs", params: { screen: "Home" } }],
-      }),
+      CommonActions.reset(
+        resolveReturnRoutes(intent ?? { kind: "home" }),
+      ),
     );
   }
 

@@ -1,9 +1,10 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { StyleSheet, View } from "react-native";
+import { Keyboard, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ExploreScreen } from "../screens/ExploreScreen";
 import { HomeScreen } from "../screens/HomeScreen";
-import { borders, colors, typography } from "../theme/tokens";
+import { borders, colors } from "../theme/tokens";
+import { useAppLanguage } from "../lib/appLanguage";
 import { ProfileStackNavigator } from "./ProfileStack";
 import type { MainTabParamList } from "./types";
 
@@ -11,6 +12,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export function MainTabsNavigator() {
   const insets = useSafeAreaInsets();
+  const { t, typography } = useAppLanguage();
 
   return (
     <Tab.Navigator
@@ -18,7 +20,10 @@ export function MainTabsNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: styles.label,
+        tabBarLabelStyle: {
+          ...typography.navLabel,
+          textTransform: "none",
+        },
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: borders.color,
@@ -35,13 +40,20 @@ export function MainTabsNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
+          tabBarLabel: t("nav.home", "Home"),
           tabBarIcon: ({ color }) => <HomeTabIcon color={color} />,
         }}
       />
       <Tab.Screen
         name="Explore"
         component={ExploreScreen}
+        listeners={{
+          // Explore owns a TextInput; leaving the tab with the keyboard open
+          // must not leak it into the next tab (e.g. Home).
+          blur: () => Keyboard.dismiss(),
+        }}
         options={{
+          tabBarLabel: t("nav.explore", "Explore"),
           tabBarIcon: ({ color }) => <ExploreTabIcon color={color} />,
         }}
       />
@@ -49,6 +61,7 @@ export function MainTabsNavigator() {
         name="Profile"
         component={ProfileStackNavigator}
         options={{
+          tabBarLabel: t("nav.profile", "Profile"),
           tabBarIcon: ({ color }) => <ProfileTabIcon color={color} />,
         }}
       />
@@ -85,10 +98,6 @@ function ProfileTabIcon({ color }: { color: string }) {
 }
 
 const styles = StyleSheet.create({
-  label: {
-    ...typography.navLabel,
-    textTransform: "none",
-  },
   iconWrap: {
     marginTop: 2,
     marginBottom: 0,

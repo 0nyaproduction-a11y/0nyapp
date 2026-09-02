@@ -9,6 +9,8 @@ import {
 import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
 import {
   EPISODE_STATUSES,
+  MAX_REWARDED_REQUIRED_COMPLETIONS,
+  MIN_REWARDED_REQUIRED_COMPLETIONS,
   REWARDED_ACCESS_MODES,
   type SeriesRow,
   type EpisodeRow,
@@ -37,6 +39,7 @@ export type EpisodeInput = {
   coinUnlockEnabled: boolean;
   rewardedUnlockEnabled: boolean;
   rewardedAccessMode: RewardedAccessMode;
+  requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
   contentRatingOverride: ContentRating | null;
@@ -114,8 +117,19 @@ export function validateEpisodeInput(input: EpisodeInput): EpisodeValidationErro
     errors.push({ field: "coinPrice", message: "Coin price must be greater than zero when coin unlock is enabled." });
   }
 
-  if (!REWARDED_ACCESS_MODES.includes(input.rewardedAccessMode)) {
+  if (!(REWARDED_ACCESS_MODES as readonly RewardedAccessMode[]).includes(input.rewardedAccessMode)) {
     errors.push({ field: "rewardedAccessMode", message: "Unsupported rewarded access mode." });
+  }
+
+  if (
+    !Number.isInteger(input.requiredRewardedCompletions) ||
+    input.requiredRewardedCompletions < MIN_REWARDED_REQUIRED_COMPLETIONS ||
+    input.requiredRewardedCompletions > MAX_REWARDED_REQUIRED_COMPLETIONS
+  ) {
+    errors.push({
+      field: "requiredRewardedCompletions",
+      message: `Rewarded ads required must be between ${MIN_REWARDED_REQUIRED_COMPLETIONS} and ${MAX_REWARDED_REQUIRED_COMPLETIONS}.`,
+    });
   }
 
   if (
@@ -217,6 +231,7 @@ export async function createEpisode(
       coin_unlock_enabled: input.coinUnlockEnabled,
       rewarded_unlock_enabled: input.rewardedUnlockEnabled,
       rewarded_access_mode: input.rewardedAccessMode,
+      required_rewarded_completions: input.requiredRewardedCompletions,
       plus_access: input.plusAccess,
       locked_preview_seconds: input.lockedPreviewSeconds,
       content_rating_override: input.contentRatingOverride,
@@ -260,6 +275,7 @@ export async function updateEpisode(id: string, input: EpisodeInput): Promise<Ep
       coin_unlock_enabled: input.coinUnlockEnabled,
       rewarded_unlock_enabled: input.rewardedUnlockEnabled,
       rewarded_access_mode: input.rewardedAccessMode,
+      required_rewarded_completions: input.requiredRewardedCompletions,
       plus_access: input.plusAccess,
       locked_preview_seconds: input.lockedPreviewSeconds,
       content_rating_override: input.contentRatingOverride,

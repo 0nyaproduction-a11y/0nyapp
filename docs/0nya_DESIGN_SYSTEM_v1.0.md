@@ -64,6 +64,42 @@ The content is the hero.
 
 ---
 
+# 1.1 QUIET CINEMA DIRECTION
+
+Approved consumer visual direction:
+
+> Artwork and video carry emotion. Typography carries hierarchy. Teal carries
+> interaction. Everything else stays quiet.
+
+0nya should feel cinematic, intimate, premium, editorial, restrained,
+mobile-first, and content-dominant — not gaming, not Reels/TikTok, not neon,
+not dashboard-heavy, not badge-heavy, not sales-heavy.
+
+Locked visual decisions:
+
+- Consumer artwork is 9:16 everywhere (Home, Continue Watching, Explore, Search,
+  Series, Related, resume). Do not use 2:3 or 16:9 for consumer posters.
+- Continue Watching stays 9:16 and is differentiated by progress, resume context,
+  and section context. Never reintroduce Watch History as a screen.
+- Typography direction (English/Latin PRIMARY): target family **0nya Sans**
+  (researched as based on Plus Jakarta Sans, SIL Open Font License 1.1; target
+  weights 400/500/600). This is an APPROVED DIRECTION only — NOT yet implemented
+  or visually locked. Facelio is NO LONGER the consumer-UI implementation path.
+  Hindi/Devanagari requires a separate selected companion typeface (TBD).
+- Metadata is minimal: artwork → title → only useful supporting context.
+  Ratings/descriptors remain visible where required, but not as a routine
+  combined strip.
+- Surfaces are matte-black, flat, and spacing-based: avoid oversized bordered
+  dashboard cards, especially for Profile, Settings, Wallet, and Episode lists.
+- Color is locked to `#050505`, `#E8E4DA`, `#0DD1BC`, `#4DE5D2`. Teal is for
+  interaction/progress/active state only. Do not introduce an alternate player
+  teal such as `#00E5CC`. No neon glow.
+- Primary buttons target 48–52dp with accessible hit areas >=48dp. One dominant
+  action normally. Paywall methods are option rows/cards, not three equally
+  loud giant buttons.
+
+---
+
 # 2. DESIGN PRINCIPLES
 
 ## 2.1 Cinema first
@@ -128,6 +164,8 @@ Teal Highlight
 ```
 
 These are the locked brand foundation.
+
+Do not introduce an alternate player teal such as `#00E5CC`; `#0DD1BC` is the single brand teal. No neon glow.
 
 ---
 
@@ -216,19 +254,24 @@ This is directional, not a literal measured ratio.
 
 ## 6.1 Font strategy
 
-For Build 15:
+Approved direction (PRODUCT OWNER DECISION 2026-08-31; B04 experimental sub-gate):
 
-> Reuse the existing app font or native/system sans-serif stack unless an approved brand font is already bundled.
+- English/Latin PRIMARY target: **0nya Sans**, researched as based on Plus Jakarta Sans (SIL Open Font License 1.1). Target weights 400 / 500 / 600.
+- Hindi/Devanagari: deliberate Devanagari companion typeface that harmonizes with 0nya Sans — NOT yet selected/approved (TBD). Do NOT claim Plus Jakarta Sans contains Devanagari; system/Noto fallback is a technical safety net only, not the intended final Hindi typography.
+
+Implementation status:
+
+> 0nya Sans is an APPROVED DIRECTION only. It is NOT yet implemented, visually approved in Android, physically verified, or LOCKED. Do not document it as integrated. Facelio is NO LONGER the consumer-UI implementation path.
 
 Do not add a paid font.
 
 Do not add a new font dependency merely for visual polish.
 
-Recommended platform behavior:
+Current platform behavior (pre-implementation baseline):
 
 ```text
 Android:
-system / existing bundled UI font
+system / existing bundled UI font (0nya Sans pending B04 typography sub-gate)
 
 iOS:
 system / existing bundled UI font
@@ -237,13 +280,28 @@ Web:
 existing brand/UI stack
 ```
 
-If a dedicated brand font is later approved, update this document.
+When the dedicated brand font is implemented and visually locked, update this document.
+
+---
+
+# 6.2 WORDMARK CANDIDATE — FACELIO
+
+Facelio is a possible 0nya wordmark reference only.
+
+> WORDMARK CANDIDATE — ANDROID ASSET / LICENSING STATUS NOT VERIFIED. Facelio is NOT the consumer-UI typography implementation path (0nya Sans is the approved English direction).
+
+- Facelio is NOT currently used by the Android app.
+- It is NOT specified for body or UI text.
+- No Facelio font asset is bundled, copied, converted, or installed.
+- Android consumer typography direction is 0nya Sans (English/Latin, pending B04 typography sub-gate); Hindi/Devanagari companion remains TBD.
 
 ---
 
 # 7. TYPOGRAPHY SCALE
 
 Use a small, consistent scale.
+
+Target a restrained semantic scale close to: Display 30–34, H1 26–28, Section 18–20, Card title 14–15, Body 15–16, Button 14–15, Supporting metadata 11–12. Prefer weights 400–600; avoid widespread 700/800.
 
 Conceptual tokens:
 
@@ -275,14 +333,21 @@ Avoid all caps except tiny format labels.
 
 ## Metadata
 
-Examples:
+Do not present a routine combined metadata strip (for example
+`MICRO DRAMA • Hindi • U/A 13+` or `SHORT FILM • 32 min • Hindi`) as the
+standard card or detail treatment.
+
+Prefer:
 
 ```text
-MICRO DRAMA • Hindi • U/A 13+
-SHORT FILM • 14 min • Hindi
+artwork
+ -> title
+ -> only useful supporting context
 ```
 
-Use secondary/muted text.
+A quiet format label (MICRO DRAMA / SHORT FILM) may sit below the artwork in
+muted text. Compliance ratings and descriptors must remain separately visible
+where required by policy, but not as part of a combined promotional strip.
 
 ## Truncation
 
@@ -425,8 +490,12 @@ No large soft teal halo.
 Recommended ratio:
 
 ```text
-2:3
+9:16
 ```
+
+This is the universal consumer artwork ratio for 0nya: Home, Continue
+Watching, Explore, Search, Micro Dramas, Short Films, Series artwork, Related
+content, and resume cards.
 
 Use for:
 
@@ -437,6 +506,8 @@ Explore grid
 Home rows
 Related content
 ```
+
+Do not use 2:3 or other portrait ratios for consumer posters.
 
 ## Continue Watching
 
@@ -452,19 +523,15 @@ This distinguishes resume content from standard discovery posters by source, pro
 
 No autoplay or moving preview in MVP.
 
-## Hero
+## Spotlight (Multi-Spotlight)
 
-Recommended mobile ratio:
+The Home Spotlight uses the same universal consumer artwork ratio as the rest of Home:
 
 ```text
-16:9 to approximately 1.6:1
+9:16
 ```
 
-Allow artwork bleed and text-safe area.
-
-Do not crop faces aggressively.
-
-Use CMS-supplied artwork where possible.
+The Spotlight is a CMS-controlled horizontal poster rail of strict 9:16 posters with manual swipe only and a real next-item peek. It is editorial content, not a widescreen banner; keep it quiet, cinematic, and content-dominant. Do not crop faces aggressively. Use CMS-supplied artwork where possible. No auto-rotation, no dots, no arrows, no timer, no parallax, no decorative motion.
 
 ---
 
@@ -493,7 +560,7 @@ Use for one dominant action.
 Examples:
 
 ```text
-Watch Now
+Watch
 Continue
 Unlock with 9 Coins
 Send 20 Coins
@@ -700,7 +767,7 @@ all at once.
 Home hierarchy:
 
 ```text
-Hero
+Multi-Spotlight
 Continue Watching / Start Here
 Editorial rows
 Bottom nav
@@ -726,32 +793,29 @@ depending device width.
 
 This visually communicates horizontal scrolling.
 
+## Authenticated Home wallet affordance
+
+Registered Free and 0nya Plus users must have a clear, restrained Home wallet affordance (top area) that opens **C01 Wallet**. Guests must not see a misleading owned wallet balance/state. Keep monetization contextual; do not overload the Home header or turn Home into a storefront. (Android implementation belongs to a later UI batch.)
+
 ---
 
-# 22. FEATURED HERO
+# 22. MULTI-SPOTLIGHT
+
+The Home editorial stage is **Multi-Spotlight**, not a single Featured Hero.
+
+Document:
+
+- strict 9:16 posters
+- horizontal manual swipe only
+- real next-item peek (the actual next ordered CMS item)
+- active footer with optional canonical title (CMS `showTitle`)
+- compact **Watch** CTA
+- no Info button inside Spotlight
+- no Spotlight Resume (Continue Watching owns Resume/progress)
+- no auto carousel / no decorative card / press / mount motion
+- no `catalog[0]` fallback; ordered real CMS/API items only
 
 Hero should feel cinematic, not like an ad banner.
-
-Include:
-
-```text
-artwork
-title
-very short metadata/hook
-Watch/Resume
-Info
-```
-
-Do not include:
-
-```text
-coin price
-multiple sales badges
-subscription banner
-large rating explanation
-```
-
-Hero CTA should respect actual content flow.
 
 ---
 
@@ -765,6 +829,18 @@ small title
 episode/resume metadata
 thin teal progress bar 3–4px
 ```
+
+When no resume history exists for the viewer, do not show an empty row. Keep the
+Continue Watching section heading only if the surface expects it, and show the
+compact new-user copy in place of cards:
+
+```text
+Start watching to continue here.
+```
+
+This copy is exact and must not be replaced with a Watch History screen or a
+reintroduced history label. The underlying progress/resume infrastructure
+remains unchanged.
 
 Progress:
 
@@ -1114,6 +1190,39 @@ Wallet balance can be prominent, but restrained.
 
 # 36. WALLET — C01
 
+C01 Wallet is the primary consumer-facing Micro Drama wallet / access hub.
+For a locked Micro Drama episode, access methods (W02) are presented
+contextually through Wallet; Add Coins is offered contextually inside Wallet
+when the viewer's coin balance is insufficient.
+
+## Wallet visual sequencing rule
+
+```text
+FUNCTIONAL CONSOLIDATION FIRST
+   -> stabilize Micro Drama access journey through Wallet
+   -> verify Coin / Rewarded / Plus / Add Coins / exact return-context
+VISUAL REDESIGN SECOND
+   -> final C01 Wallet UI/UX redesign only after functional consolidation is stable
+```
+
+The CURRENT C01 Wallet UI is **NOT FINAL VISUAL AUTHORITY**. Do not visually
+redesign it during the functional consolidation pass. Do not invent the final
+detailed Wallet layout until functional consolidation is complete.
+
+## Wallet final visual principles (Quiet Cinema)
+
+When the final Wallet visual redesign runs under B04, it must follow Quiet
+Cinema:
+
+- flat hierarchy (no oversized bordered dashboard cards)
+- restrained surfaces
+- strong balance readability
+- clean ledger / activity presentation
+- no aggressive commerce treatment
+- no gamified coin styling, no confetti, no sparkles
+
+## Existing Wallet content structure (unchanged by this pass)
+
 Hierarchy:
 
 ```text
@@ -1393,7 +1502,9 @@ dividers
 account status
 ```
 
-Avoid dashboard cards everywhere.
+Avoid dashboard cards everywhere. The same flat-list principle applies to
+Settings, Wallet, and Episode lists: spacing-based grouping, subtle dividers,
+and restrained borders rather than oversized bordered cards.
 
 Account state should be immediately clear:
 
@@ -2351,6 +2462,23 @@ clear actions
 quiet motion
 cinema first
 ```
+
+---
+
+# 86. VISUAL SIGN-OFF & FINAL ACCEPTANCE WORKFLOW
+
+All visual sign-offs and design refinements must strictly follow the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+```
+SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT LOOP (to tiniest detail) -> PHYSICAL ONEPLUS FINAL CHECK -> LOCK / VERIFIED COMPLETE
+```
+
+- **Emulator Screenshots:** Captured from emulator for proposed candidate states.
+- **Product Owner + ChatGPT Review:** Mandatory visual refinement gate covering typography, hierarchy, spacing, alignment, margins, safe areas, geometry, image crop, icons, copy, buttons, visual balance, states, and CMS-fed presentation down to the smallest detail.
+- **Physical OnePlus Check:** Hardware validation on real device (OnePlus 13R) occurs only after visual candidate approval.
+- No AI coding or QA agent has authority to self-approve visual compliance or design completion.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
 
 ---
 

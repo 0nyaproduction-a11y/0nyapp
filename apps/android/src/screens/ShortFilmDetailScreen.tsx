@@ -20,7 +20,8 @@ import { resolveShortFilmArtwork } from "../lib/shortFilmArtwork";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm, ShortFilmResponse } from "../types/api";
 import type { ParentalControlState } from "../lib/parentalControls";
-import { colors, borders } from "../theme/tokens";
+import { colors, borders, typography } from "../theme/tokens";
+import { useAppLanguage } from "../lib/appLanguage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ShortFilm">;
 
@@ -43,6 +44,7 @@ function formatPublishYear(publishAt: string | null) {
 
 export function ShortFilmDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
+  const { t } = useAppLanguage();
   const accessToken = session?.access_token;
   const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
   const hasValidSlug = normalizedSlug.length > 0;
@@ -179,18 +181,22 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
   );
   const poster = resolveShortFilmArtwork(shortFilm?.heroImage, shortFilm?.poster);
   const posterUri = poster ?? "";
-  const canPlayFilm = Boolean(shortFilm && (__DEV__ || shortFilm.playbackReady));
+  const canPlayFilm = Boolean(
+    shortFilm && (__DEV__ || shortFilm.playbackReady || shortFilm.status === "published"),
+  );
   const hasResumeProgress = resumeAtSeconds !== null;
   const publishYear = shortFilm ? formatPublishYear(shortFilm.publishAt) : null;
   const metadata = shortFilm
-    ? ["Short Film", shortFilm.durationLabel, shortFilm.language, publishYear].filter(Boolean).join(" · ")
+    ? [t("shortfilm.type_badge", "Short Film"), shortFilm.durationLabel, shortFilm.language, publishYear]
+        .filter(Boolean)
+        .join(" · ")
     : "";
   const playButtonLabel = shortFilm?.ageVerificationRequired
     ? "Blocked"
     : canPlayFilm
       ? hasResumeProgress
-        ? "Resume"
-        : "Play"
+        ? t("shortfilm.resume", "Resume")
+        : t("shortfilm.watch_now", "Watch Now")
       : "Not ready";
 
   const handleShare = useCallback(() => {
@@ -320,7 +326,7 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
         <Text style={styles.metaLine}>{metadata}</Text>
         {classification ? <Text style={styles.ratingLine}>{classification}</Text> : null}
         {shortFilm.creatorReference ? (
-          <Text style={styles.creditLine}>Directed by {shortFilm.creatorReference}</Text>
+          <Text style={styles.creditLine}>{`${t("shortfilm.directed_by", "Directed by")} ${shortFilm.creatorReference}`}</Text>
         ) : null}
       </View>
 
@@ -343,17 +349,17 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
       </Button>
 
       <Pressable
-        accessibilityLabel="Share short film"
+        accessibilityLabel={t("shortfilm.share", "Share short film")}
         accessibilityRole="button"
         onPress={() => void handleShare()}
         style={({ pressed }) => [styles.shareButton, pressed && styles.shareButtonPressed]}
       >
-        <Text style={styles.shareButtonText}>Share</Text>
+        <Text style={styles.shareButtonText}>{t("shortfilm.share", "Share")}</Text>
       </Pressable>
 
       {relatedShortFilms.length > 0 ? (
         <View style={styles.relatedSection}>
-          <Text style={styles.sectionHeading}>Related Short Films</Text>
+          <Text style={styles.sectionHeading}>{t("shortfilm.more_like_this", "More like this")}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.relatedRow}>
               {relatedShortFilms.map((item) => {
@@ -440,28 +446,22 @@ posterImage: {
     padding: 16,
   },
   metaLine: {
+    ...typography.caption,
     color: colors.muted,
-    fontSize: 13,
     fontWeight: "600",
-    lineHeight: 18,
   },
   ratingLine: {
+    ...typography.caption,
     color: colors.text,
-    fontSize: 13,
     fontWeight: "700",
-    lineHeight: 18,
   },
   creditLine: {
+    ...typography.label,
     color: colors.muted,
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
   },
   synopsis: {
+    ...typography.body,
     color: colors.muted,
-    fontSize: 15,
-    fontWeight: "400",
-    lineHeight: 21,
   },
   shareButton: {
     alignSelf: "flex-start",
@@ -471,15 +471,13 @@ posterImage: {
     opacity: 0.75,
   },
   shareButtonText: {
+    ...typography.label,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
     letterSpacing: 0.2,
   },
   sectionHeading: {
+    ...typography.h3,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
     letterSpacing: 0.2,
   },
   relatedSection: {
@@ -516,15 +514,12 @@ posterImage: {
     padding: 12,
   },
   relatedPosterTitle: {
+    ...typography.h3,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
     textAlign: "center",
   },
   relatedTitle: {
+    ...typography.homeCardTitle,
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
   },
 });

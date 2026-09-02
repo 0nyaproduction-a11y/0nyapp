@@ -47,6 +47,30 @@ export function buildShortFilmShareMessage(title: string, slug: string) {
   return shareUrl ? `Watch on 0nya: ${title}\n${shareUrl}` : title;
 }
 
+export function buildPrivacyUrl() {
+  return buildCanonicalUrl("/privacy");
+}
+
+export function buildTermsUrl() {
+  return buildCanonicalUrl("/terms");
+}
+
+export function buildHelpUrl() {
+  return buildCanonicalUrl("/help");
+}
+
+export function buildGrievanceUrl() {
+  return buildCanonicalUrl("/grievance");
+}
+
+export function buildReportContentUrl() {
+  return buildCanonicalUrl("/report-content");
+}
+
+export function buildDeleteAccountUrl() {
+  return buildCanonicalUrl("/delete-account");
+}
+
 export function getAndroidLinkingPrefixes() {
   const baseUrl = getCanonicalBaseUrl();
 

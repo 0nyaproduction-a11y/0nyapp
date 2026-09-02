@@ -12,4 +12,6 @@ export type RewardedAdAttemptResponse = {
   customData: string | null;
   expiresAt: string | null;
   status: RewardedAdAttemptStatus;
+  verifiedProgress: number | null;
+  requiredCompletions: number | null;
 };

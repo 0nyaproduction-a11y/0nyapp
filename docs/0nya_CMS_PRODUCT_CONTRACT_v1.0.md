@@ -198,18 +198,29 @@ If coin unlock is disabled, coin price should not be shown to the viewer.
 
 ```text
 rewarded_unlock_enabled = true
-rewarded_access_mode = permanent | session
+required_rewarded_completions = 1 | 2   (backend/CMS controlled; default 1)
+rewarded_access_mode = permanent        (launch: permanent only)
 ```
+
+> Launch rule: `rewarded_access_mode` is **permanent only**. `session` is unsupported for launch and must not be configured/published. The operational CMS editor no longer offers `session`, and `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`. Legacy DB CHECK values permitting `session` are a known config trap (tracked for B03) and must not be presented as a valid current editorial option.
+
+Required completions:
+
+- 1: explicit tap -> ad -> verified -> permanent entitlement.
+- 2: explicit tap -> Ad 1 -> verified -> 1/2 state -> viewer explicitly taps again -> Ad 2 -> verified -> 2/2 -> one permanent entitlement. Ad 2 is never auto-launched.
 
 This means:
 
 > Viewer may explicitly choose a rewarded ad to unlock this episode.
-> Verified completion grants access according to rewarded_access_mode
-> (permanent ownership, or session-only access).
+> Each ad must be explicitly chosen and server-verified; verified completion grants a **permanent** episode entitlement only after the required completion count is reached.
 
 It does **not** mean:
 
 > Insert an ad into normal micro-drama playback.
+> Convert rewarded ads into wallet coins.
+> Grant entitlement from a client timer / on-close assumption.
+
+Validation: CMS must reject an unsupported `rewarded_access_mode` (any value other than `permanent`) at publish time; `required_rewarded_completions` must be a valid integer in range 1–2.
 
 ### Plus
 
@@ -482,7 +493,7 @@ items[]
 Supported initial row concepts:
 
 ```text
-Featured Hero
+Multi-Spotlight (see §15A)
 Start Here
 Continue Watching (system-generated)
 Recommended / Because You Watched (system-generated if available)
@@ -497,7 +508,9 @@ Continue Watching should remain system/history-driven rather than manually curat
 
 ---
 
-# 14. FEATURED HERO
+# 14. FEATURED HERO (SUPERSEDED — see §15A Multi-Spotlight)
+
+> SUPERSEDED. The approved current Home editorial stage is **Multi-Spotlight** (§15A). The single Featured Hero model described below is historical and must not be used as the current product/CMS contract. There must be exactly one authoritative Home editorial stage: Multi-Spotlight.
 
 CMS/editorial should support selecting hero content.
 
@@ -539,6 +552,44 @@ sort_order
 ```
 
 The threshold deciding whether H01 or H02 is shown may be backend/config-controlled.
+
+---
+
+# 15A. HOME SPOTLIGHT STAGE (MULTI-ITEM)
+
+The Home Spotlight is a **CMS-controlled horizontal editorial stage**, not a single hardcoded hero.
+
+Proven implementation (migration `026_home_row_items_show_title`):
+
+```text
+home_rows (row_role = 'spotlight')
+  -> exactly ONE spotlight row (enforced by unique partial index)
+  -> enabled flag controls whether the stage is shown to consumers
+
+home_row_items (row_id = spotlight row)
+  -> N items, ORDERED by sort_order ASC
+  -> each item references ONE canonical content record:
+       series_id   (content_type = 'series')
+       short_film_id (content_type = 'short_film')
+  -> mixed Series + Short Film content is allowed
+  -> show_title boolean NOT NULL DEFAULT true
+       CMS/editorial authority over whether Android displays the
+       canonical title separately from the 9:16 artwork.
+       The client must NOT infer this from poster contents.
+```
+
+Rules:
+
+- Spotlight may contain ONE OR MORE real published content items.
+- Each item has independent CMS ordering (`sort_order`).
+- Each item reuses existing 9:16 artwork; no new hero artwork model is added.
+- Title visibility is per-item and CMS-controlled via `show_title`.
+- Items are manually swiped in Android; the stage never auto-rotates and never fabricates content.
+- The same canonical content item may NOT be added twice to Spotlight (duplicate prevention enforced in `addHomeRowItem`/`addSpotlightItem`).
+- Only published, valid canonical content is consumer-visible.
+- CMS must support: add, remove, Move Up, Move Down, Show-title ON/OFF per item, Series, Short Film, mixed content, published-only selection, and Spotlight enabled/disabled.
+
+Editorial membership and ordering are CMS data; the migration must not seed content or hardcode content UUIDs.
 
 ---
 
@@ -989,3 +1040,63 @@ If instructions conflict:
 **0nya / शून्य**
 
 **CMS PRODUCT CONTRACT v1.0**
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+# 30. CMS FINAL ACCEPTANCE SEQUENCE
+
+CMS feature and configuration acceptance is governed strictly by the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+```
+CMS SOURCE / CONFIG -> DEPLOYED QA BACKEND / API -> ACTUAL CMS WEBSITE RUNTIME CHECK -> SCREENSHOTS / EVIDENCE -> PRODUCT OWNER + CHATGPT REVIEW -> PRODUCT OWNER HANDS-ON CMS WEBSITE CHECK -> LOCK / VERIFIED COMPLETE
+```
+
+- **Deployed QA API:** Verified against actual Cloud Run QA API responses, persistence, ordering, and metadata.
+- **CMS Website Runtime:** Real UI/controls/save/refresh verified on deployed CMS website.
+- **Owner + ChatGPT Review:** Screenshots/evidence reviewed by Product Owner + ChatGPT.
+- **Product Owner Hands-on Check:** Final practical verification is performed directly by the Product Owner logging into the deployed CMS website. Agents must never fabricate this human check.
+- **CMS -> App Integration:** CMS lock does NOT automatically lock consumer App rendering; consumer UI must pass its own `EMULATOR -> SCREENSHOTS -> OWNER+CHATGPT REVIEW -> REFINEMENT -> ONEPLUS -> LOCK` sequence.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*

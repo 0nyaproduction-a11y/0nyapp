@@ -23,7 +23,8 @@ import { useAuth } from "../lib/authContext";
 import { findStartEpisode } from "../lib/seriesPlayback";
 import type { ExploreFormat, MainTabScreenProps } from "../navigation/types";
 import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
-import { borders, colors } from "../theme/tokens";
+import { borders, colors, typography } from "../theme/tokens";
+import { useAppLanguage } from "../lib/appLanguage";
 
 type Props = MainTabScreenProps<"Explore">;
 
@@ -41,8 +42,20 @@ function hasValidPoster(poster?: string) {
   return typeof poster === "string" && poster.trim().length > 0;
 }
 
+function matchesMicroDramaQuery(series: ApiSeries, normalizedQuery: string) {
+  return (
+    series.title.toLowerCase().includes(normalizedQuery) ||
+    (series.genre ?? "").toLowerCase().includes(normalizedQuery)
+  );
+}
+
+function matchesShortFilmQuery(item: ApiShortFilm, normalizedQuery: string) {
+  return item.title.toLowerCase().includes(normalizedQuery);
+}
+
 export function ExploreScreen({ navigation }: Props) {
   const { session } = useAuth();
+  const { t } = useAppLanguage();
   const accessToken = session?.access_token;
   const { width } = useWindowDimensions();
   const [catalog, setCatalog] = useState<ApiSeries[]>([]);
@@ -189,6 +202,23 @@ export function ExploreScreen({ navigation }: Props) {
     return selectedFormat === "short-films" || selectedFormat === "all" ? shortFilms : [];
   }, [selectedFormat, shortFilms]);
 
+  const hasQuery = query.trim().length > 0;
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredCatalog = useMemo(() => {
+    return visibleCatalog.filter((series) => {
+      if (!hasQuery) return true;
+      return matchesMicroDramaQuery(series, normalizedQuery);
+    });
+  }, [hasQuery, normalizedQuery, visibleCatalog]);
+
+  const filteredShortFilms = useMemo(() => {
+    return visibleShortFilms.filter((film) => {
+      if (!hasQuery) return true;
+      return matchesShortFilmQuery(film, normalizedQuery);
+    });
+  }, [hasQuery, normalizedQuery, visibleShortFilms]);
+
   const columns = width < NARROW_WIDTH_BREAKPOINT ? 2 : 3;
   const cardWidth =
     (width - GRID_HORIZONTAL_PADDING * 2 - GRID_GAP * (columns - 1)) / columns;
@@ -301,7 +331,7 @@ export function ExploreScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <Text style={styles.screenTitle}>Explore</Text>
+      <Text style={styles.screenTitle}>{t("nav.explore", "Explore")}</Text>
 
       <View style={styles.searchRow}>
         <Text style={styles.searchIcon}>{"\u26B2"}</Text>
@@ -313,7 +343,7 @@ export function ExploreScreen({ navigation }: Props) {
           onChangeText={setQuery}
           onFocus={() => setIsSearchFocused(true)}
           onSubmitEditing={submitSearch}
-          placeholder="Search 0nya"
+          placeholder={t("explore.search_placeholder", "Search series, films, genres...")}
           placeholderTextColor={colors.muted}
           returnKeyType="search"
           style={styles.searchInput}
@@ -337,7 +367,7 @@ export function ExploreScreen({ navigation }: Props) {
       {(isSearchFocused || query.trim().length > 0) && recentSearches.length > 0 ? (
         <View style={styles.recentWrap}>
           <View style={styles.recentHeader}>
-            <Text style={styles.sectionTitle}>Recent searches</Text>
+            <Text style={styles.sectionTitle}>{t("explore.recent_searches", "Recent searches")}</Text>
             <Pressable
               accessibilityLabel="Clear recent searches"
               accessibilityRole="button"
@@ -365,11 +395,17 @@ export function ExploreScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={styles.filterRow} horizontal showsHorizontalScrollIndicator={false}>
         {formatOptions.map((option) => {
           const isSelected = option.value === selectedFormat;
+          const displayLabel =
+            option.value === "all"
+              ? t("explore.all", "All")
+              : option.value === "micro-dramas"
+                ? t("explore.micro_dramas", "Micro Dramas")
+                : t("explore.short_films", "Short Films");
 
           return (
             <Pressable
               key={option.value}
-              accessibilityLabel={`Filter by ${option.label}`}
+              accessibilityLabel={`Filter by ${displayLabel}`}
               accessibilityRole="button"
               onPress={() => {
                 setSelectedFormat(option.value);
@@ -380,7 +416,7 @@ export function ExploreScreen({ navigation }: Props) {
               style={[styles.filterChip, isSelected && styles.filterChipSelected]}
             >
               <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                {option.label}
+                {displayLabel}
               </Text>
             </Pressable>
           );
@@ -409,20 +445,27 @@ export function ExploreScreen({ navigation }: Props) {
         </ScrollView>
       ) : null}
 
-      <Text style={styles.sectionTitle}>Discover</Text>
+      {!hasQuery ? <Text style={styles.sectionTitle}>{t("explore.discover", "Discover")}</Text> : null}
 
-      {visibleCatalog.length > 0 || visibleShortFilms.length > 0 ? (
+      {filteredCatalog.length > 0 || filteredShortFilms.length > 0 ? (
         <View style={styles.grid}>
-          {visibleCatalog.map((series) => {
+          {filteredCatalog.map((series) => {
             const isBusy = resolvingKey === `series-${series.slug}`;
 
             return (
               <View key={series.slug} style={{ width: cardWidth }}>
                 <Pressable
-                  accessibilityLabel={`Play or resume ${series.title}`}
+                  accessibilityLabel={`Open details for ${series.title}`}
                   accessibilityRole="button"
                   disabled={isBusy}
-                  onPress={() => void openSeriesPlayback(series)}
+                  onPress={() => {
+                    perfMark("CONTENT_TAP", {
+                      content_type: "series",
+                      series_slug: series.slug,
+                      source: "EXPLORE",
+                    });
+                    navigation.navigate("Series", { slug: series.slug });
+                  }}
                   style={({ pressed }) => [
                     styles.cardMainPressable,
                     { width: cardWidth },
@@ -438,7 +481,7 @@ export function ExploreScreen({ navigation }: Props) {
                         alt=""
                         source={{ uri: resolveMediaUrl(series.poster)! }}
                         style={styles.coverImage}
-                        resizeMode="contain"
+                        resizeMode="cover"
                       />
                     ) : (
                       <View style={styles.coverFallback}>
@@ -451,13 +494,13 @@ export function ExploreScreen({ navigation }: Props) {
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {series.title}
                   </Text>
-                  <Text style={styles.cardMeta}>Micro Drama</Text>
+                  <Text style={styles.cardMeta}>{t("explore.micro_drama_tag", "Micro Drama")}</Text>
                 </Pressable>
               </View>
             );
           })}
 
-          {visibleShortFilms.map((shortFilm) => {
+          {filteredShortFilms.map((shortFilm) => {
             const isBusy = resolvingKey === `short-${shortFilm.slug}`;
 
             return (
@@ -489,7 +532,7 @@ export function ExploreScreen({ navigation }: Props) {
                         alt=""
                         source={{ uri: resolveMediaUrl(shortFilm.poster)! }}
                         style={styles.coverImage}
-                        resizeMode="contain"
+                        resizeMode="cover"
                       />
                     ) : (
                       <View style={styles.coverFallback}>
@@ -502,13 +545,13 @@ export function ExploreScreen({ navigation }: Props) {
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {shortFilm.title}
                   </Text>
-                  <Text style={styles.cardMeta}>Short Film</Text>
+                  <Text style={styles.cardMeta}>{t("explore.short_film_tag", "Short Film")}</Text>
                 </Pressable>
               </View>
             );
           })}
         </View>
-      ) : (
+      ) : hasQuery ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>No results</Text>
           <Text style={styles.emptyBody}>Try another title or genre.</Text>
@@ -524,7 +567,7 @@ export function ExploreScreen({ navigation }: Props) {
             <Text style={styles.clearEmptyButtonText}>Clear search</Text>
           </Pressable>
         </View>
-      )}
+      ) : null}
     </Screen>
   );
 }
@@ -532,9 +575,8 @@ export function ExploreScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screenTitle: {
     color: colors.text,
-    fontSize: 28,
-    fontWeight: "800",
-    marginBottom: 8,
+    ...typography.h2,
+    marginBottom: 4,
   },
   searchRow: {
     alignItems: "center",
@@ -612,7 +654,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(232, 228, 218, 0.12)",
     borderWidth: 1,
     borderRadius: 8,
-    minHeight: 36,
+    minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 16,
   },
@@ -630,9 +672,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "700",
-    marginTop: 12,
+    ...typography.h3,
+    marginTop: 8,
     marginBottom: 4,
   },
   cardMainPressable: {
@@ -662,20 +703,16 @@ const styles = StyleSheet.create({
   },
   coverTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "700",
+    ...typography.h3,
     textAlign: "center",
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
+    ...typography.homeCardTitle,
   },
   cardMeta: {
     color: colors.muted,
-    fontSize: 10,
-    fontWeight: "600",
+    ...typography.micro,
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
@@ -686,23 +723,22 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    ...typography.body,
+    fontWeight: "600",
   },
   emptyBody: {
     color: colors.muted,
-    fontSize: 14,
+    ...typography.label,
   },
   clearEmptyButton: {
-    alignItems: "center",
     alignSelf: "flex-start",
-    borderColor: borders.color,
-    borderWidth: borders.width,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 0,
+    marginTop: 4,
   },
   clearEmptyButtonText: {
-    color: colors.text,
+    color: colors.accent,
+    ...typography.body,
     fontSize: 14,
     fontWeight: "600",
   },

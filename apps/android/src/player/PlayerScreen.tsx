@@ -3,13 +3,15 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { Session } from "@supabase/supabase-js";
 import { StatusBar } from "expo-status-bar";
 import { VideoView } from "expo-video";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TransientFeedback } from "../components/ui";
-import { getWallet } from "../lib/api";
+import { getPlayTogetherConfig, getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { perfMark, perfSetAutoNextPlaybackPending } from "../lib/perf";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
+import { usePlayTogetherRoom } from "../lib/usePlayTogetherRoom";
 import { EpisodeListSheet } from "./EpisodeListSheet";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerMoreSheet } from "./PlayerMoreSheet";
@@ -31,6 +33,7 @@ import {
 } from "../lib/subtitles";
 import { useAutoHideControls } from "./useAutoHideControls";
 import { usePlaybackController } from "./usePlaybackController";
+import { usePlayTogetherPlaybackSync, type PlayTogetherPlaybackTarget } from "./usePlayTogetherPlaybackSync";
 import { useWatchProgressSync } from "./useWatchProgressSync";
 import { getResumePositionSeconds } from "./resumePosition";
 import type { PlaybackContext, PlaybackEndedPayload, PlaybackMode } from "./types";
@@ -42,7 +45,16 @@ import type {
   ShortFilmChaiAvailability,
   WatchProgressItem,
 } from "../types/api";
+import type { PlayTogetherFeatureConfig } from "../types/playTogether";
 import type { PlaybackSource } from "./types";
+
+// PX01-D: Optional playback-sync scope. Supplied by the Play Together room ->
+// player navigation in a later milestone; absent (null) by default so the sync
+// adapter is inert and current playback flows are untouched.
+type PlayTogetherPlaybackScope = {
+  episodeId: string;
+  roomId: string;
+};
 
 type PlayerScreenProps = {
   context: PlaybackContext;
@@ -58,6 +70,7 @@ type PlayerScreenProps = {
   isProgressResolved?: boolean;
   initialSeekSeconds?: number | null;
   playbackMode?: PlaybackMode;
+  playTogether?: PlayTogetherPlaybackScope | null;
   previewSeconds?: number | null;
   savedProgress?: WatchProgressItem;
   session: Session | null;
@@ -149,6 +162,7 @@ export function PlayerScreen({
   onRefreshSource,
   initialSeekSeconds,
   playbackMode = "full",
+  playTogether,
   previewSeconds,
   savedProgress,
   session,
@@ -359,7 +373,80 @@ export function PlayerScreen({
   const { areControlsVisible, revealControls, toggleControls } = useAutoHideControls(
     controller.isPlaying,
   );
-  const { pause, play, seekBy, setPlaybackRate } = controller;
+  const { pause, play, seekBy, seekTo, setPlaybackRate } = controller;
+  // PX01-D: Play Together sync adapter (inert unless a room session is passed).
+  const playTogetherAccessToken = playTogether ? session?.access_token ?? null : null;
+  const playTogetherRoomId = playTogether?.roomId ?? null;
+  const { room: playTogetherRoom, refresh: refreshPlayTogetherRoom } = usePlayTogetherRoom(
+    playTogetherAccessToken,
+    playTogetherRoomId,
+  );
+  const [playTogetherFeatureConfig, setPlayTogetherFeatureConfig] = useState<PlayTogetherFeatureConfig | null>(null);
+
+  useEffect(() => {
+    if (!playTogether) {
+      setPlayTogetherFeatureConfig(null);
+      return undefined;
+    }
+
+    let active = true;
+
+    void getPlayTogetherConfig()
+      .then((config) => {
+        if (active) {
+          setPlayTogetherFeatureConfig(config);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPlayTogetherFeatureConfig(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [playTogether]);
+
+  const playTogetherTarget = useMemo<PlayTogetherPlaybackTarget>(
+    () => ({
+      currentTimeMs: Math.max(0, Math.round(controller.currentTime * 1000)),
+      durationMs:
+        Number.isFinite(controller.duration) && controller.duration > 0
+          ? Math.round(controller.duration * 1000)
+          : null,
+      isBuffering: controller.isBuffering,
+      isPlaying: controller.isPlaying,
+      playbackRate: controller.playbackRate,
+      pause,
+      play,
+      seekTo,
+      setPlaybackRate,
+    }),
+    [
+      controller.currentTime,
+      controller.duration,
+      controller.isBuffering,
+      controller.isPlaying,
+      controller.playbackRate,
+      pause,
+      play,
+      seekTo,
+      setPlaybackRate,
+    ],
+  );
+
+  const playTogetherSync = usePlayTogetherPlaybackSync({
+    accessToken: playTogetherAccessToken,
+    config: playTogetherFeatureConfig,
+    enabledByGate: playTogether !== null,
+    episodeId: playTogether?.episodeId ?? null,
+    myUserId: session?.user?.id ?? null,
+    refreshRoom: refreshPlayTogetherRoom,
+    room: playTogetherRoom,
+    roomId: playTogetherRoomId,
+    target: playTogetherTarget,
+  });
   const shouldUseSeamlessCover = shouldUseSeamlessAutoNextCover(context, autoplayNextEnabled);
   const shouldShowTransitionCover = (isTransitionRequested && shouldUseSeamlessCover) || isAutoAdvancing;
   const shouldSuppressCompletedOverlay =
@@ -577,13 +664,19 @@ export function PlayerScreen({
   ]);
 
   const handlePlayPause = useCallback(() => {
+    if (playTogetherSync.active) {
+      playTogetherSync.handlePlayPause();
+      revealControls();
+      return;
+    }
+
     if (controller.isPlaying) {
       void progressSync.saveNow();
     }
 
     controller.togglePlay();
     revealControls();
-  }, [controller, progressSync, revealControls]);
+  }, [controller, playTogetherSync, progressSync, revealControls]);
 
   const handleReplay = useCallback(() => {
     resetChaiPresentation();
@@ -596,10 +689,16 @@ export function PlayerScreen({
         position_seconds: Math.floor(seconds),
         source: "SCRUB",
       });
-      controller.seekTo(seconds);
+
+      if (playTogetherSync.active) {
+        playTogetherSync.handleSeekTo(seconds);
+      } else {
+        controller.seekTo(seconds);
+      }
+
       revealControls();
     },
-    [controller, revealControls],
+    [controller, playTogetherSync, revealControls],
   );
 
   const handleBack = useCallback(() => {
@@ -655,7 +754,10 @@ export function PlayerScreen({
     }
 
     if (!accessToken) {
-      navigation.navigate("SignIn");
+      await navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "chai", shortFilm, selectedAmount: selectedChaiAmount },
+      );
       return;
     }
 
@@ -894,7 +996,13 @@ export function PlayerScreen({
         seconds: SEEK_SECONDS,
         source: "DOUBLE_TAP",
       });
-      seekBy(side === "left" ? -SEEK_SECONDS : SEEK_SECONDS);
+
+      if (playTogetherSync.active) {
+        playTogetherSync.handleSeekBy(side === "left" ? -SEEK_SECONDS : SEEK_SECONDS);
+      } else {
+        seekBy(side === "left" ? -SEEK_SECONDS : SEEK_SECONDS);
+      }
+
       revealControls();
       lastTapRef.current = null;
       return;

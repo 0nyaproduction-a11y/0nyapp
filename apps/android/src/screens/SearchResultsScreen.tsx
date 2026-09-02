@@ -21,7 +21,7 @@ import { useAuth } from "../lib/authContext";
 import { findStartEpisode } from "../lib/seriesPlayback";
 import type { RootStackScreenProps, ExploreFormat } from "../navigation/types";
 import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
-import { borders, colors } from "../theme/tokens";
+import { borders, colors, typography } from "../theme/tokens";
 
 const ALL_GENRES_FILTER = "All";
 const GRID_HORIZONTAL_PADDING = 20;
@@ -258,7 +258,12 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
           disabled={isBusy}
           onPress={() => {
             if (isSeries) {
-              void openSeriesPlayback(item);
+              perfMark("CONTENT_TAP", {
+                content_type: "series",
+                series_slug: item.slug,
+                source: "SEARCH_RESULTS",
+              });
+              navigation.navigate("Series", { slug: item.slug });
               return;
             }
 
@@ -279,7 +284,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
                 alt=""
                 source={{ uri: resolveMediaUrl(item.poster)! }}
                 style={styles.posterImage}
-                resizeMode="contain"
+                resizeMode="cover"
               />
             ) : (
               <View style={styles.posterFallback}>
@@ -471,8 +476,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    ...typography.body,
+    fontWeight: "600",
   },
   searchRow: {
     alignItems: "center",
@@ -505,30 +510,31 @@ const styles = StyleSheet.create({
   filterChip: {
     borderColor: borders.color,
     borderWidth: borders.width,
-    minHeight: 44,
+    borderRadius: 8,
+    minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 14,
   },
   filterChipSelected: {
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
   },
   filterChipText: {
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "500",
+    ...typography.homeCardMeta,
   },
   filterChipTextSelected: {
     color: colors.accent,
   },
   sectionTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    color: colors.muted,
+    ...typography.caption,
+    fontWeight: "500",
   },
   sectionLabel: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
+    ...typography.caption,
+    fontWeight: "500",
   },
   grid: {
     flexDirection: "row",
@@ -543,6 +549,7 @@ const styles = StyleSheet.create({
   },
   posterWrap: {
     backgroundColor: colors.surface,
+    borderRadius: 8,
     overflow: "hidden",
   },
   posterImage: {
@@ -559,18 +566,17 @@ const styles = StyleSheet.create({
   },
   posterTitle: {
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "700",
+    ...typography.h3,
     textAlign: "center",
   },
   cardTitle: {
     color: colors.text,
-    fontSize: 14,
+    ...typography.label,
     fontWeight: "600",
   },
   cardMeta: {
     color: colors.muted,
-    fontSize: 12,
+    ...typography.caption,
   },
   emptyState: {
     gap: 12,
@@ -578,12 +584,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    ...typography.body,
+    fontWeight: "600",
   },
   emptyBody: {
     color: colors.muted,
-    fontSize: 14,
+    ...typography.label,
   },
   clearSearchLink: {
     alignSelf: "flex-start",
@@ -593,7 +599,7 @@ const styles = StyleSheet.create({
   },
   clearSearchText: {
     color: colors.accent,
-    fontSize: 14,
+    ...typography.label,
     fontWeight: "600",
   },
 });

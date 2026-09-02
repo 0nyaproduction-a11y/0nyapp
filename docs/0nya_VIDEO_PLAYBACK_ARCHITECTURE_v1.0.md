@@ -412,27 +412,29 @@ There is route and list data integration, but not a real playback queue with ful
 
 ## 7. Locked preview
 
-Status: MISSING
+Status: PARTIALLY IMPLEMENTED
+
+> **B00 note (2026-08-31):** The repository contains a locked preview path (preview source resolution + `locked_preview_seconds` handling) in the Android playback stack and a server-authoritative preview authorization endpoint. Earlier "MISSING" wording is superseded. Production preview-media provisioning remains unproven.
 
 Evidence:
 
 - `src/components/player/LockedEpisode.tsx`
 - `src/lib/entitlements.ts`
+- Android preview source resolution + `usePlaybackSource`/preview boundary
+- `src/app/api/v1/playback/preview` (server-authorizes locked preview playback)
 
 Current behavior:
 
 - The app renders a locked-content wall when a user is not entitled.
 - It offers unlock / login / plans options.
-- It includes a disabled button for “Watch ad to unlock.”
+- It includes a disabled button for "Watch ad to unlock."
 
-What is not present:
+What may still be partial (client presentation):
 
-- no preview playback state
-- no preview duration computation
-- no preview endpoint or `locked_preview_seconds` enforcement
-- no transition from preview to locked state
+- preview duration computation / transition from preview to locked state on some surfaces
+- production preview media availability
 
-The product Bible expects real preview behavior for some access models; this repository has no implementation of that lifecycle.
+The product Bible expects real preview behavior for some access models; the locked preview path now exists in the verified tree.
 
 ---
 
@@ -733,12 +735,15 @@ Evidence:
 
 ### 15.1 Playback URL protection
 
-Status: MISSING
+Status: IMPLEMENTED for server-side Mux signed playback authorization
+
+> **B00 note (2026-08-31):** `src/app/api/v1/playback` and `src/app/api/v1/playback/preview` server-authorize playback and return signed Mux HLS URLs; `src/lib/mux/index.ts` embeds a `max_resolution` claim in the signed JWT. Earlier "MISSING" wording is superseded. Production CDN hardening, CORS/origin controls, and full media provisioning remain unproven (see §36 of the Security doc).
 
 Evidence:
 
-- no signed URL implementation
-- no tokenized playback pipeline
+- `src/app/api/v1/playback/route.ts` (server-signed Mux playback URL)
+- `src/lib/mux/index.ts` (RS256 Mux playback signer)
+- `apps/android/src/player/usePlaybackSource.ts` (consumes the authorization endpoint)
 - no secure media access helper or backend route for playback authorization
 
 ### 15.2 Entitlement checks
@@ -797,6 +802,8 @@ This is a product access gate, not a fully secure streaming token system.
 
 This section compares the implemented player architecture to the Product Bible v3.0, the Master User Flow v1.1, and the all-screen wireframes.
 
+> **B00 note (2026-08-31):** Gaps 3, 4, 5, 6, and 7 below were written before the verified working-tree baseline and are superseded by the §3.3/§3.4/§3.6 signed-playback evidence, §7 locked preview, §8 Short Film playback, §9.1 rewarded handoff, and the Multi-Rewarded Unlock appendix. The Android app now has signed Mux playback, a locked preview path, Short Film playback, and rewarded unlock handoff. Remaining gaps are production provisioning (real Mux media, AdMob account/ad-unit, CDN hardening), not missing features. Treat the main body sections as authoritative.
+
 ### Gap 1 — Real micro-drama player instead of simulated web player
 
 - Existing behavior: `VerticalPlayer.tsx` is UI-only and simulates progress using timers; it does not use a real video element or streaming engine.
@@ -813,45 +820,44 @@ This section compares the implemented player architecture to the Product Bible v
 - Scope: Android / Backend
 - Severity: Critical
 
-### Gap 3 — No signed or private URL protection
+### Gap 3 — Signed / private URL protection (SUPERSEDED — see §3.3, §3.4, §3.6, §15.1)
 
-- Existing behavior: No secure media URL generation or token mechanism was found.
-- Required behavior: Playback URLs should be authorized server-side and protected by URL expiry / token / entitlement checks.
-- Affected files: none found; no playback URL helper exists in `src/lib/**` or Android source
+- Existing behavior: `src/app/api/v1/playback` and `/playback/preview` server-authorize playback and return signed Mux HLS URLs; `src/lib/mux/index.ts` embeds a `max_resolution` claim in a signed JWT. (Earlier "no secure media URL" wording is stale.)
+- Required behavior (remaining): production CDN hardening, CORS/origin controls, hotlink resistance, and full production media provisioning.
 - Scope: Backend / Shared / Android
-- Severity: Critical
+- Severity: High (production provisioning)
 
-### Gap 4 — Locked preview backend exists, client presentation still missing
+### Gap 4 — Locked preview client presentation (PARTIAL — see §7)
 
-- Existing behavior: the backend can provision and authorize secure preview clip assets, but `LockedEpisode.tsx` still does not render a real preview playback experience.
-- Required behavior: preview playback should be allowed for configured episodes, with a preview timer and state handoff after completion.
-- Affected files: `src/components/player/LockedEpisode.tsx`, `src/lib/entitlements.ts`
+- Existing behavior: the locked preview path (preview source resolution + `locked_preview_seconds` + server preview authorization) now exists in the Android playback stack; earlier "no preview" wording is stale.
+- Required behavior: complete client presentation with preview timer and clean handoff to the locked state on all surfaces; production preview-media availability.
+- Affected files: `src/components/player/LockedEpisode.tsx`, `src/lib/entitlements.ts`, Android preview source
 - Scope: Web / Shared / Backend
-- Severity: High
+- Severity: Medium
 
-### Gap 5 — No short-film playback flow
+### Gap 5 — Short-film playback flow (SUPERSEDED — see §8, §9.1)
 
-- Existing behavior: `ShortFilmPlaybackContext` exists in types, but no actual short-film screen or film player is implemented.
-- Required behavior: short films must have their own detail -> play flow with CMS-controlled ad insertion only for non-Plus users.
-- Affected files: `apps/android/src/player/types.ts`, no implemented short-film player files found
-- Scope: Web / Android / Shared
-- Severity: Critical
-
-### Gap 6 — No mid-roll / post-roll ad infrastructure
-
-- Existing behavior: no ad scheduler, ad break logic, or video ad insertion code exists.
-- Required behavior: short film playback must support CMS-defined mid-rolls and post-rolls only for non-Plus users, with no micro-drama ad insertion.
-- Affected files: no relevant files found in `src/**` or `apps/android/src/**`
+- Existing behavior: Android implements `ShortFilmDetailScreen`, `ShortFilmPlaybackScreen`, `ShortFilmEndScreen` with `expo-video` and signed playback authorization; earlier "no short-film screen" wording is stale.
+- Required behavior (remaining): production ad-roll integration (non-Plus CMS mid/post-roll) and full production media provisioning; web parity remains partial.
+- Affected files: `apps/android/src/screens/ShortFilm*.tsx`, `apps/android/src/player/*`
 - Scope: Web / Android / Backend
-- Severity: Critical
+- Severity: High (production ad provisioning)
 
-### Gap 7 — No rewarded-ad unlock flow in actual video path
+### Gap 6 — Mid-roll / post-roll ad infrastructure (EXTERNALLY BLOCKED — see §9.2, §9.3)
 
-- Existing behavior: disabled button labeled “Watch ad to unlock” in the lock screen.
-- Required behavior: rewarded ad unlock must be explicit, user-initiated, verified completion-based, and server-authorized.
-- Affected files: `src/components/player/LockedEpisode.tsx`
+- Existing behavior: Short Film ad behavior is CMS/backend controlled and Plus-suppressed; production AdMob ad-unit configuration remains externally blocked (earlier "no ad infrastructure" wording overstates the gap — CMS control + Android short-film ad path exist).
+- Required behavior: production non-Plus CMS mid/post-roll delivery proven end-to-end.
+- Affected files: CMS ad config, Android short-film ad path
+- Scope: Web / Android / Backend
+- Severity: High (production AdMob blocked)
+
+### Gap 7 — Rewarded-ad unlock flow in actual video path (SUPERSEDED — see §9.1)
+
+- Existing behavior: Android `EpisodeAccessOptionsScreen` creates rewarded attempts, loads/shows the rewarded ad, polls backend confirmation; `src/app/api/webhooks/admob/ssv` verifies and finalizes. Earlier "disabled button only" wording is stale.
+- Required behavior (remaining): production AdMob account/ad-unit configuration and real-device E2E.
+- Affected files: `apps/android/src/screens/EpisodeAccessOptionsScreen.tsx`, `src/app/api/v1/episodes/[episodeId]/rewarded`, `src/app/api/webhooks/admob/ssv`
 - Scope: Web / Shared / Backend
-- Severity: Critical
+- Severity: High (production AdMob blocked)
 
 ### Gap 8 — Subtitle content not yet uploaded for existing episodes (RESOLVED: client support; OPEN: media has no tracks)
 
@@ -931,3 +937,32 @@ The most important repository reality is this:
 - The repo implements signed Mux playback authorization and Android rewarded unlock/Short Film paths, while production ad configuration and web parity remain incomplete.
 
 This should be treated as a working foundation to extend, not as a completed build-ready video platform.
+
+---
+
+## Playback UI & Player Final Acceptance Authority
+
+Technical media/HLS or stream source verification alone cannot close player UX/UI deliverables. All video playback surfaces, player controls, locked previews, and short film end screens must follow the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+```
+SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT -> PHYSICAL ONEPLUS -> LOCK
+```
+
+Emulator player states and controls must receive visual candidate approval from Product Owner + ChatGPT before final validation of playback smoothness, touch responsiveness, orientation, and buffering on the physical OnePlus 13R.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
+
+---
+
+## B07 production playback hardening requirements
+
+Before production acceptance, measure authorization latency, source load, first
+frame, buffering, Auto-Next transition, network recovery, long-binge/memory
+stability, and subtitle/speed/resume continuity. Verify authorization timing,
+token expiry/`expiresAt`, long pause/background return, fresh authorization
+after expiry, preview tokens, and the server-enforced 720p Free / 1440p Plus
+ceiling with no development fallback.
+
+Production proof is real signed Mux -> Android `expo-video` -> physical-device
+evidence. Preserve `expo-video`; do not make dual-player pooling, custom ABR,
+an arbitrary Mux TTL, or an exact GOP value a requirement without evidence.

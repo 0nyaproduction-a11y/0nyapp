@@ -278,10 +278,10 @@ export function SeriesEpisodeManager({ addEpisodeHref, bulkUploadHref, rows }: S
 
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={() => openEpisode(row.episode.id)}>
-                      Configure
+                      Configure access
                     </Button>
                     <ButtonLink href={row.fullPageHref} variant="ghost">
-                      Open full page
+                      Full episode editor
                     </ButtonLink>
                   </div>
                 </div>
@@ -321,7 +321,7 @@ export function SeriesEpisodeManager({ addEpisodeHref, bulkUploadHref, rows }: S
           >
             <div className="flex items-start justify-between gap-4 border-b border-bone/10 px-5 py-4">
               <div>
-                <p className={labelClassName}>Configure episode</p>
+                <p className={labelClassName}>Quick configure access &amp; metadata</p>
                 <h3 id="episode-configure-title" className="mt-1 text-xl font-semibold">
                   EP {String(selectedRow.episode.episode_number).padStart(2, "0")}
                   {selectedRow.episode.title ? ` — ${selectedRow.episode.title}` : ""}
@@ -337,67 +337,82 @@ export function SeriesEpisodeManager({ addEpisodeHref, bulkUploadHref, rows }: S
             </div>
 
             <div className="max-h-[calc(90vh-5rem)] overflow-y-auto px-5 py-5">
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div>
-                  <EpisodeMetadataForm
-                    key={selectedRow.episode.id}
-                    action={selectedRow.action}
-                    episode={selectedRow.episode}
-                    onSaved={(state) => {
-                      if (state.submitMode === "save-and-next") {
-                        advanceToNextEpisode();
-                      }
-                    }}
-                    secondarySubmitLabel="Save & Next"
-                    secondarySubmitValue="save-and-next"
-                    submitLabel="Save"
-                  />
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-teal/25 bg-teal/[0.06] px-4 py-3">
+                  <p className="text-sm text-bone/75">
+                    This panel is scoped to quick access and metadata configuration. For Media,
+                    Thumbnail, Status and advanced controls, open the full episode editor.
+                  </p>
+                  <ButtonLink href={selectedRow.fullPageHref} variant="secondary">
+                    Open full episode editor
+                  </ButtonLink>
                 </div>
 
-                <aside className="space-y-4 border border-bone/10 bg-bone/[0.03] p-4">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
                   <div>
-                    <p className={labelClassName}>Summary</p>
-                    <dl className="mt-2 space-y-2 text-sm text-bone/70">
-                      <div className="flex justify-between gap-4">
-                        <dt>Duration</dt>
-                        <dd className="text-bone">{formatDuration(selectedRow.episode.duration_seconds)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Media video</dt>
-                        <dd className="text-bone">{selectedRow.mediaReadiness.video}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Preview clip</dt>
-                        <dd className="text-bone">{selectedRow.mediaReadiness.preview}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Access</dt>
-                        <dd className="text-bone">{buildAccessSummary(selectedRow.episode)}</dd>
-                      </div>
-                    </dl>
+                    <EpisodeMetadataForm
+                      key={selectedRow.episode.id}
+                      action={selectedRow.action}
+                      episode={selectedRow.episode}
+                      onSaved={(state) => {
+                        if (state.submitMode === "save-and-next") {
+                          advanceToNextEpisode();
+                        }
+                      }}
+                      secondarySubmitLabel="Save & Next"
+                      secondarySubmitValue="save-and-next"
+                      submitLabel="Save"
+                    />
                   </div>
 
-                  <div className="space-y-2">
-                    <p className={labelClassName}>Navigation</p>
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          const nextRow = rows[selectedIndex + 1];
-                          if (nextRow) {
-                            setSelectedEpisodeId(nextRow.episode.id);
-                          }
-                        }}
-                        disabled={selectedIndex < 0 || selectedIndex >= rows.length - 1}
-                      >
-                        Next episode
-                      </Button>
-                      <ButtonLink href={selectedRow.fullPageHref} variant="ghost">
-                        Open full episode page
-                      </ButtonLink>
+                  <aside className="space-y-4 border border-bone/10 bg-bone/[0.03] p-4">
+                    <div>
+                      <p className={labelClassName}>Summary</p>
+                      <dl className="mt-2 space-y-2 text-sm text-bone/70">
+                        <div className="flex justify-between gap-4">
+                          <dt>Duration</dt>
+                          <dd className="text-bone">{formatDuration(selectedRow.episode.duration_seconds)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt>Media video</dt>
+                          <dd className="text-bone">{selectedRow.mediaReadiness.video}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt>Preview clip</dt>
+                          <dd className="text-bone">{selectedRow.mediaReadiness.preview}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt>Access</dt>
+                          <dd className="text-bone">{buildAccessSummary(selectedRow.episode)}</dd>
+                        </div>
+                      </dl>
                     </div>
-                  </div>
-                </aside>
+
+                    <div className="space-y-2">
+                      <p className={labelClassName}>Full episode editor</p>
+                      <div className="flex flex-col gap-2">
+                        <p className="text-sm text-bone/60">
+                          Media, Thumbnail, Status and advanced controls.
+                        </p>
+                        <ButtonLink href={selectedRow.fullPageHref} variant="ghost">
+                          Open full episode page
+                        </ButtonLink>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            const nextRow = rows[selectedIndex + 1];
+                            if (nextRow) {
+                              setSelectedEpisodeId(nextRow.episode.id);
+                            }
+                          }}
+                          disabled={selectedIndex < 0 || selectedIndex >= rows.length - 1}
+                        >
+                          Next episode
+                        </Button>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
               </div>
             </div>
           </div>

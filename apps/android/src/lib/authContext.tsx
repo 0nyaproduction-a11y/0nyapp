@@ -1,11 +1,18 @@
 import type { Session } from "@supabase/supabase-js";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { clearParentalSessionUnlock } from "./parentalControls";
-import { mergeGuestWatchHistory } from "./playbackHistory";
+import {
+  getHistoryMergeUiState,
+  mergeGuestWatchHistory,
+  retryPendingGuestHistoryMerge,
+  type HistorySyncUiState,
+} from "./playbackHistory";
 import { supabase } from "./supabase";
 
 type AuthContextValue = {
+  historySyncStatus: HistorySyncUiState;
   isLoading: boolean;
+  retryGuestHistoryMerge: () => Promise<void>;
   session: Session | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -14,6 +21,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [historySyncStatus, setHistorySyncStatus] = useState<HistorySyncUiState>({ status: "idle" });
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const lastUserIdRef = useRef<string | null>(null);
@@ -100,10 +108,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!session?.access_token || !session.user?.id) {
+      setHistorySyncStatus({ status: "idle" });
       return undefined;
     }
 
     let active = true;
+
+    void getHistoryMergeUiState(session)
+      .then((nextState) => {
+        if (active) {
+          setHistorySyncStatus(nextState);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHistorySyncStatus({ status: "idle" });
+        }
+      });
 
     void mergeGuestWatchHistory(session).catch((error) => {
       if (active) {
@@ -116,9 +137,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [session]);
 
+  const retryGuestHistoryMerge = useCallback(async () => {
+    if (!session?.access_token || !session.user?.id) {
+      return;
+    }
+
+    setHistorySyncStatus({ errorMessage: "Watch history couldn't fully sync.", status: "retrying" });
+
+    try {
+      const result = await retryPendingGuestHistoryMerge(session, mergeGuestWatchHistory);
+
+      if (result.pending) {
+        const nextState = await getHistoryMergeUiState(session);
+        setHistorySyncStatus(nextState.status === "pending" ? nextState : { errorMessage: "Watch history couldn't fully sync.", status: "pending" });
+        return;
+      }
+
+      setHistorySyncStatus({ status: "idle" });
+    } catch (error) {
+      console.warn("Unable to retry guest watch history merge.", error);
+      setHistorySyncStatus({ errorMessage: "Watch history couldn't fully sync.", status: "pending" });
+    }
+  }, [session]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
+      historySyncStatus,
       isLoading,
+      retryGuestHistoryMerge,
       session,
       async signIn(email, password) {
         const { error } = await supabase.auth.signInWithPassword({
@@ -138,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [isLoading, session],
+    [historySyncStatus, isLoading, retryGuestHistoryMerge, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

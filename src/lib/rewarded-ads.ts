@@ -7,6 +7,8 @@ type RewardedAdAttemptRow = {
   custom_data: string | null;
   expires_at: string | null;
   status: string | null;
+  verified_progress?: number | null;
+  required_completions?: number | null;
 };
 
 type RewardedAdCallbackRow = {
@@ -14,6 +16,8 @@ type RewardedAdCallbackRow = {
   expires_at: string | null;
   status: string | null;
   success: boolean | null;
+  verified_progress?: number | null;
+  required_completions?: number | null;
 };
 
 async function getSupabase(supabase?: SupabaseClient<Database>) {
@@ -37,6 +41,8 @@ function toAttemptResponse(row: RewardedAdAttemptRow | RewardedAdCallbackRow | n
       status === "not_found"
         ? status
         : "failed",
+    verifiedProgress: row?.verified_progress ?? null,
+    requiredCompletions: row?.required_completions ?? null,
   };
 }
 
@@ -80,6 +86,37 @@ export async function getRewardedAdAttemptStatus(
   return toAttemptResponse(result);
 }
 
+export async function getRewardedProgress(
+  episodeId: string,
+  supabaseClient?: SupabaseClient<Database>,
+) {
+  const supabase = await getSupabase(supabaseClient);
+  const { data, error } = await supabase.rpc("get_rewarded_progress", {
+    p_episode_id: episodeId,
+  });
+
+  if (error) {
+    console.warn("Unable to load rewarded progress.");
+    return null;
+  }
+
+  const result = data?.at(0) as {
+    verified_progress: number;
+    required_completions: number;
+    state: string;
+  } | undefined;
+
+  if (!result) {
+    return null;
+  }
+
+  return {
+    verifiedProgress: result.verified_progress ?? 0,
+    requiredCompletions: result.required_completions ?? 0,
+    state: result.state,
+  };
+}
+
 export async function finalizeRewardedAdCallback(
   customData: string,
   providerTransactionId: string,
@@ -107,5 +144,7 @@ export async function finalizeRewardedAdCallback(
     expiresAt: result.expires_at ?? null,
     status: result.status ?? "failed",
     success: Boolean(result.success),
+    verifiedProgress: result.verified_progress ?? null,
+    requiredCompletions: result.required_completions ?? null,
   };
 }

@@ -35,6 +35,7 @@ import {
   getShortFilmForAdminById,
   persistShortFilmArtwork,
   SHORT_FILM_STATUSES,
+  verifyShortFilmPublishIntegrity,
   updateShortFilmStatus,
   updateShortFilm,
 } from "@/lib/cms/short-films";
@@ -85,10 +86,11 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
   const flashMessage = typeof query.flash === "string" ? query.flash : null;
   const errorMessage = typeof query.error === "string" ? query.error : null;
 
-  const [mediaReadiness, readyMediaAssets, chaiDetails] = await Promise.all([
+  const [mediaReadiness, readyMediaAssets, chaiDetails, publishIntegrityErrors] = await Promise.all([
     resolveMediaAssetState({ type: "SHORT_FILM", slug: shortFilm.slug }),
     listReadyMediaAssetsForAdmin(),
     getShortFilmChaiDetails(shortFilm.slug),
+    verifyShortFilmPublishIntegrity(shortFilm),
   ]);
   const chaiAllowedCoinAmounts = await listChaiAllowedCoinAmountsForAdmin();
   const deletePreview = await getShortFilmDeletePreview(id);
@@ -305,7 +307,14 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
     const result = await updateShortFilmStatus(id, status as (typeof SHORT_FILM_STATUSES)[number]);
 
     if (!result.success) {
-      redirect(buildFlashUrl(shortFilmEditPath(id), "error", "Unable to update short film status."));
+      const detail = result.errors.map((fieldError) => fieldError.message).join(" ");
+      redirect(
+        buildFlashUrl(
+          shortFilmEditPath(id),
+          "error",
+          detail ? `Unable to update short film status: ${detail}` : "Unable to update short film status.",
+        ),
+      );
     }
 
     revalidatePath(shortFilmEditPath(id));
@@ -410,6 +419,20 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
 
         <section>
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Status</h2>
+          <div className="mt-3 border border-bone/10 bg-bone/[0.03] px-4 py-3 text-sm">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-bone/50">
+              Publish preflight
+            </p>
+            {publishIntegrityErrors.length === 0 ? (
+              <p className="mt-2 text-teal">Ready to publish.</p>
+            ) : (
+              <ul className="mt-2 space-y-1 text-amber-200">
+                {publishIntegrityErrors.map((fieldError) => (
+                  <li key={`${fieldError.field}-${fieldError.message}`}>{fieldError.message}</li>
+                ))}
+              </ul>
+            )}
+          </div>
           <form action={updateStatusAction} className="mt-3 flex items-center gap-3">
             <CmsSelect
               name="status"
@@ -470,7 +493,7 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
             <p>Publish at: <span className="text-bone">{shortFilm.publish_at ? formatDate(shortFilm.publish_at) : "Not set"}</span></p>
             <p>Created: <span className="text-bone">{formatDate(shortFilm.created_at)}</span></p>
             <p>Updated: <span className="text-bone">{formatDate(shortFilm.updated_at)}</span></p>
-            <p>Playback reference: <span className="text-bone">{shortFilm.playback_reference ?? "—"}</span></p>
+            <p>Media asset: <span className="text-bone">{shortFilm.media_asset_id ?? "—"}</span></p>
           </div>
         </section>
 

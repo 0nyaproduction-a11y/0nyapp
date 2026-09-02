@@ -42,8 +42,11 @@ export function parseEpisodeFormData(formData: FormData, currentThumbnailUrl: st
     coinPrice: parseIntField(formData.get("coinPrice"), 0),
     coinUnlockEnabled: formData.get("coinUnlockEnabled") === "on",
     rewardedUnlockEnabled: formData.get("rewardedUnlockEnabled") === "on",
-    rewardedAccessMode:
-      formData.get("rewardedAccessMode") === "session" ? "session" : "permanent",
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: (() => {
+      const raw = parseIntField(formData.get("requiredRewardedCompletions"), 1);
+      return Math.min(2, Math.max(1, Number.isFinite(raw) ? Math.trunc(raw) : 1));
+    })(),
     plusAccess: formData.get("plusAccess") === "on",
     lockedPreviewSeconds: parseIntField(formData.get("lockedPreviewSeconds"), 0),
     contentRatingOverride: normalizeContentRating(nullableString(formData.get("contentRatingOverride"))),

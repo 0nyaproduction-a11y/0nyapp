@@ -20,7 +20,7 @@ import { borders, colors } from "../theme/tokens";
 
 type Props = RootStackScreenProps<"CoinPurchase">;
 
-export function CoinPurchaseScreen({ route }: Props) {
+export function CoinPurchaseScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +29,7 @@ export function CoinPurchaseScreen({ route }: Props) {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const token = session?.access_token;
   const chaiReturn = route.params?.returnToChai ?? null;
+  const walletReturn = route.params?.returnToWallet ?? null;
   const billingService = getBillingService(wallet);
 
   const loadCoinProducts = useCallback(async () => {
@@ -180,6 +181,22 @@ export function CoinPurchaseScreen({ route }: Props) {
       {chaiReturn ? (
         <Card>
           <Body>This build cannot complete the top-up yet. You can return to the same Chai amount.</Body>
+        </Card>
+      ) : null}
+      {walletReturn ? (
+        <Card>
+          <Label>Episode unlock</Label>
+          <Body>Return to the same episode unlock after adding coins.</Body>
+          <Button
+            accessibilityLabel="Return to episode unlock"
+            onPress={() =>
+              navigation.navigate("Wallet", {
+                microDramaAccess: walletReturn.microDramaAccess,
+              })
+            }
+          >
+            Return to Episode Unlock
+          </Button>
         </Card>
       ) : null}
     </Screen>

@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { createClient } from "@/lib/supabase/client";
 import { adminResetPasswordPath } from "@/lib/routes";
 
 type Status = "idle" | "submitting" | "sent" | "error";
 
-export function AdminForgotPassword() {
+type AdminForgotPasswordProps = {
+  onBackToSignIn: () => void;
+};
+
+export function AdminForgotPassword({ onBackToSignIn }: AdminForgotPasswordProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,12 +49,13 @@ export function AdminForgotPassword() {
     return (
       <div className="mt-7 border border-bone/10 bg-bone/[0.03] px-3 py-4 text-sm leading-6 text-bone/80">
         <p>{message}</p>
-        <Link
-          href="/admin/login"
+        <button
+          type="button"
+          onClick={onBackToSignIn}
           className="mt-3 inline-block border-b border-teal/50 text-sm text-teal transition hover:border-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
         >
           Back to sign in
-        </Link>
+        </button>
       </div>
     );
   }
@@ -81,12 +85,13 @@ export function AdminForgotPassword() {
       <Button disabled={status === "submitting"} type="submit">
         {status === "submitting" ? "Sending" : "Send reset link"}
       </Button>
-      <Link
-        href="/admin/login"
+      <button
+        type="button"
+        onClick={onBackToSignIn}
         className="inline-block w-fit border-b border-teal/50 text-sm text-teal transition hover:border-teal focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal"
       >
         Back to sign in
-      </Link>
+      </button>
     </form>
   );
 }

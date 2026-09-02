@@ -132,13 +132,30 @@ export function EpisodeMetadataForm({
               className={inputClassName}
               name="rewardedAccessMode"
               defaultValue={episode?.rewarded_access_mode ?? "permanent"}
+              options={[{ label: "Permanent", value: "permanent" }]}
+            />
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Rewarded ads required" error={errors.requiredRewardedCompletions}>
+            <CmsSelect
+              className={inputClassName}
+              name="requiredRewardedCompletions"
+              defaultValue={String(episode?.required_rewarded_completions ?? 1)}
               options={[
-                { label: "Permanent", value: "permanent" },
-                { label: "Session", value: "session" },
+                { label: "1 (single ad)", value: "1" },
+                { label: "2 (two ads)", value: "2" },
               ]}
             />
           </Field>
         </div>
+
+        {episode?.rewarded_unlock_enabled ? (
+          <p className="text-xs text-bone/40">
+            Launch rewarded unlock is permanent only. Session mode is not supported and is hidden from this editor.
+          </p>
+        ) : null}
 
         <label className="flex items-center gap-2 text-sm text-bone/80">
           <input

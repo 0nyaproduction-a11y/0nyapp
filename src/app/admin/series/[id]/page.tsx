@@ -1,15 +1,13 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Button, ButtonLink } from "@/components/ui/Button";
+import { Button } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
 import { SeriesEpisodeManager } from "@/components/cms/SeriesEpisodeManager";
 import { SeriesStatusForm, type SeriesStatusFormState } from "@/components/cms/SeriesStatusForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
-import { buildAccessSummary } from "@/lib/cms/constants";
 import {
   archiveAllEpisodesForSeries,
   deleteAllEpisodesForSeries,
@@ -45,12 +43,6 @@ import {
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
-
-const EPISODE_STATUS_STYLES: Record<string, string> = {
-  draft: "text-bone/50 border-bone/20",
-  published: "text-teal border-teal/50",
-  archived: "text-bone/30 border-bone/10",
-};
 
 type AdminSeriesEditPageProps = {
   params: Promise<{ id: string }>;
@@ -506,63 +498,28 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
         </section>
 
         <section>
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">Episodes</h2>
-            <div className="flex flex-wrap gap-2">
-              {hasUnassignedMediaEpisode && (
-                <form action={refreshProcessingMediaAction}>
-                  <Button type="submit" variant="secondary">
-                    Refresh processing uploads
-                  </Button>
-                </form>
-              )}
-              <ButtonLink href={episodeBulkUploadPath(id)} variant="secondary">
-                Bulk upload episodes
-              </ButtonLink>
-              <ButtonLink href={episodeNewPath(id)} variant="secondary">
-                Add episode
-              </ButtonLink>
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
+                Episodes
+              </h2>
+              <p className="text-sm text-bone/60">
+                Overview of every episode in this series. Use{" "}
+                <span className="text-teal">Configure access</span> for quick access and
+                metadata edits, or open the full episode editor for Media, Thumbnail,
+                Status and advanced controls.
+              </p>
             </div>
-          </div>
-
-          <div className="mt-3 divide-y divide-bone/10 border border-bone/10">
-            {episodes.length === 0 && (
-              <p className="px-4 py-6 text-sm text-bone/60">No episodes yet.</p>
+            {hasUnassignedMediaEpisode && (
+              <form action={refreshProcessingMediaAction}>
+                <Button type="submit" variant="secondary">
+                  Refresh processing uploads
+                </Button>
+              </form>
             )}
-            {episodes.map((episode) => (
-              <Link
-                key={episode.id}
-                href={episodeEditPath(id, episode.id)}
-                className="flex items-center justify-between gap-4 px-4 py-4 transition hover:bg-bone/[0.03]"
-              >
-                <div>
-                  <p className="font-medium">
-                    Episode {episode.episode_number}
-                    {episode.title ? ` — ${episode.title}` : ""}
-                  </p>
-                  <p className="text-xs text-bone/50">{buildAccessSummary(episode)}</p>
-                </div>
-                <span
-                  className={`border px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] ${EPISODE_STATUS_STYLES[episode.status] ?? EPISODE_STATUS_STYLES.draft}`}
-                >
-                  {episode.status}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-              Review episodes
-            </h2>
-            <p className="text-sm text-bone/60">
-              Configure access and metadata per episode before publishing.
-            </p>
           </div>
 
-          <div className="mt-3 space-y-4">
+          <div className="mt-3">
             {episodeManagerRows.length === 0 ? (
               <p className="text-sm text-bone/60">No episodes yet.</p>
             ) : (

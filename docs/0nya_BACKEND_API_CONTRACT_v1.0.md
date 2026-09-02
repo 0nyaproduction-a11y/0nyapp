@@ -304,6 +304,49 @@ Important invariants:
 
 ---
 
+## 12A. HOME CATALOG SPOTLIGHT CONTRACT
+
+`GET /api/v1/catalog` returns `home` (type `HomeState`). The Spotlight stage is now a CMS-controlled ordered collection.
+
+Backward-compatible first item:
+
+- `home.spotlight` is the first valid Spotlight item, or `null` when none.
+- This preserves the existing Android contract (`HomeState.spotlight`) before the client adopts the collection.
+
+Ordered collection:
+
+- `home.spotlights` is an array of all valid (published) Spotlight items in `home_row_items.sort_order` ASC.
+- Semantics:
+
+```text
+3 items:  spotlights = [A, B, C]   spotlight = A
+1 item:   spotlights = [A]         spotlight = A
+0 items:  spotlights = []          spotlight = null
+```
+
+Each Spotlight item contains only proven useful fields:
+
+```text
+id
+contentType        ("series" | "short_film")
+slug
+title
+poster
+synopsis           (when already part of the Spotlight object)
+sharePath
+showTitle          (boolean, CMS-controlled per-item title visibility)
+```
+
+The collection is resolved entirely from the single `home_rows` row with `row_role = 'spotlight'` plus its `home_row_items`. No new network request and no per-item API request is introduced; resolving `spotlights` reuses the same `getHomeState` query batch (membershipsByRow, seriesById, shortFilmsById) used for `spotlight` and the other rows.
+
+Invariants:
+
+- No editorial hook, ranking, carousel metadata, timer, auto-play metadata, or new hero artwork model is added to the API.
+- `home.spotlight` is preserved for existing Android builds.
+- The stage never auto-rotates and never fabricates content; only published canonical content is returned.
+
+---
+
 ## 13. overall verdict
 
 | Area | Status |
@@ -322,3 +365,76 @@ Important invariants:
 ### Final conclusion
 
 The repository contains a backend-ready payment and wallet verification architecture that explicitly models Google Play as a provider and includes a trusted server-side coin-credit function. However, there is no actual Google Play Billing client implementation, no `BillingClient` lifecycle, no `queryProductDetails` / `queryPurchases` flow, and no store purchase-token verification code in the app source. The repository therefore supports a purchase verification contract and wallet ledger foundation, but not a live Play Billing integration in the code currently present.
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## API Verification & Final Integration Acceptance
+
+Backend API and route verification (`CMS/API VERIFIED`) is a prerequisite step and does not independently close CMS or consumer App acceptance. Final acceptance is governed by the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+- CMS operational acceptance requires real deployed CMS website testing plus Product Owner hands-on verification.
+- Consumer App integration requires full emulator screenshot approval by Product Owner + ChatGPT followed by physical hardware validation on OnePlus 13R.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
+
+---
+
+## PX01 / Play Together / 0chat source-foundation boundary
+
+Status: **SOURCE FOUNDATION PRESENT / DEPLOYED RUNTIME UNVERIFIED**.
+
+Current uncommitted source adds server-authoritative preparation for secure
+invite/redeem, rooms/participants, ordered room-scoped 0chat messages, and
+backend-controlled acquisition/access, including the approved configured Coin
+price and Plus bypass. Room acquisition/access is separate from episode
+entitlement: every participant must independently authorize playback, Host
+entitlement never transfers to a Guest, and an invite never grants episode
+entitlement.
+
+Do not represent these source routes/migrations as deployed or as realtime
+Android synchronization/chat UI. Production work must add one canonical room
+timeline with Host playback-intent authority, state version/time reference,
+heartbeat/offset measurement, measured drift correction, and
+buffering/reconnect/control policy; no arbitrary drift threshold is specified.

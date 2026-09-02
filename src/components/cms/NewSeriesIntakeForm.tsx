@@ -183,6 +183,7 @@ const DRAFT_EPISODE_DEFAULTS: BulkEpisodeDefaults = {
   coinPrice: 0,
   rewardedUnlockEnabled: false,
   rewardedAccessMode: "permanent",
+  requiredRewardedCompletions: 1,
   plusAccess: false,
   lockedPreviewSeconds: 0,
   contentRatingOverride: null,

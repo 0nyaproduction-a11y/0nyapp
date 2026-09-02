@@ -1,15 +1,16 @@
 import "server-only";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   normalizeContentDescriptors,
   normalizeContentRating,
   type ContentDescriptor,
   type ContentRating,
 } from "@/lib/classification";
-import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
+import { cleanupArtworkObjectsAfterContentDeletion, extractArtworkObjectPath } from "@/lib/cms/artwork";
 import { cleanupMediaAssetsAfterContentDeletion } from "@/lib/cms/media";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ARTWORK_BUCKET_ID } from "@/lib/supabase/artwork";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 import type { Database } from "@/types/database";
 
 export type ShortFilmRow = Database["public"]["Tables"]["short_films"]["Row"];
@@ -62,6 +63,49 @@ function isUniqueViolation(error: { code?: string } | null) {
 
 function isValidDateTime(value: string) {
   return !Number.isNaN(Date.parse(value));
+}
+
+async function artworkObjectExists(objectPath: string, supabase: ReturnType<typeof getAdminClient>) {
+  const normalizedObjectPath = objectPath.trim().replace(/^\/+/, "");
+  const pathParts = normalizedObjectPath.split("/").filter(Boolean);
+  const fileName = pathParts.at(-1);
+
+  if (!fileName) {
+    return false;
+  }
+
+  const folderPath = pathParts.slice(0, -1).join("/");
+  const { data, error } = await supabase.storage.from(ARTWORK_BUCKET_ID).list(folderPath, {
+    limit: 100,
+    search: fileName,
+  });
+
+  if (error || !data) {
+    return false;
+  }
+
+  return data.some((object) => object.name === fileName);
+}
+
+function extractTrustedArtworkObjectPath(value: string) {
+  const objectPath = extractArtworkObjectPath(value);
+
+  if (!objectPath) {
+    return null;
+  }
+
+  try {
+    const artworkUrl = new URL(value.trim());
+    const expectedOrigin = new URL(getSupabaseEnv().url).origin;
+
+    if (artworkUrl.origin !== expectedOrigin) {
+      return null;
+    }
+  } catch {
+    // Existing server-side artwork helpers also accept stored bucket/path values.
+  }
+
+  return objectPath;
 }
 
 export function validateShortFilmInput(input: ShortFilmInput): ShortFilmValidationError[] {
@@ -228,7 +272,7 @@ export async function updateShortFilm(id: string, input: ShortFilmInput): Promis
 }
 
 export async function verifyShortFilmPublishIntegrity(
-  row: Pick<ShortFilmRow, "poster_url" | "playback_reference" | "media_asset_id">,
+  row: Pick<ShortFilmRow, "poster_url" | "media_asset_id">,
   supabase = getAdminClient(),
 ): Promise<ShortFilmValidationError[]> {
   const errors: ShortFilmValidationError[] = [];
@@ -236,42 +280,37 @@ export async function verifyShortFilmPublishIntegrity(
   if (!row.poster_url || !row.poster_url.trim()) {
     errors.push({ field: "posterUrl", message: "Poster artwork is required to publish." });
   } else {
-    const posterUrl = row.poster_url.trim();
-    if (posterUrl.includes("/storage/v1/object/public/")) {
-      const parts = posterUrl.split("/storage/v1/object/public/");
-      const pathParts = parts[1]?.split("/");
-      const bucket = pathParts?.[0];
-      const objectPath = pathParts?.slice(1).join("/");
-      if (bucket && objectPath) {
-        const storageSupabase = supabase as unknown as SupabaseClient;
-        const { data: storageObj } = await storageSupabase
-          .schema("storage")
-          .from("objects")
-          .select("id")
-          .eq("bucket_id", bucket)
-          .eq("name", objectPath)
-          .maybeSingle();
+    const posterObjectPath = extractTrustedArtworkObjectPath(row.poster_url);
+    const hasPosterObject = posterObjectPath
+      ? await artworkObjectExists(posterObjectPath, supabase)
+      : false;
 
-        if (!storageObj) {
-          errors.push({ field: "posterUrl", message: "Poster artwork file is missing or unavailable." });
-        }
-      }
+    if (!hasPosterObject) {
+      errors.push({ field: "posterUrl", message: "Poster artwork file is missing or unavailable." });
     }
   }
 
-  if (!row.playback_reference || !row.playback_reference.trim()) {
-    errors.push({ field: "playbackReference", message: "Playback reference is required to publish." });
-  }
-
-  if (row.media_asset_id) {
+  // Playback readiness is derived from the assigned media_asset, matching the
+  // exact source resolveShortFilmPlayback() reads (media_assets.status and
+  // .provider_playback_reference). short_films.playback_reference is a
+  // legacy/dev-only column that the production assignment path
+  // (assignShortFilmMediaAsset) never writes and playback never reads, so it
+  // must not gate publish.
+  if (!row.media_asset_id) {
+    errors.push({ field: "mediaAsset", message: "A ready media asset must be assigned before publishing." });
+  } else {
     const { data: mediaAsset } = await supabase
       .from("media_assets")
-      .select("status")
+      .select("status,provider_playback_reference")
       .eq("id", row.media_asset_id)
       .maybeSingle();
 
-    if (mediaAsset && mediaAsset.status !== "ready") {
+    if (!mediaAsset) {
+      errors.push({ field: "mediaAsset", message: "Assigned media asset was not found." });
+    } else if (mediaAsset.status !== "ready") {
       errors.push({ field: "mediaAsset", message: "Playback media is not ready." });
+    } else if (!mediaAsset.provider_playback_reference || !mediaAsset.provider_playback_reference.trim()) {
+      errors.push({ field: "mediaAsset", message: "Playback media is missing a signed playback reference." });
     }
   }
 

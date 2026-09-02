@@ -510,6 +510,10 @@ outside the app through a web resource
 
 The deletion flow must delete associated account data, subject to legitimate disclosed retention needs; merely freezing/deactivating the account is not sufficient.
 
+Before production PX01/0chat, verify deletion behavior for hosted and joined
+rooms, participants, and messages against actual FK/nullability behavior. Do
+not invent a retention period or deletion grace period.
+
 Required product surfaces:
 
 ```text
@@ -534,6 +538,9 @@ privacy policy link/text available inside app
 ```
 
 The policy must accurately disclose actual data access, collection, use, and sharing.
+
+For analytics/observability added during hardening, never collect or emit access
+tokens, OTPs, phone numbers, purchase tokens, or signed playback URLs.
 
 Reference:
 `https://support.google.com/googleplay/android-developer/answer/10144311`
@@ -1441,3 +1448,57 @@ Status: PARTIALLY IMPLEMENTED
 - Successful PIN verification issues a shared account-scoped parental session for Series and Short Films; Lock Now clears that app-session proof.
 - Maximum parental-session lifetime is 8 hours.
 - The playback boundary still needs the future signed-playback enforcement route.
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## 41. Release Acceptance & Final Governance Gate
+
+Compliance, security, and release verification must strictly observe the **Locked Final Acceptance Protocol** in `AGENTS.md`. No AI agent or automated script may infer or declare final release approval.
+
+- Consumer App release candidates require full emulator candidate review and approval by Product Owner + ChatGPT, followed by physical hardware verification on OnePlus 13R.
+- CMS, database, and backend compliance changes require deployed QA testing and personal Product Owner hands-on verification.
+- Official legal, privacy, and grievance content requires human business approval and cannot be inferred from code.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*

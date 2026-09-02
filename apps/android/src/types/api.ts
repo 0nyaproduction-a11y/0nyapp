@@ -20,6 +20,7 @@ export type ApiEpisode = {
   coinUnlockEnabled: boolean;
   rewardedUnlockEnabled: boolean;
   rewardedAccessMode: "permanent" | "session";
+  requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
   contentRatingOverride: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
@@ -196,19 +197,33 @@ export type CatalogResponse = {
 
 export type HomeContentType = "series" | "short_film";
 
+export type HomeSpotlight = {
+  contentType: HomeContentType;
+  format: string | null;
+  genre: string | null;
+  id: string;
+  poster: string | null;
+  slug: string;
+  synopsis: string | null;
+  title: string;
+  sharePath: string;
+  showTitle: boolean;
+};
+
 export type HomeRowItem = {
   id: string;
-  contentType: HomeContentType;
   slug: string;
+  contentType: HomeContentType;
   title: string;
   poster: string | null;
-  sharePath: string;
+  showTitle?: boolean;
 };
 
 export type HomeRow = {
   id: string;
+  slug: string;
   title: string;
-  role: "start_here" | "editorial";
+  role: "start_here" | "editorial" | "spotlight";
   enabled: boolean;
   sortOrder: number;
   items: HomeRowItem[];
@@ -221,6 +236,8 @@ export type HomeState = {
   lowHistoryThreshold: number | null;
   completedCount: number;
   isGuest: boolean;
+  spotlight: HomeSpotlight | null;
+  spotlights: HomeSpotlight[];
   rows: HomeRow[];
 };
 
@@ -254,6 +271,14 @@ export type RewardedAdAttemptResponse = {
   customData: string | null;
   expiresAt: string | null;
   status: RewardedAdAttemptStatus;
+  verifiedProgress: number | null;
+  requiredCompletions: number | null;
+};
+
+export type RewardedProgressResponse = {
+  verifiedProgress: number;
+  requiredCompletions: number;
+  state: "none" | "partial" | "complete" | "disabled" | "not_found" | "not_authenticated";
 };
 
 export type MeResponse = {

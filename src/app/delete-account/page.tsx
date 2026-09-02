@@ -4,6 +4,7 @@ import { BrandName } from "@/components/brand/BrandName";
 import { deleteAccountPath, loginPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteAccountSubmitButton } from "./DeleteAccountSubmitButton";
+import { privacyEmail } from "@/lib/legal-content";
 
 type DeleteAccountPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -35,11 +36,21 @@ export default async function DeleteAccountPage({ searchParams }: DeleteAccountP
               Delete your 0nya account?
             </h1>
             <p className="mt-5 text-sm leading-6 text-muted">
-              This removes account access and associated 0nya data. Some transaction or payment
-              records may be retained where required.
+              This removes account access and associated 0nya data. Some de-identified or
+              pseudonymous records required for legal, accounting, or security obligations may be
+              retained where applicable. Transaction or payment records necessary for financial
+              compliance are also retained where required.
             </p>
             <p className="mt-3 text-sm leading-6 text-muted">
-              If you are signed in, confirm below to delete only your own account.
+              0nya provides authenticated account deletion in-app and on the web. If you cannot
+              sign in to authenticate, you may request deletion by emailing{" "}
+              <a
+                href={`mailto:${privacyEmail}`}
+                className="text-teal underline underline-offset-2 hover:text-bone"
+              >
+                {privacyEmail}
+              </a>
+              . We will verify your identity before processing.
             </p>
 
             {error ? (
@@ -59,9 +70,10 @@ export default async function DeleteAccountPage({ searchParams }: DeleteAccountP
                 </Link>
               </form>
             ) : (
-              <div className="mt-6 grid gap-3">
+               <div className="mt-6 grid gap-3">
                 <p className="text-sm leading-6 text-bone/80">
-                  Sign in on web to request deletion without opening Android.
+                  Sign in on web to request deletion without opening Android. If you cannot sign in,
+                  email <a href={`mailto:${privacyEmail}`} className="text-teal underline underline-offset-2">{privacyEmail}</a>.
                 </p>
                 <Link
                   href={`${loginPath}?next=${deleteAccountPath}`}

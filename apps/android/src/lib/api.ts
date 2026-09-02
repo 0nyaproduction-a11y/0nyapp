@@ -1,5 +1,16 @@
 import { getMobileEnv } from "../config/env";
 import type {
+  PlayTogetherCreateRoomResponse,
+  PlayTogetherFeatureConfig,
+  PlayTogetherHeartbeatResponse,
+  PlayTogetherInviteResponse,
+  PlayTogetherJoinRoomResponse,
+  PlayTogetherRevokedInvite,
+  PlayTogetherRoomCommand,
+  PlayTogetherRoomCommandRequest,
+  PlayTogetherRoomState,
+} from "../types/playTogether";
+import type {
   AccountDeleteResponse,
   ApiEnvelope,
   ApiSeries,
@@ -12,6 +23,7 @@ import type {
   ParentalControlActionResponse,
   ParentalControlStatusResponse,
   RewardedAdAttemptResponse,
+  RewardedProgressResponse,
   PlaybackAuthorizationResponse,
   PreviewPlaybackAuthorizationResponse,
   SeriesResponse,
@@ -28,7 +40,7 @@ import { supabase } from "./supabase";
 type ApiRequestOptions = {
   accessToken?: string | null;
   body?: unknown;
-  method?: "GET" | "POST" | "PUT";
+  method?: "GET" | "POST" | "PUT" | "PATCH";
   _isRetry?: boolean;
 };
 
@@ -498,6 +510,43 @@ export function getRewardedAdAttemptStatus(accessToken: string, customData: stri
   );
 }
 
+export function getRewardedProgress(accessToken: string, episodeId: string) {
+  return requestApi<RewardedProgressResponse>(
+    `/api/v1/episodes/${encodeURIComponent(episodeId)}/rewarded/progress`,
+    {
+      accessToken,
+    },
+  );
+}
+
+export type RecordRewardedEventArgs = {
+  eventType:
+    | "rewarded_offer_shown"
+    | "rewarded_cta_selected"
+    | "rewarded_no_fill"
+    | "rewarded_load_failed";
+  episodeId?: string | null;
+  adIndex?: number | null;
+  requiredCount?: number | null;
+  resultingProgress?: number | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export function recordRewardedEvent(accessToken: string, args: RecordRewardedEventArgs) {
+  return requestApi<{ recorded: boolean }>("/api/v1/monetization/rewarded-events", {
+    accessToken,
+    body: {
+      eventType: args.eventType,
+      episodeId: args.episodeId ?? null,
+      adIndex: args.adIndex ?? null,
+      requiredCount: args.requiredCount ?? null,
+      resultingProgress: args.resultingProgress ?? null,
+      metadata: args.metadata ?? {},
+    },
+    method: "POST",
+  });
+}
+
 export function deleteAccount(accessToken: string) {
   return requestApi<AccountDeleteResponse>("/api/v1/account/delete", {
     accessToken,
@@ -575,4 +624,77 @@ export function authorizePreviewPlayback(
       ? { ...response, status: "ok" as const }
       : response,
   );
+}
+
+// PX01-C — Play Together bounded room client.
+//
+// Room state is backend-authoritative. These functions only shape requests to
+// the existing PX01-B API; they never write, apply, or schedule playback/chat
+// commands (those belong to later PX01 milestones), and they never fabricate
+// room state locally. Invite tokens are connection-only and must never be
+// logged, persisted, or sent to analytics.
+
+export function createPlayTogetherRoom(accessToken: string, episodeId: string) {
+  return requestApi<PlayTogetherCreateRoomResponse>("/api/v1/play-together/rooms", {
+    accessToken,
+    body: { episodeId },
+    method: "POST",
+  });
+}
+
+export function getPlayTogetherRoom(accessToken: string, roomId: string) {
+  return requestApi<{ room: PlayTogetherRoomState }>(
+    `/api/v1/play-together/rooms/${encodeURIComponent(roomId)}`,
+    { accessToken },
+  );
+}
+
+export function createPlayTogetherInvite(accessToken: string, roomId: string) {
+  return requestApi<PlayTogetherInviteResponse>(
+    `/api/v1/play-together/rooms/${encodeURIComponent(roomId)}/invites`,
+    { accessToken, method: "POST" },
+  );
+}
+
+export function revokePlayTogetherInvite(accessToken: string, roomId: string, inviteId: string) {
+  return requestApi<{ invite: PlayTogetherRevokedInvite }>(
+    `/api/v1/play-together/rooms/${encodeURIComponent(roomId)}/invites/${encodeURIComponent(inviteId)}/revoke`,
+    { accessToken, method: "PATCH" },
+  );
+}
+
+export function joinPlayTogetherRoom(accessToken: string, inviteToken: string) {
+  return requestApi<PlayTogetherJoinRoomResponse>("/api/v1/play-together/rooms/join", {
+    accessToken,
+    body: { inviteToken },
+    method: "POST",
+  });
+}
+
+export function getPlayTogetherHeartbeat(accessToken: string, roomId: string) {
+  return requestApi<PlayTogetherHeartbeatResponse>(
+    `/api/v1/play-together/rooms/${encodeURIComponent(roomId)}/heartbeat`,
+    { accessToken },
+  );
+}
+
+// PX01-D: Host playback commands. Only the Host may issue them (backend
+// enforces not_host); the command is never applied locally, only POSTed, and
+// guests converge by applying the canonical room state.
+export function sendPlayTogetherRoomCommand(
+  accessToken: string,
+  roomId: string,
+  command: PlayTogetherRoomCommandRequest,
+) {
+  return requestApi<{ command: PlayTogetherRoomCommand }>(
+    `/api/v1/play-together/rooms/${encodeURIComponent(roomId)}/commands`,
+    { accessToken, body: command, method: "POST" },
+  );
+}
+
+// PX01-C1: Read-only consumer visibility seam. Public (no access token) so the
+// feature gate can be resolved before sign-in. The Android client never
+// supplies/overrides `enabled`; it consumes the server value only.
+export function getPlayTogetherConfig() {
+  return requestApi<PlayTogetherFeatureConfig>("/api/v1/play-together/config");
 }

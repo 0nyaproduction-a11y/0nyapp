@@ -1,12 +1,13 @@
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { BrandWordmark, RecoveryState } from "../components/ui";
-import { ApiError, createRewardedAdAttempt, getRewardedAdAttemptStatus, getSeries, getWallet, purchaseEpisodeWithCoins } from "../lib/api";
+import { ApiError, createRewardedAdAttempt, getRewardedAdAttemptStatus, getRewardedProgress, getSeries, getWallet, purchaseEpisodeWithCoins, recordRewardedEvent } from "../lib/api";
 import { useAdMob } from "../lib/adMob";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import { publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { useEpisodeRewardedUnlockAd, hasRewardedAdUnitId } from "../lib/episodeRewardedUnlockAd";
 import type { RootStackParamList } from "../navigation/types";
@@ -24,7 +25,8 @@ type RewardedFlowState =
   | "confirming"
   | "unavailable"
   | "failed"
-  | "verified";
+  | "verified"
+  | "partial";
 
 type PendingUnlockAction = "coin" | "plus" | "rewarded" | null;
 
@@ -83,13 +85,29 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
   const [rewardedFlowState, setRewardedFlowState] = useState<RewardedFlowState>("idle");
   const [rewardedFlowMessage, setRewardedFlowMessage] = useState<string | null>(null);
   const [rewardedRecovery, setRewardedRecovery] = useState<"expired" | "rejected" | null>(null);
+  const [rewardedPartial, setRewardedPartial] = useState<{ verifiedProgress: number; requiredCompletions: number } | null>(null);
   const [pendingUnlockAction, setPendingUnlockAction] = useState<PendingUnlockAction>(null);
   const pollingInFlightRef = useRef(false);
+
+  // Launch multi-rewarded support. Required count is backend/CMS controlled and
+  // is NEVER derived from coin price on the client.
+  const requiredCount = rewardedPartial?.requiredCompletions ?? episode.requiredRewardedCompletions ?? 1;
 
   const coinUnlockEnabled = episode.coinUnlockEnabled && episode.coinPrice > 0;
   const rewardedUnlockEnabled = episode.rewardedUnlockEnabled;
   const plusAccessEnabled = episode.plusAccess;
   const rewardedAdsReady = adMob.canRequestAds && adMob.isInitialized && hasRewardedAdUnitId();
+  const microDramaAccessContext = useMemo(
+    () => ({
+      access: route.params.access,
+      episode,
+      episodeAccess: route.params.episodeAccess,
+      resumeAtSeconds,
+      seriesSlug,
+      seriesTitle,
+    }),
+    [episode, resumeAtSeconds, route.params.access, route.params.episodeAccess, seriesSlug, seriesTitle],
+  );
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -154,6 +172,30 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
     await openWatchAfterUnlock(refreshed);
   }, [accessToken, openWatchAfterUnlock, seriesSlug]);
 
+  const emitRewardedEvent = useCallback(
+    (eventType: Parameters<typeof recordRewardedEvent>[1]["eventType"]) => {
+      if (!accessToken || !episode.id) {
+        return;
+      }
+
+      void recordRewardedEvent(accessToken, {
+        eventType,
+        episodeId: episode.id,
+        requiredCount,
+      }).catch(() => undefined);
+    },
+    [accessToken, episode.id, requiredCount],
+  );
+
+  useEffect(() => {
+    if (!accessToken || !rewardedUnlockEnabled || !episode.id) {
+      return;
+    }
+
+    emitRewardedEvent("rewarded_offer_shown");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const startRewardedUnlock = useCallback(async () => {
     if (!rewardedUnlockEnabled) {
       setRewardedFlowState("unavailable");
@@ -175,9 +217,14 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
 
     if (!accessToken) {
       setPendingUnlockAction("rewarded");
-      navigation.navigate("SignIn");
+      void navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "rewarded", accessContext: microDramaAccessContext },
+      );
       return;
     }
+
+    emitRewardedEvent("rewarded_cta_selected");
 
     const isBusy =
       rewardedFlowState === "creating-attempt" ||
@@ -235,16 +282,21 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
     } catch (error) {
       if (error instanceof ApiError && error.code === "not_authenticated") {
         setPendingUnlockAction("rewarded");
-        navigation.navigate("SignIn");
+        void navigateToSignIn(
+          () => navigation.navigate("SignIn"),
+          { kind: "rewarded", accessContext: microDramaAccessContext },
+        );
         return;
       }
 
       setRewardedFlowState("failed");
       setRewardedFlowMessage("We couldn't prepare the unlock right now.");
     }
-  }, [
+}, [
     accessToken,
     episode.id,
+    emitRewardedEvent,
+    microDramaAccessContext,
     navigation,
     refreshEpisodeAccessAndOpen,
     rewardedAdsReady,
@@ -286,6 +338,51 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
   }, [loadWallet, accessToken, coinUnlockEnabled]);
 
   useEffect(() => {
+    if (!accessToken || !rewardedUnlockEnabled || !episode.id) {
+      return;
+    }
+
+    // Phase 12: recover verified partial progress from the backend when the
+    // paywall mounts or refocuses. We never persist authoritative progress
+    // client-side; the server remains authoritative.
+    if (rewardedFlowState !== "idle" && rewardedFlowState !== "partial") {
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const progress = await getRewardedProgress(accessToken, episode.id);
+
+        if (!active || !progress) {
+          return;
+        }
+
+        if (
+          progress.state === "partial" &&
+          progress.verifiedProgress > 0 &&
+          progress.verifiedProgress < progress.requiredCompletions
+        ) {
+          setRewardedPartial({
+            verifiedProgress: progress.verifiedProgress,
+            requiredCompletions: progress.requiredCompletions,
+          });
+          setRewardedFlowState("partial");
+        } else if (progress.state === "complete") {
+          await refreshEpisodeAccessAndOpen();
+        }
+      } catch {
+        // Recovery is best-effort; ignore transient network errors here.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [accessToken, episode.id, rewardedUnlockEnabled, rewardedFlowState, refreshEpisodeAccessAndOpen]);
+
+  useEffect(() => {
     if (rewardedFlowState !== "ready" || !rewardedAttempt?.customData) {
       return;
     }
@@ -311,6 +408,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
 
     if (rewardedUnlockAd.status === "failed" && rewardedFlowState !== "confirming") {
       const timeoutId = setTimeout(() => {
+        emitRewardedEvent("rewarded_load_failed");
         setRewardedFlowState("failed");
         setRewardedFlowMessage(rewardedUnlockAd.error ?? "We couldn't load the rewarded ad.");
         setRewardedAttempt(null);
@@ -320,7 +418,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
     }
 
     return undefined;
-  }, [rewardedFlowState, rewardedUnlockAd.error, rewardedUnlockAd.status]);
+  }, [emitRewardedEvent, rewardedFlowState, rewardedUnlockAd.error, rewardedUnlockAd.status]);
 
   useEffect(() => {
     if (rewardedUnlockAd.lastEvent !== "earned_client_signal") {
@@ -385,7 +483,7 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
           return;
         }
 
-        if (status.status === "granted" || status.status === "already_accessible") {
+        if (status.status === "already_accessible") {
           try {
             setRewardedFlowState("verified");
             setRewardedFlowMessage("Unlock confirmed.");
@@ -395,6 +493,33 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
             setRewardedFlowMessage("Unlock could not be confirmed.");
             setRewardedAttempt(null);
           }
+          return;
+        }
+
+        if (status.status === "granted") {
+          const verified = status.verifiedProgress ?? 0;
+          const required = status.requiredCompletions ?? requiredCount;
+
+          // Phase 10/11: requirement fully met -> permanent entitlement granted.
+          if (verified >= required) {
+            try {
+              setRewardedFlowState("verified");
+              setRewardedFlowMessage("Unlock confirmed.");
+              await refreshEpisodeAccessAndOpen();
+            } catch {
+              setRewardedFlowState("failed");
+              setRewardedFlowMessage("Unlock could not be confirmed.");
+              setRewardedAttempt(null);
+            }
+            return;
+          }
+
+          // Partial progress: hold on a controlled 0nya screen. Do NOT auto-chain
+          // the next ad. The user must explicitly tap "Watch next ad".
+          setRewardedPartial({ verifiedProgress: verified, requiredCompletions: required });
+          setRewardedAttempt(null);
+          setRewardedFlowState("partial");
+          setRewardedFlowMessage(null);
           return;
         }
 
@@ -442,12 +567,15 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
       active = false;
       clearInterval(intervalId);
     };
-  }, [accessToken, refreshEpisodeAccessAndOpen, rewardedAttempt?.customData, rewardedFlowState]);
+  }, [accessToken, refreshEpisodeAccessAndOpen, requiredCount, rewardedAttempt?.customData, rewardedFlowState]);
 
   const handleUnlockWithCoins = useCallback(async () => {
     if (!accessToken) {
       setPendingUnlockAction("coin");
-      navigation.navigate("SignIn");
+      void navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "coinUnlock", accessContext: microDramaAccessContext },
+      );
       return;
     }
 
@@ -464,7 +592,10 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
 
       if (result.status === "not_authenticated") {
         setPendingUnlockAction("coin");
-        navigation.navigate("SignIn");
+        void navigateToSignIn(
+          () => navigation.navigate("SignIn"),
+          { kind: "coinUnlock", accessContext: microDramaAccessContext },
+        );
         return;
       }
 
@@ -490,7 +621,10 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
     } catch (unlockFailure) {
       if (unlockFailure instanceof ApiError && unlockFailure.code === "not_authenticated") {
         setPendingUnlockAction("coin");
-        navigation.navigate("SignIn");
+        void navigateToSignIn(
+          () => navigation.navigate("SignIn"),
+          { kind: "coinUnlock", accessContext: microDramaAccessContext },
+        );
         return;
       }
 
@@ -498,21 +632,44 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
     } finally {
       setIsUnlocking(false);
     }
-  }, [accessToken, coinUnlockEnabled, episode.id, navigation, openWatchAfterUnlock, seriesSlug]);
+  }, [accessToken, coinUnlockEnabled, episode.id, microDramaAccessContext, navigation, openWatchAfterUnlock, seriesSlug]);
 
   const handleOpenPlus = useCallback(() => {
     if (!accessToken) {
       setPendingUnlockAction("plus");
-      navigation.navigate("SignIn");
+      void navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "plus" });
       return;
     }
 
     navigation.navigate("Plus");
   }, [accessToken, navigation]);
 
+  const handleOpenContextualWallet = useCallback(() => {
+    navigation.navigate("Wallet", {
+      microDramaAccess: microDramaAccessContext,
+    });
+  }, [microDramaAccessContext, navigation]);
+
   function handleSignIn(nextAction: Exclude<PendingUnlockAction, null>) {
     setPendingUnlockAction(nextAction);
-    navigation.navigate("SignIn");
+
+    if (nextAction === "rewarded") {
+      void navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "rewarded", accessContext: microDramaAccessContext },
+      );
+      return;
+    }
+
+    if (nextAction === "coin") {
+      void navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "coinUnlock", accessContext: microDramaAccessContext },
+      );
+      return;
+    }
+
+    void navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "plus" });
   }
 
   useEffect(() => {
@@ -626,6 +783,10 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
         </View>
       </View>
 
+      {rewardedPartial ? (
+        <Text style={styles.headerSubtitle}>{`Rewarded progress: ${rewardedPartial.verifiedProgress} of ${rewardedPartial.requiredCompletions} ads watched`}</Text>
+      ) : null}
+
       <View style={styles.optionList}>
         {coinUnlockEnabled ? (
           <UnlockOptionRow
@@ -639,23 +800,43 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
         ) : null}
 
         {rewardedUnlockEnabled ? (
-          <UnlockOptionRow
-            accessibilityLabel="Watch ad to unlock"
-            detail={rewardedDetailText}
-            disabled={isRewardedBusy || (accessToken ? !rewardedAdsReady : false)}
-            onPress={
-              accessToken
-                ? () => {
-                    if (isRewardedBusy) {
-                      return;
+          rewardedPartial ? (
+            <UnlockOptionRow
+              accessibilityLabel="Watch next rewarded ad to continue unlocking"
+              detail={`${rewardedPartial.verifiedProgress} of ${rewardedPartial.requiredCompletions} complete`}
+              disabled={isRewardedBusy || (accessToken ? !rewardedAdsReady : false)}
+              onPress={
+                accessToken
+                  ? () => {
+                      if (isRewardedBusy) {
+                        return;
+                      }
+                      void startRewardedUnlock();
                     }
-                    void startRewardedUnlock();
-                  }
-                : () => handleSignIn("rewarded")
-            }
-            subtitle="Unlock this episode"
-            title="Watch an ad"
-          />
+                  : () => handleSignIn("rewarded")
+              }
+              subtitle="Continue unlocking this episode"
+              title="Watch next ad"
+            />
+          ) : (
+            <UnlockOptionRow
+              accessibilityLabel="Watch ad to unlock"
+              detail={rewardedDetailText}
+              disabled={isRewardedBusy || (accessToken ? !rewardedAdsReady : false)}
+              onPress={
+                accessToken
+                  ? () => {
+                      if (isRewardedBusy) {
+                        return;
+                      }
+                      void startRewardedUnlock();
+                    }
+                  : () => handleSignIn("rewarded")
+              }
+              subtitle="Unlock this episode"
+              title={requiredCount >= 2 ? "Watch 2 ads to unlock" : "Watch an ad to unlock"}
+            />
+          )
         ) : null}
 
         {plusAccessEnabled ? (
@@ -668,7 +849,21 @@ export function EpisodeAccessOptionsScreen({ navigation, route }: Props) {
         ) : null}
       </View>
 
-      {unlockError ? <Text style={styles.inlineError}>{unlockError}</Text> : null}
+      {unlockError ? (
+        <View style={styles.inlineRecovery}>
+          <Text style={styles.inlineError}>{unlockError}</Text>
+          {unlockError === "Not enough coins." ? (
+            <Pressable
+              accessibilityLabel="Open Wallet to add coins for this episode"
+              accessibilityRole="button"
+              onPress={handleOpenContextualWallet}
+              style={({ pressed }) => [styles.inlineAction, pressed ? styles.inlineActionPressed : null]}
+            >
+              <Text style={styles.inlineActionText}>Add Coins in Wallet</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <Pressable
         accessibilityLabel="Not now"
@@ -784,6 +979,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     lineHeight: 20,
+  },
+  inlineRecovery: {
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  inlineAction: {
+    alignItems: "center",
+    backgroundColor: colors.backgroundSoft,
+    borderColor: "rgba(13, 209, 188, 0.24)",
+    borderWidth: borders.width,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 14,
+  },
+  inlineActionPressed: {
+    backgroundColor: "rgba(13, 209, 188, 0.10)",
+  },
+  inlineActionText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
   },
   notNowButton: {
     alignSelf: "flex-start",

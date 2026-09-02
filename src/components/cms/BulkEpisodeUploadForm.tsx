@@ -19,8 +19,12 @@ import type {
   BulkEpisodeDefaults,
   BulkEpisodeFinalizeResult,
 } from "@/lib/cms/bulk-episodes";
+import { REWARDED_REQUIRED_COMPLETIONS_VALUES } from "@/lib/cms/constants";
 
 type BulkEpisodeUploadFormProps = {
+  attachEpisodeMediaUploadIntentAction: (
+    input: { episodeId: string; mediaAssetId: string },
+  ) => Promise<{ success: true } | { success: false; error: string }>;
   createEpisodeAction: (input: BulkEpisodeCreateInput) => Promise<BulkEpisodeCreateResult>;
   existingEpisodeNumbers: number[];
   finalizeUploadAction: (input: { episodeId: string; mediaAssetId: string }) => Promise<BulkEpisodeFinalizeResult>;
@@ -71,6 +75,7 @@ const DEFAULT_DEFAULTS: BulkEpisodeDefaults = {
   coinPrice: 0,
   rewardedUnlockEnabled: false,
   rewardedAccessMode: "permanent",
+  requiredRewardedCompletions: 1,
   plusAccess: true,
   lockedPreviewSeconds: 0,
   contentRatingOverride: null,
@@ -152,7 +157,6 @@ function getOrientationLabel(width: number, height: number) {
 }
 
 function getAspectRatioLabel(width: number, height: number) {
-  const key = `${width}:${height}`;
   const commonRatios = new Set(["1:1", "4:5", "3:4", "9:16", "2:3", "16:9", "5:4", "4:3", "3:2"]);
   const reducedLeftRight = greatestCommonDivisor(width, height);
   const reduced = `${width / reducedLeftRight}:${height / reducedLeftRight}`;
@@ -304,6 +308,7 @@ function uploadToMux(
 }
 
 export function BulkEpisodeUploadForm({
+  attachEpisodeMediaUploadIntentAction,
   createEpisodeAction,
   existingEpisodeNumbers,
   finalizeUploadAction,
@@ -359,8 +364,19 @@ export function BulkEpisodeUploadForm({
       messages.push("Locked preview seconds must be between 0 and 3.");
     }
 
+    if (!REWARDED_REQUIRED_COMPLETIONS_VALUES.includes(batchDefaults.requiredRewardedCompletions as 1 | 2)) {
+      messages.push("Rewarded ads required must be 1 or 2.");
+    }
+
     return messages;
-  }, [batchDefaults.coinPrice, batchDefaults.coinUnlockEnabled, batchDefaults.lockedPreviewSeconds, duplicateEpisodeNumbers, rows]);
+  }, [
+    batchDefaults.coinPrice,
+    batchDefaults.coinUnlockEnabled,
+    batchDefaults.lockedPreviewSeconds,
+    batchDefaults.requiredRewardedCompletions,
+    duplicateEpisodeNumbers,
+    rows,
+  ]);
 
   const counts = useMemo(() => {
     return rows.reduce(
@@ -525,6 +541,20 @@ export function BulkEpisodeUploadForm({
 
       if ("error" in intent) {
         updateRowState(index, { error: intent.error, status: "failed" });
+        return;
+      }
+
+      // Attach the pending media asset to the episode BEFORE sending any bytes,
+      // mirroring the proven episode attach-before-upload pattern. If the browser
+      // upload or reconciliation is interrupted, the media asset is already owned
+      // by this episode, so it is never left orphaned.
+      const attachResult = await attachEpisodeMediaUploadIntentAction({
+        episodeId,
+        mediaAssetId: intent.mediaAssetId,
+      });
+
+      if (!attachResult.success) {
+        updateRowState(index, { error: attachResult.error, status: "failed" });
         return;
       }
 
@@ -794,20 +824,42 @@ export function BulkEpisodeUploadForm({
               <CmsSelect
                 className={inputClassName}
                 value={batchDefaults.rewardedAccessMode}
+                onChange={() =>
+                  setBatchDefaults((current) => ({
+                    ...current,
+                    rewardedAccessMode: "permanent",
+                  }))
+                }
+                disabled={isRunning}
+                options={[{ label: "Permanent", value: "permanent" }]}
+              />
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className={labelClassName}>Rewarded ads required</span>
+              <CmsSelect
+                className={inputClassName}
+                value={String(batchDefaults.requiredRewardedCompletions)}
                 onChange={(newValue) =>
                   setBatchDefaults((current) => ({
                     ...current,
-                    rewardedAccessMode: newValue === "session" ? "session" : "permanent",
+                    requiredRewardedCompletions: newValue === "2" ? 2 : 1,
                   }))
                 }
                 disabled={isRunning}
                 options={[
-                  { label: "Permanent", value: "permanent" },
-                  { label: "Session", value: "session" },
+                  { label: "1 (single ad)", value: "1" },
+                  { label: "2 (two ads)", value: "2" },
                 ]}
               />
             </label>
+          </div>
 
+          <p className="text-xs text-bone/40">
+            Launch rewarded unlock is permanent only. Session mode is not supported in current rewarded unlocks.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex items-center gap-2 text-sm text-bone/80">
               <input
                 type="checkbox"

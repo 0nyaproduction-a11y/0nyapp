@@ -36,14 +36,30 @@ export type MainTabParamList = {
   Profile: NavigatorScreenParams<ProfileStackParamList>;
 };
 
+export type MicroDramaAccessContext = {
+  access: EpisodeAccess;
+  episode: ApiEpisode;
+  episodeAccess: Record<string, EpisodeAccess>;
+  resumeAtSeconds?: number | null;
+  seriesSlug: string;
+  seriesTitle: string;
+};
+
 export type RootStackParamList = {
   AgeDeclaration: undefined;
   SignIn: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
-  Wallet: undefined;
+  Wallet:
+    | undefined
+    | {
+        microDramaAccess?: MicroDramaAccessContext;
+      };
   CoinPurchase:
     | undefined
     | {
+        returnToWallet?: {
+          microDramaAccess: MicroDramaAccessContext;
+        };
         returnToChai?: {
           selectedAmount: number;
           shortFilm: ApiShortFilm;
@@ -101,13 +117,17 @@ export type RootStackParamList = {
     target?: ParentalControlsTarget;
   };
   EpisodeAccessOptions: {
-    access: EpisodeAccess;
-    episode: ApiEpisode;
-    episodeAccess: Record<string, EpisodeAccess>;
-    resumeAtSeconds?: number | null;
-    seriesSlug: string;
-    seriesTitle: string;
+    access: MicroDramaAccessContext["access"];
+    episode: MicroDramaAccessContext["episode"];
+    episodeAccess: MicroDramaAccessContext["episodeAccess"];
+    resumeAtSeconds?: MicroDramaAccessContext["resumeAtSeconds"];
+    seriesSlug: MicroDramaAccessContext["seriesSlug"];
+    seriesTitle: MicroDramaAccessContext["seriesTitle"];
   };
+  PlayTogetherRoom:
+    | { mode: "host"; episodeId: string }
+    | { mode: "join"; inviteToken: string }
+    | { mode: "room"; roomId: string };
 };
 
 export type RootStackScreenProps<Screen extends keyof RootStackParamList> =

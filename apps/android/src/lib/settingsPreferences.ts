@@ -3,6 +3,29 @@ import * as SecureStore from "expo-secure-store";
 const AUTOPLAY_NEXT_PREFERENCE_KEY = "0nya.autoplay-next-preference";
 const NEW_RELEASE_NOTIFICATIONS_PREFERENCE_KEY = "0nya.new-release-notifications-preference";
 const MARKETING_NOTIFICATIONS_PREFERENCE_KEY = "0nya.marketing-notifications-preference";
+const APP_LANGUAGE_PREFERENCE_KEY = "0nya.app-language-preference";
+
+export type StoredAppLanguage = "en" | "hi";
+
+export async function getAppLanguagePreference(): Promise<StoredAppLanguage> {
+  try {
+    const value = await SecureStore.getItemAsync(APP_LANGUAGE_PREFERENCE_KEY);
+    if (value === "en" || value === "hi") {
+      return value;
+    }
+    return "en";
+  } catch {
+    return "en";
+  }
+}
+
+export async function setAppLanguagePreference(value: StoredAppLanguage) {
+  try {
+    await SecureStore.setItemAsync(APP_LANGUAGE_PREFERENCE_KEY, value);
+  } catch {
+    console.warn("Unable to save app language preference.");
+  }
+}
 
 async function readBooleanPreference(key: string, fallback: boolean): Promise<boolean> {
   const value = await SecureStore.getItemAsync(key);

@@ -11,13 +11,16 @@ import {
   RecoveryState,
   Title,
 } from "../components/ui";
-import { getMe, getRequestRecoveryCopy, getWallet, type RecoveryCopy } from "../lib/api";
+import { ApiError, getMe, getRequestRecoveryCopy, getSeries, getWallet, purchaseEpisodeWithCoins, type RecoveryCopy } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse, WalletResponse } from "../types/api";
+import { publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { colors, borders } from "../theme/tokens";
 
 type WalletEntry = WalletResponse["recentTransactions"][number];
+type Props = RootStackScreenProps<"Wallet">;
 
 const ledgerDescriptionByType: Record<WalletEntry["type"], string> = {
   credit: "Coin top-up",
@@ -40,14 +43,21 @@ function formatLedgerAmount(amount: number) {
   return `${amount > 0 ? "+" : ""}${amount} coins`;
 }
 
-export function WalletScreen() {
+export function WalletScreen({ route }: Props) {
   const navigation = useNavigation<RootStackScreenProps<"Wallet">["navigation"]>();
   const { session } = useAuth();
+  const microDramaAccess = route.params?.microDramaAccess ?? null;
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<RecoveryCopy | null>(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [isUnlockingEpisode, setIsUnlockingEpisode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const token = session?.access_token;
+  const episode = microDramaAccess?.episode ?? null;
+  const coinUnlockEnabled = Boolean(episode?.coinUnlockEnabled && episode.coinPrice > 0);
+  const rewardedUnlockEnabled = Boolean(episode?.rewardedUnlockEnabled);
+  const plusAccessEnabled = Boolean(episode?.plusAccess && me?.subscription.status !== "active");
 
   const loadWallet = useCallback(async () => {
     if (!token) {
@@ -93,6 +103,112 @@ export function WalletScreen() {
     }
   }, [token]);
 
+  const openWatchAfterUnlock = useCallback(async () => {
+    if (!token || !microDramaAccess) {
+      return;
+    }
+
+    const refreshed = await getSeries(microDramaAccess.seriesSlug, token);
+    const refreshedEpisode =
+      refreshed.series.episodes.find((candidate) => candidate.number === microDramaAccess.episode.number) ??
+      microDramaAccess.episode;
+    const refreshedAccess =
+      refreshed.episodeAccess[String(refreshedEpisode.number)] ??
+      microDramaAccess.access;
+
+    if (!refreshedAccess.canWatch) {
+      throw new Error("Episode access was not reflected by the backend.");
+    }
+
+    publishConfirmedSeriesAccess(refreshed);
+
+    navigation.replace("Watch", {
+      access: refreshedAccess,
+      episode: refreshedEpisode,
+      episodeAccess: refreshed.episodeAccess,
+      resumeAtSeconds: microDramaAccess.resumeAtSeconds,
+      series: refreshed.series,
+    });
+  }, [microDramaAccess, navigation, token]);
+
+  const handleUnlockEpisode = useCallback(async () => {
+    if (!microDramaAccess || !episode || !coinUnlockEnabled) {
+      return;
+    }
+
+    if (!token) {
+      await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
+      return;
+    }
+
+    setIsUnlockingEpisode(true);
+    setUnlockError(null);
+
+    try {
+      const result = await purchaseEpisodeWithCoins(token, episode.id);
+
+      if (result.status === "not_authenticated") {
+        await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
+        return;
+      }
+
+      if (result.status === "insufficient_balance") {
+        const remainingBalance = result.remainingBalance;
+        if (remainingBalance !== null) {
+          setWallet((current) => current ? { ...current, balance: remainingBalance } : current);
+        }
+        setUnlockError("Not enough coins.");
+        return;
+      }
+
+      if (
+        result.success ||
+        result.status === "already_owned" ||
+        result.status === "already_accessible" ||
+        result.status === "active_subscription"
+      ) {
+        const remainingBalance = result.remainingBalance;
+        if (remainingBalance !== null) {
+          setWallet((current) => current ? { ...current, balance: remainingBalance } : current);
+        }
+        await openWatchAfterUnlock();
+        return;
+      }
+
+      setUnlockError("We couldn't complete this purchase right now.");
+    } catch (unlockFailure) {
+      if (unlockFailure instanceof ApiError && unlockFailure.code === "not_authenticated") {
+        await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
+        return;
+      }
+
+      setUnlockError("We couldn't complete this purchase right now.");
+    } finally {
+      setIsUnlockingEpisode(false);
+    }
+  }, [coinUnlockEnabled, episode, microDramaAccess, navigation, openWatchAfterUnlock, token]);
+
+  const handleOpenRewarded = useCallback(() => {
+    if (!microDramaAccess) {
+      return;
+    }
+
+    navigation.navigate("EpisodeAccessOptions", microDramaAccess);
+  }, [microDramaAccess, navigation]);
+
+  const handleAddCoins = useCallback(() => {
+    if (microDramaAccess) {
+      navigation.navigate("CoinPurchase", {
+        returnToWallet: {
+          microDramaAccess,
+        },
+      });
+      return;
+    }
+
+    navigation.navigate("CoinPurchase");
+  }, [microDramaAccess, navigation]);
+
   useFocusEffect(
     useCallback(() => {
       void loadWallet();
@@ -106,7 +222,7 @@ export function WalletScreen() {
           <Label>Guest</Label>
           <Title>Sign in to view your wallet</Title>
           <Body>Sign in to view your coins and wallet activity.</Body>
-          <Button accessibilityLabel="Sign in to view wallet" onPress={() => navigation.navigate("SignIn")}>
+          <Button accessibilityLabel="Sign in to view wallet" onPress={async () => { await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess: null }); }}>
             Sign in
           </Button>
         </Card>
@@ -136,12 +252,70 @@ export function WalletScreen() {
             <Pressable
               accessibilityLabel="Add coins"
               accessibilityRole="button"
-              onPress={() => navigation.navigate("CoinPurchase")}
+              onPress={handleAddCoins}
               style={({ pressed }) => [styles.actionPill, pressed && styles.actionPillPressed]}
             >
               <Text style={styles.actionPillText}>Add Coins</Text>
             </Pressable>
           </View>
+
+          {microDramaAccess && episode ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionHeading}>{`Unlock Episode ${episode.number}`}</Text>
+              <Text style={styles.plusStatus}>{microDramaAccess.seriesTitle}</Text>
+              <Text style={styles.plusBody}>{episode.title}</Text>
+              <View style={styles.contextActions}>
+                {coinUnlockEnabled ? (
+                  <Pressable
+                    accessibilityLabel={`Unlock ${episode.title} with ${episode.coinPrice} coins`}
+                    accessibilityRole="button"
+                    disabled={isUnlockingEpisode}
+                    onPress={() => void handleUnlockEpisode()}
+                    style={({ pressed }) => [
+                      styles.actionPill,
+                      pressed && styles.actionPillPressed,
+                      isUnlockingEpisode && styles.actionPillDisabled,
+                    ]}
+                  >
+                    <Text style={styles.actionPillText}>
+                      {isUnlockingEpisode ? "Unlocking" : `Unlock for ${episode.coinPrice} Coins`}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {coinUnlockEnabled && wallet.balance < episode.coinPrice ? (
+                  <Pressable
+                    accessibilityLabel="Add coins for this episode"
+                    accessibilityRole="button"
+                    onPress={handleAddCoins}
+                    style={({ pressed }) => [styles.actionPill, styles.actionPillSecondary, pressed && styles.actionPillPressed]}
+                  >
+                    <Text style={styles.actionPillText}>Add Coins</Text>
+                  </Pressable>
+                ) : null}
+                {rewardedUnlockEnabled ? (
+                  <Pressable
+                    accessibilityLabel="Watch rewarded ad for this episode"
+                    accessibilityRole="button"
+                    onPress={handleOpenRewarded}
+                    style={({ pressed }) => [styles.actionPill, pressed && styles.actionPillPressed]}
+                  >
+                    <Text style={styles.actionPillText}>Watch Ad</Text>
+                  </Pressable>
+                ) : null}
+                {plusAccessEnabled ? (
+                  <Pressable
+                    accessibilityLabel="Open 0nya Plus for this episode"
+                    accessibilityRole="button"
+                    onPress={() => navigation.navigate("Plus")}
+                    style={({ pressed }) => [styles.actionPill, styles.actionPillSecondary, pressed && styles.actionPillPressed]}
+                  >
+                    <Text style={styles.actionPillText}>Get 0nya Plus</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {unlockError ? <Text style={styles.inlineError}>{unlockError}</Text> : null}
+            </View>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.sectionHeading}>Recent Activity</Text>
@@ -249,6 +423,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(13, 209, 188, 0.12)",
     borderColor: "rgba(13, 209, 188, 0.34)",
   },
+  actionPillDisabled: {
+    opacity: 0.58,
+  },
   actionPillText: {
     color: colors.text,
     fontSize: 14,
@@ -268,6 +445,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.1,
+  },
+  contextActions: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  inlineError: {
+    color: "#ff8d76",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
   },
   activityList: {
     gap: 0,

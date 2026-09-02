@@ -14,6 +14,7 @@ import {
 } from "../components/ui";
 import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import { getBillingService, type BillingHarnessScenario, type StoreProduct } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
@@ -67,8 +68,8 @@ export function PlusScreen({ navigation }: Props) {
     }, [loadSubscription]),
   );
 
-  function handleSignIn() {
-    navigation.navigate("SignIn");
+  async function handleSignIn() {
+    await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "plus" });
   }
 
   async function handlePlusPurchase(scenario?: BillingHarnessScenario) {

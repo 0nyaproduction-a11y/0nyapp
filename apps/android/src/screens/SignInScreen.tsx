@@ -2,11 +2,12 @@ import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Screen } from "../components/Screen";
-import { Body, Button, Card, ErrorText, Field, Label, Title } from "../components/ui";
+import { BrandWordmark, Button, ErrorText } from "../components/ui";
 import { useAuth } from "../lib/authContext";
+import { useAppLanguage } from "../lib/appLanguage";
 import { supabase } from "../lib/supabase";
 import type { RootStackScreenProps } from "../navigation/types";
-import { borders, colors } from "../theme/tokens";
+import { borders, colors, radii, spacing, typography } from "../theme/tokens";
 
 const INDIA_PHONE_PREFIX = "+91";
 const OTP_LENGTH = 6;
@@ -49,6 +50,7 @@ function getSafeAuthErrorMessage(error: { code?: string; message: string }, acti
 export function SignInScreen() {
   const navigation = useNavigation<RootStackScreenProps<"SignIn">["navigation"]>();
   const { signIn } = useAuth();
+  const { t } = useAppLanguage();
   const [step, setStep] = useState<AuthStep>("phone");
   const [phoneDigits, setPhoneDigits] = useState("");
   const [otp, setOtp] = useState("");
@@ -194,182 +196,266 @@ export function SignInScreen() {
 
   return (
     <Screen>
-      <Title>0nya</Title>
-      <Card>
-        <Label>Phone sign in</Label>
-        {step === "phone" ? (
-          <>
-            <Title>Sign in to 0nya</Title>
-            <Body>Enter your mobile number to continue.</Body>
-            <View style={styles.phoneRow}>
-              <View style={styles.prefix}>
-                <Text style={styles.prefixText}>{INDIA_PHONE_PREFIX}</Text>
-              </View>
-              <View style={styles.inputWrap}>
-                <Field
-                  accessibilityLabel="Mobile number"
-                  autoComplete="tel"
-                  autoCapitalize="none"
-                  keyboardType="phone-pad"
-                  maxLength={PHONE_LENGTH}
-                  onChangeText={(value) => setPhoneDigits(normalizeDigits(value))}
-                  placeholder="Mobile number"
-                  textContentType="telephoneNumber"
-                  value={phoneDigits}
-                />
-              </View>
+      <View style={styles.header}>
+        <BrandWordmark style={styles.brand} />
+      </View>
+
+      {step === "phone" ? (
+        <View style={styles.content}>
+          <Text style={styles.title}>{t("signin.header", "Enter your mobile number")}</Text>
+          <Text style={styles.subtitle}>
+            {t("signin.subtitle", "We'll send a 6-digit verification code to sign in or create your account.")}
+          </Text>
+
+          <View style={styles.phoneInputContainer}>
+            <Text style={styles.phonePrefix}>{INDIA_PHONE_PREFIX}</Text>
+            <View style={styles.phoneDivider} />
+            <TextInput
+              accessibilityLabel={t("signin.phone_label", "Mobile number")}
+              autoCapitalize="none"
+              autoComplete="tel"
+              keyboardType="phone-pad"
+              maxLength={PHONE_LENGTH}
+              onChangeText={(value) => setPhoneDigits(normalizeDigits(value))}
+              placeholder={t("signin.phone_placeholder", "10-digit number")}
+              placeholderTextColor="#6e6d68"
+              style={styles.phoneInput}
+              textContentType="telephoneNumber"
+              value={phoneDigits}
+            />
+          </View>
+
+          {message ? <Text style={styles.messageText}>{message}</Text> : null}
+          {error ? <ErrorText>{error}</ErrorText> : null}
+
+          <Button
+            accessibilityLabel={t("signin.get_otp", "Send OTP")}
+            disabled={!canSendCode}
+            onPress={() => void sendCode()}
+            style={styles.primaryButton}
+            variant="primary"
+          >
+            {isSendingCode ? "Sending..." : t("signin.get_otp", "Send OTP")}
+          </Button>
+
+          <Text style={styles.disclaimerText}>
+            {t("signin.help_text", "Your number is used to verify your 0nya account.")}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.content}>
+          <Text style={styles.title}>{t("signin.enter_code", "Enter OTP")}</Text>
+          <Text style={styles.subtitle}>
+            {`We've sent a 6-digit code to ${maskedPhone}`}
+          </Text>
+
+          <View style={styles.otpInputWrap}>
+            <View pointerEvents="none" style={styles.otpBoxes}>
+              {Array.from({ length: OTP_LENGTH }).map((_, index) => (
+                <View
+                  key={`otp-box-${index}`}
+                  style={[styles.otpBox, otp[index] ? styles.otpBoxFilled : null]}
+                >
+                  <Text style={styles.otpBoxText}>{otp[index] ?? ""}</Text>
+                </View>
+              ))}
             </View>
-            {message ? <Body>{message}</Body> : null}
-            {error ? <ErrorText>{error}</ErrorText> : null}
-            <Button
-              accessibilityLabel="Send OTP"
-              disabled={!canSendCode}
-              onPress={() => void sendCode()}
-            >
-              {isSendingCode ? "Sending" : "Send OTP"}
-            </Button>
-            <Body>We&apos;ll never share your number with anyone.</Body>
+            <TextInput
+              accessibilityLabel="Verification code"
+              autoComplete="one-time-code"
+              autoCapitalize="none"
+              keyboardType="number-pad"
+              maxLength={OTP_LENGTH}
+              onChangeText={(value) => setOtp(normalizeDigits(value))}
+              style={styles.otpInputOverlay}
+              textContentType="oneTimeCode"
+              value={otp}
+            />
+          </View>
+
+          {message ? <Text style={styles.messageText}>{message}</Text> : null}
+          {error ? <ErrorText>{error}</ErrorText> : null}
+
+          <Button
+            accessibilityLabel={t("signin.continue", "Verify & Continue")}
+            disabled={!canVerifyCode}
+            onPress={() => void verifyCode()}
+            style={styles.primaryButton}
+            variant="primary"
+          >
+            {isVerifyingCode ? "Verifying..." : t("signin.continue", "Verify & Continue")}
+          </Button>
+
+          <View style={styles.otpActionRow}>
             <Pressable
-              accessibilityLabel="Back"
-              accessibilityRole="button"
-              onPress={() => navigation.goBack()}
-              style={({ pressed }) => [styles.textAction, pressed && styles.textActionPressed]}
-            >
-              <Text style={styles.textActionText}>Back</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Title>Enter OTP</Title>
-            <Body>{`We've sent a 6-digit code to ${maskedPhone}`}</Body>
-            <View style={styles.otpInputWrap}>
-              <View pointerEvents="none" style={styles.otpBoxes}>
-                {Array.from({ length: OTP_LENGTH }).map((_, index) => (
-                  <View
-                    key={`otp-box-${index}`}
-                    style={[styles.otpBox, otp[index] ? styles.otpBoxFilled : null]}
-                  >
-                    <Text style={styles.otpBoxText}>{otp[index] ?? ""}</Text>
-                  </View>
-                ))}
-              </View>
-              <TextInput
-                accessibilityLabel="Verification code"
-                autoComplete="one-time-code"
-                autoCapitalize="none"
-                keyboardType="number-pad"
-                maxLength={OTP_LENGTH}
-                onChangeText={(value) => setOtp(normalizeDigits(value))}
-                style={styles.otpInputOverlay}
-                textContentType="oneTimeCode"
-                value={otp}
-              />
-            </View>
-            {message ? <Body>{message}</Body> : null}
-            {error ? <ErrorText>{error}</ErrorText> : null}
-            <Button
-              accessibilityLabel="Verify and continue"
-              disabled={!canVerifyCode}
-              onPress={() => void verifyCode()}
-            >
-              {isVerifyingCode ? "Verifying" : "Verify & Continue"}
-            </Button>
-            <Pressable
-              accessibilityLabel={resendAvailable ? "Resend code" : `Resend in ${resendSecondsRemaining} seconds`}
+              accessibilityLabel={resendAvailable ? t("signin.resend_code", "Resend code") : `Resend in ${resendSecondsRemaining} seconds`}
               accessibilityRole="button"
               disabled={!resendAvailable}
               onPress={handleResend}
               style={({ pressed }) => [
-                styles.textAction,
-                !resendAvailable && styles.textActionDisabled,
-                pressed && resendAvailable && styles.textActionPressed,
+                styles.linkAction,
+                !resendAvailable && styles.linkActionDisabled,
+                pressed && resendAvailable && styles.linkActionPressed,
               ]}
             >
-              <Text style={styles.textActionText}>
-                {resendAvailable ? "Resend code" : `Resend in 00:${String(resendSecondsRemaining).padStart(2, "0")}`}
+              <Text style={styles.linkActionText}>
+                {resendAvailable ? t("signin.resend_code", "Resend code") : `Resend in ${resendSecondsRemaining}s`}
               </Text>
             </Pressable>
+
             <Pressable
-              accessibilityLabel="Change number"
+              accessibilityLabel="Change mobile number"
               accessibilityRole="button"
-              onPress={handleChangeNumber}
-              style={({ pressed }) => [styles.textAction, pressed && styles.textActionPressed]}
+              onPress={() => {
+                setStep("phone");
+                setOtp("");
+                setError(null);
+                setMessage(null);
+              }}
+              style={({ pressed }) => [styles.linkAction, pressed && styles.linkActionPressed]}
             >
-              <Text style={styles.textActionText}>Change number</Text>
+              <Text style={styles.linkActionText}>Change number</Text>
             </Pressable>
-            <Pressable
-              accessibilityLabel="Back"
-              accessibilityRole="button"
-              onPress={() => navigation.goBack()}
-              style={({ pressed }) => [styles.textAction, pressed && styles.textActionPressed]}
-            >
-              <Text style={styles.textActionText}>Back</Text>
-            </Pressable>
-          </>
-        )}
-        <View style={styles.devSection}>
-            <Label>Development sign-in</Label>
-            <Body>Sign in with a Supabase developer or test account.</Body>
-            <Field
-              accessibilityLabel="Development email"
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              onChangeText={setDevEmail}
-              placeholder="Email"
-              textContentType="emailAddress"
-              value={devEmail}
-            />
-            <Field
-              accessibilityLabel="Development password"
-              autoCapitalize="none"
-              autoComplete="password"
-              onChangeText={setDevPassword}
-              placeholder="Password"
-              secureTextEntry
-              textContentType="password"
-              value={devPassword}
-            />
-            <Button accessibilityLabel="Development sign-in" disabled={isDevSigningIn} onPress={() => void signInWithDevAccount()}>
-              {isDevSigningIn ? "Signing in" : "Development sign-in"}
-            </Button>
           </View>
-      </Card>
+        </View>
+      )}
+
+      {__DEV__ ? (
+        <View style={styles.devSection}>
+        <Text style={styles.devHeading}>Development Sign-In</Text>
+        <Text style={styles.devHelper}>Sign in with a Supabase developer or test account.</Text>
+        <TextInput
+          accessibilityLabel="Development email"
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          onChangeText={setDevEmail}
+          placeholder="Email"
+          placeholderTextColor="#6e6d68"
+          style={styles.devInput}
+          textContentType="emailAddress"
+          value={devEmail}
+        />
+        <TextInput
+          accessibilityLabel="Development password"
+          autoCapitalize="none"
+          autoComplete="password"
+          onChangeText={setDevPassword}
+          placeholder="Password"
+          placeholderTextColor="#6e6d68"
+          secureTextEntry
+          style={styles.devInput}
+          textContentType="password"
+          value={devPassword}
+        />
+        <Button
+          accessibilityLabel="Development sign-in"
+          disabled={isDevSigningIn}
+          onPress={() => void signInWithDevAccount()}
+          style={styles.devButton}
+          variant="secondary"
+        >
+          {isDevSigningIn ? "Signing in..." : "Development sign-in"}
+        </Button>
+      </View>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  devSection: {
-    borderTopColor: "#2a312f",
-    borderTopWidth: 1,
-    gap: 10,
-    marginTop: 18,
-    paddingTop: 18,
+  header: {
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-  inputWrap: {
-    flex: 1,
+  brand: {
+    fontSize: 18,
+    lineHeight: 22,
   },
-  otpBox: {
+  content: {
+    gap: 12,
+  },
+  title: {
+    ...typography.h2,
+    color: colors.text,
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.muted,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  phoneInputContainer: {
     alignItems: "center",
-    borderColor: "#2a312f",
-    borderWidth: borders.width,
-    flex: 1,
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
     height: 50,
-    justifyContent: "center",
-    minWidth: 36,
+    marginTop: 6,
+    paddingHorizontal: 14,
   },
-  otpBoxFilled: {
-    borderColor: colors.accent,
+  phonePrefix: {
+    ...typography.body,
+    color: colors.text,
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "600",
+  },
+  phoneDivider: {
+    backgroundColor: colors.borderSubtle,
+    height: 20,
+    marginHorizontal: 12,
+    width: 1,
+  },
+  phoneInput: {
+    ...typography.body,
+    color: colors.text,
+    flex: 1,
+    paddingVertical: 0,
+  },
+  primaryButton: {
+    borderRadius: radii.md,
+    minHeight: 50,
+    marginTop: 4,
+  },
+  disclaimerText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  messageText: {
+    ...typography.caption,
+    color: colors.accent,
+    lineHeight: 18,
+  },
+  otpInputWrap: {
+    minHeight: 52,
+    marginTop: 6,
   },
   otpBoxes: {
     flexDirection: "row",
     gap: 8,
+    justifyContent: "space-between",
+  },
+  otpBox: {
+    alignItems: "center",
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flex: 1,
+    height: 52,
+    justifyContent: "center",
+  },
+  otpBoxFilled: {
+    backgroundColor: "rgba(13, 209, 188, 0.06)",
+    borderColor: colors.accent,
   },
   otpBoxText: {
+    ...typography.h2,
     color: colors.text,
-    fontSize: 18,
-    fontWeight: "800",
   },
   otpInputOverlay: {
     bottom: 0,
@@ -380,44 +466,57 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
   },
-  otpInputWrap: {
-    minHeight: 50,
-  },
-  phoneRow: {
-    alignItems: "stretch",
+  otpActionRow: {
     flexDirection: "row",
-    gap: 8,
+    justifyContent: "space-between",
+    marginTop: 4,
   },
-  prefix: {
-    alignItems: "center",
-    borderColor: "#2a312f",
-    borderRadius: 0,
-    borderWidth: borders.width,
+  linkAction: {
     justifyContent: "center",
-    minHeight: 48,
-    minWidth: 58,
-    paddingHorizontal: 12,
+    minHeight: 40,
+    paddingVertical: 8,
   },
-  prefixText: {
-    color: "#A8B9B6",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  textAction: {
-    alignSelf: "flex-start",
-    justifyContent: "center",
-    minHeight: 48,
-    paddingVertical: 10,
-  },
-  textActionDisabled: {
+  linkActionDisabled: {
     opacity: 0.45,
   },
-  textActionPressed: {
+  linkActionPressed: {
     opacity: 0.76,
   },
-  textActionText: {
+  linkActionText: {
+    ...typography.caption,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "600",
+  },
+  devSection: {
+    borderTopColor: colors.borderSubtle,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+    marginTop: 28,
+    paddingTop: 20,
+  },
+  devHeading: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  devHelper: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  devInput: {
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    color: colors.text,
+    height: 48,
+    paddingHorizontal: 14,
+  },
+  devButton: {
+    marginTop: 2,
   },
 });

@@ -103,6 +103,7 @@ function mapEpisode(row: EpisodeRow): Episode {
     coinUnlockEnabled: row.coin_unlock_enabled,
     rewardedUnlockEnabled: row.rewarded_unlock_enabled,
     rewardedAccessMode: row.rewarded_access_mode,
+    requiredRewardedCompletions: row.required_rewarded_completions,
     plusAccess: row.plus_access,
     lockedPreviewSeconds: row.locked_preview_seconds,
     contentRatingOverride,

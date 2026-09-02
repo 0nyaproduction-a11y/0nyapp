@@ -1,9 +1,11 @@
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
+import { useFonts } from "expo-font";
 import { LoadingState } from "./src/components/ui";
 import { AdMobProvider } from "./src/lib/adMob";
 import { AuthProvider, useAuth } from "./src/lib/authContext";
+import { AppLanguageProvider, useAppLanguage } from "./src/lib/appLanguage";
 import { getAndroidLinkingConfig } from "./src/navigation/linking";
 import { MainTabsNavigator } from "./src/navigation/MainTabs";
 import type { RootStackParamList } from "./src/navigation/types";
@@ -24,6 +26,7 @@ import { WalletScreen } from "./src/screens/WalletScreen";
 import { CoinPurchaseScreen } from "./src/screens/CoinPurchaseScreen";
 import { PlusScreen } from "./src/screens/PlusScreen";
 import { WatchScreen } from "./src/screens/WatchScreen";
+import { PlayTogetherRoomScreen } from "./src/screens/PlayTogetherRoomScreen";
 import { perfMark } from "./src/lib/perf";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -32,6 +35,7 @@ perfMark("APP_START");
 
 function AppNavigator() {
   const { isLoading } = useAuth();
+  const { t, typography } = useAppLanguage();
   const linking = getAndroidLinkingConfig();
 
   if (isLoading) {
@@ -46,7 +50,11 @@ function AppNavigator() {
           contentStyle: { backgroundColor: colors.background },
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-          headerTitleStyle: { fontWeight: "800" },
+          headerTitleStyle: {
+            fontFamily: typography.h3.fontFamily,
+            fontWeight: "600",
+            fontSize: typography.h3.fontSize,
+          },
         }}
       >
         <Stack.Screen
@@ -54,11 +62,11 @@ function AppNavigator() {
           component={MainTabsNavigator}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: "Wallet" }} />
+        <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: t("wallet.title", "Wallet") }} />
         <Stack.Screen
           name="CoinPurchase"
           component={CoinPurchaseScreen}
-          options={{ title: "Buy Coins" }}
+          options={{ title: t("coin_purchase.title", "Buy Coins") }}
         />
         <Stack.Screen name="Plus" component={PlusScreen} options={{ title: "" }} />
         <Stack.Screen
@@ -70,7 +78,7 @@ function AppNavigator() {
         <Stack.Screen
           name="SeriesEpisodes"
           component={SeriesEpisodesScreen}
-          options={{ title: "Episodes" }}
+          options={{ title: t("series.episodes", "Episodes") }}
         />
         <Stack.Screen name="ShortFilm" component={ShortFilmDetailScreen} />
         <Stack.Screen name="ShortFilmPlayback" component={ShortFilmPlaybackScreen} />
@@ -80,23 +88,28 @@ function AppNavigator() {
         <Stack.Screen
           name="EpisodeAccessOptions"
           component={EpisodeAccessOptionsScreen}
-          options={{ title: "Unlock options" }}
+          options={{ title: t("unlock.title", "Unlock options") }}
         />
         <Stack.Screen
           name="ParentalControls"
           component={ParentalControlsScreen}
-          options={{ title: "Parental Control" }}
+          options={{ title: t("parental.title", "Parental Control") }}
         />
         <Stack.Screen name="Watch" component={WatchScreen} />
         <Stack.Screen
           name="AgeDeclaration"
           component={AgeDeclarationScreen}
-          options={{ title: "Before you continue" }}
+          options={{ title: t("age_declaration.title", "Before you continue") }}
         />
         <Stack.Screen
           name="SignIn"
           component={SignInScreen}
-          options={{ title: "Sign in" }}
+          options={{ title: t("signin.title", "Sign in") }}
+        />
+        <Stack.Screen
+          name="PlayTogetherRoom"
+          component={PlayTogetherRoomScreen}
+          options={{ title: t("play_together.title", "Play Together") }}
         />
       </Stack.Navigator>
       <StatusBar style="light" />
@@ -105,11 +118,26 @@ function AppNavigator() {
 }
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    "PlusJakartaSans-Regular": require("./assets/fonts/plus-jakarta-sans/PlusJakartaSans-Regular.ttf"),
+    "PlusJakartaSans-Medium": require("./assets/fonts/plus-jakarta-sans/PlusJakartaSans-Medium.ttf"),
+    "PlusJakartaSans-SemiBold": require("./assets/fonts/plus-jakarta-sans/PlusJakartaSans-SemiBold.ttf"),
+    "Mukta-Regular": require("./assets/fonts/mukta/Mukta-Regular.ttf"),
+    "Mukta-Medium": require("./assets/fonts/mukta/Mukta-Medium.ttf"),
+    "Mukta-SemiBold": require("./assets/fonts/mukta/Mukta-SemiBold.ttf"),
+  });
+
+  if (!fontsLoaded && !fontError) {
+    return <LoadingState />;
+  }
+
   return (
-    <AdMobProvider>
-      <AuthProvider>
-        <AppNavigator />
-      </AuthProvider>
-    </AdMobProvider>
+    <AppLanguageProvider>
+      <AdMobProvider>
+        <AuthProvider>
+          <AppNavigator />
+        </AuthProvider>
+      </AdMobProvider>
+    </AppLanguageProvider>
   );
 }

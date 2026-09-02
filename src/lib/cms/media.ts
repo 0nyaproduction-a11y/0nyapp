@@ -101,6 +101,34 @@ async function mediaAssetHasReferencesOutsideEpisode(mediaAssetId: string, episo
   };
 }
 
+async function mediaAssetHasReferencesOutsideShortFilm(mediaAssetId: string, shortFilmId: string) {
+  const supabase = getAdminClient();
+  const [episodeMediaResult, episodePreviewResult, shortFilmResult, derivedAssetResult] = await Promise.all([
+    supabase.from("episodes").select("id").eq("media_asset_id", mediaAssetId).limit(1),
+    supabase.from("episodes").select("id").eq("preview_media_asset_id", mediaAssetId).limit(1),
+    supabase.from("short_films").select("id").eq("media_asset_id", mediaAssetId).neq("id", shortFilmId).limit(1),
+    supabase.from("media_assets").select("id").eq("source_media_asset_id", mediaAssetId).limit(1),
+  ]);
+
+  if (
+    episodeMediaResult.error ||
+    episodePreviewResult.error ||
+    shortFilmResult.error ||
+    derivedAssetResult.error
+  ) {
+    return { error: true as const, referenced: false };
+  }
+
+  return {
+    error: false as const,
+    referenced:
+      (episodeMediaResult.data ?? []).length > 0 ||
+      (episodePreviewResult.data ?? []).length > 0 ||
+      (shortFilmResult.data ?? []).length > 0 ||
+      (derivedAssetResult.data ?? []).length > 0,
+  };
+}
+
 async function cleanupMediaAsset(mediaAssetId: string): Promise<MediaAssetCleanupResult> {
   const supabase = getAdminClient();
   const normalizedMediaAssetId = mediaAssetId.trim();
@@ -512,6 +540,75 @@ export async function assignShortFilmMediaAsset(shortFilmId: string, mediaAssetI
 
   if (updateError) {
     throw new Error("Unable to assign the media asset to the short film.");
+  }
+
+  return { shortFilmId: shortFilm.id, mediaAssetId: mediaAsset.id, updated: true as const };
+}
+
+export async function attachShortFilmMediaUploadIntent(shortFilmId: string, mediaAssetId: string) {
+  const supabase = getAdminClient();
+  const normalizedShortFilmId = shortFilmId.trim();
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  if (!normalizedShortFilmId) {
+    throw new Error("Short film ID is required.");
+  }
+
+  if (!normalizedMediaAssetId) {
+    throw new Error("Media asset ID is required.");
+  }
+
+  const [{ data: shortFilm, error: shortFilmError }, { data: mediaAsset, error: mediaAssetError }] =
+    await Promise.all([
+      supabase.from("short_films").select("id,media_asset_id").eq("id", normalizedShortFilmId).maybeSingle(),
+      supabase
+        .from("media_assets")
+        .select("id,provider_name,status")
+        .eq("id", normalizedMediaAssetId)
+        .maybeSingle(),
+    ]);
+
+  if (shortFilmError || !shortFilm) {
+    throw new Error("Short film not found.");
+  }
+
+  if (mediaAssetError || !mediaAsset) {
+    throw new Error("Media asset not found.");
+  }
+
+  if (mediaAsset.provider_name !== "mux") {
+    throw new Error("Only Mux media assets can be attached to a short film upload.");
+  }
+
+  if (!["pending", "processing", "ready"].includes(mediaAsset.status)) {
+    throw new Error("Only active media uploads can be attached to a short film.");
+  }
+
+  if (shortFilm.media_asset_id && shortFilm.media_asset_id !== mediaAsset.id) {
+    throw new Error("Short film already has a different media asset assigned.");
+  }
+
+  const referenceState = await mediaAssetHasReferencesOutsideShortFilm(mediaAsset.id, shortFilm.id);
+
+  if (referenceState.error) {
+    throw new Error("Unable to verify whether the media asset is shared.");
+  }
+
+  if (referenceState.referenced) {
+    throw new Error("Media asset is already referenced by another content item.");
+  }
+
+  if (shortFilm.media_asset_id === mediaAsset.id) {
+    return { shortFilmId: shortFilm.id, mediaAssetId: mediaAsset.id, updated: false as const };
+  }
+
+  const { error: updateError } = await supabase
+    .from("short_films")
+    .update({ media_asset_id: mediaAsset.id })
+    .eq("id", shortFilm.id);
+
+  if (updateError) {
+    throw new Error("Unable to attach the media upload to the short film.");
   }
 
   return { shortFilmId: shortFilm.id, mediaAssetId: mediaAsset.id, updated: true as const };

@@ -11,7 +11,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import { borders, colors, radii, spacing } from "../theme/tokens";
+import { borders, colors, radii, spacing, typography } from "../theme/tokens";
 
 type TextBlockProps = PropsWithChildren<{
   numberOfLines?: number;
@@ -29,14 +29,15 @@ export function Title({ children, numberOfLines, style }: TextBlockProps) {
 }
 
 type BrandWordmarkProps = {
+  allWhite?: boolean;
   plus?: boolean;
   style?: StyleProp<TextStyle>;
 };
 
-export function BrandWordmark({ plus = false, style }: BrandWordmarkProps) {
+export function BrandWordmark({ allWhite = false, plus = false, style }: BrandWordmarkProps) {
   return (
     <Text accessibilityLabel={plus ? "0nya Plus" : "0nya"} allowFontScaling style={[styles.brand, style]}>
-      <Text style={styles.brandAccent}>0</Text>
+      <Text style={allWhite ? styles.brandText : styles.brandAccent}>0</Text>
       <Text style={styles.brandText}>{plus ? "nya Plus" : "nya"}</Text>
     </Text>
   );
@@ -81,14 +82,17 @@ export function NavigationRow({ accessibilityLabel, onPress, subtitle, title }: 
   );
 }
 
+type ButtonVariant = "primary" | "secondary" | "text" | "legacy";
+
 type ButtonProps = PropsWithChildren<{
   accessibilityLabel: string;
   disabled?: boolean;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
+  variant?: ButtonVariant;
 }>;
 
-export function Button({ accessibilityLabel, children, disabled, onPress, style }: ButtonProps) {
+export function Button({ accessibilityLabel, children, disabled, onPress, style, variant = "legacy" }: ButtonProps) {
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
@@ -97,12 +101,25 @@ export function Button({ accessibilityLabel, children, disabled, onPress, style 
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        variant === "primary" && styles.buttonPrimary,
+        variant === "secondary" && styles.buttonSecondary,
+        variant === "text" && styles.buttonTextVariant,
         disabled && styles.buttonDisabled,
         pressed && styles.buttonPressed,
         style,
       ]}
     >
-      <Text style={styles.buttonText}>{children}</Text>
+      <Text
+        style={[
+          styles.buttonText,
+          variant === "primary" && styles.buttonTextPrimary,
+          variant === "secondary" && styles.buttonTextSecondary,
+          variant === "text" && styles.buttonTextLink,
+          disabled && styles.buttonTextDisabled,
+        ]}
+      >
+        {children}
+      </Text>
     </Pressable>
   );
 }
@@ -202,11 +219,11 @@ export function RecoveryState({
 
 const styles = StyleSheet.create({
   title: {
+    ...typography.h1,
     color: colors.text,
-    fontSize: 28,
-    fontWeight: "800",
   },
   brand: {
+    ...typography.body,
     fontSize: 16,
     fontWeight: "700",
     lineHeight: 20,
@@ -218,15 +235,13 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   label: {
+    ...typography.micro,
     color: colors.accent,
-    fontSize: 12,
-    fontWeight: "800",
     textTransform: "uppercase",
   },
   body: {
+    ...typography.body,
     color: colors.muted,
-    fontSize: 15,
-    lineHeight: 22,
   },
   card: {
     gap: 10,
@@ -279,14 +294,14 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   navigationRowTitle: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "600",
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "500",
   },
   navigationRowSubtitle: {
+    ...typography.caption,
     color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
   },
   navigationRowChevron: {
     color: colors.muted,
@@ -302,22 +317,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
+  buttonPrimary: {
+    borderRadius: radii.md,
+    minHeight: 50,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+  },
+  buttonSecondary: {
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
+    borderWidth: borders.width,
+  },
+  buttonTextVariant: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    minHeight: 44,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
   buttonDisabled: {
-    // legacy non-tokenized value: no verified web disabled-button color exists
-    // (web expresses disabled state via opacity, not a distinct fill color)
-    backgroundColor: "#3a3834",
+    backgroundColor: "rgba(232, 228, 218, 0.08)",
+  },
+  buttonTextDisabled: {
+    color: "rgba(232, 228, 218, 0.45)",
   },
   buttonPressed: {
     opacity: 0.82,
   },
   buttonText: {
-    // legacy non-tokenized value: retained for contrast against the accent fill
+    ...typography.label,
     color: "#11100e",
-    fontSize: 14,
-    fontWeight: "800",
+    fontWeight: "600",
     textTransform: "uppercase",
   },
+  buttonTextPrimary: {
+    ...typography.label,
+    color: colors.accentOnPrimary,
+    fontWeight: "600",
+    textTransform: "none",
+  },
+  buttonTextSecondary: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: "600",
+    textTransform: "none",
+  },
+  buttonTextLink: {
+    ...typography.label,
+    color: colors.accent,
+    fontWeight: "600",
+    textTransform: "none",
+  },
   field: {
+    ...typography.body,
     borderColor: borders.color,
     borderRadius: radii.none,
     borderWidth: borders.width,
@@ -326,10 +379,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   error: {
-    // legacy non-tokenized value: no verified web error/alert color equivalent
+    ...typography.caption,
     color: "#ff8d76",
-    fontSize: 14,
-    lineHeight: 20,
   },
   transientFeedback: {
     alignItems: "center",
@@ -352,8 +403,8 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   transientFeedbackText: {
+    ...typography.label,
     color: colors.text,
-    fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
   },
 });

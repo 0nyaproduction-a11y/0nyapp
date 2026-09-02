@@ -14,6 +14,7 @@ export function serializeEpisode(episode: Episode) {
     coinUnlockEnabled: episode.coinUnlockEnabled,
     rewardedUnlockEnabled: episode.rewardedUnlockEnabled,
     rewardedAccessMode: episode.rewardedAccessMode,
+    requiredRewardedCompletions: episode.requiredRewardedCompletions,
     plusAccess: episode.plusAccess,
     lockedPreviewSeconds: episode.lockedPreviewSeconds,
     contentRatingOverride: episode.contentRatingOverride ?? null,

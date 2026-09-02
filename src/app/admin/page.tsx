@@ -43,7 +43,7 @@ export default async function AdminPage() {
           Signed in as {getSafeUserIdentifier(user)}
         </p>
 
-        <nav className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <nav className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href={seriesListPath}
             className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
@@ -80,12 +80,6 @@ export default async function AdminPage() {
             </p>
             <p className="mt-2 text-sm text-bone/70">Home curation</p>
           </Link>
-          <div className="border border-bone/10 bg-bone/[0.03] px-4 py-5">
-            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
-              Coming later
-            </p>
-            <p className="mt-2 text-sm text-bone/60">Reserved</p>
-          </div>
         </nav>
 
         <form action={signOut} className="mt-8">

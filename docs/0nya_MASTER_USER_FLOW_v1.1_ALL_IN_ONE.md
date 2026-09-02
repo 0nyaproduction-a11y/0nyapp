@@ -55,7 +55,7 @@ flowchart TD
     FREE -- No --> PREVIEW{Preview enabled?}
 
     PREVIEW -- Yes --> W01[W01 Play Preview then Pause]
-    PREVIEW -- No --> W02[W02 Dynamic Episode Paywall]
+    PREVIEW -- No --> W02[W02 Contextual Micro Drama Access via C01 Wallet]
     W01 --> W02
 
     W02 --> COIN{Coin enabled?}
@@ -67,8 +67,8 @@ flowchart TD
     REGISTER1 -- Yes --> BAL{Enough coins?}
     OTP1 --> BAL
     BAL -- Yes --> CU[Permanent Coin Unlock]
-    BAL -- No --> C02[C02 Buy Coins]
-    C02 --> CU
+    BAL -- No --> ADD[Add Coins contextual in Wallet]
+    ADD --> CU
     CU --> PLAYER
 
     AD -- Yes --> REGISTER2{Registered?}
@@ -174,6 +174,55 @@ flowchart TD
 
 ---
 
+# 2A. TWO DISTINCT CONSUMER MONETIZATION SYSTEMS
+
+There are two distinct, non-mergeable consumer monetization systems. They share the same server-authoritative 0nya coin balance but have **separate dedicated user flows**.
+
+## A. Micro Drama Access System (Wallet is the Access Hub)
+
+C01 Wallet is the primary consumer-facing Micro Drama wallet / access hub. For a locked Micro Drama episode, the access experience (W02) is presented **contextually through Wallet** rather than by bouncing the viewer through multiple separate full-screen monetization screens.
+
+A locked episode may expose any backend-valid combination of **Coin**, **Rewarded Ad**, and **0nya Plus** as **alternative** access methods:
+
+```
+Coin + Rewarded  =  both methods offered simultaneously as alternatives
+                  (NOT partial-coin + partial-ad payment,
+                   NOT rewarded progress reducing coin price,
+                   NOT ads generating wallet coins,
+                   NOT ad-to-coin conversion)
+```
+
+The Micro Drama Access System owns:
+
+- Coin episode unlock
+- Rewarded Ad episode unlock
+- 0nya Plus episode access
+- insufficient-coin handling
+- **Add Coins** entry for episode access (presented contextually inside Wallet)
+- permanent episode entitlements
+- rewarded progress (0/2 -> 1/2 -> 2/2)
+- exact return to the initiating episode
+
+Rewarded multi-completion is explicit-tap only. If Rewarded requires two verified completions: `0/2 -> explicit user tap -> 1/2 -> explicit second user tap -> 2/2 -> entitlement`. Ad 2 is never auto-launched. B03 rewarded semantics are not redefined.
+
+## B. Short Film Chai System (Protected, Separate)
+
+Short Film Chai MUST remain a separate, dedicated user flow. Do NOT migrate Chai into C01 Wallet.
+
+```
+F02 Short Film End
+ -> T01 Chai Coin Amount
+ -> T02 Chai Confirm / Success
+```
+
+- Short Films remain always playable, never Coin locked, never subscriber-only.
+- Chai uses the same server-authoritative 0nya coin balance, but sharing the balance does NOT share the UI journey.
+- T01/T02 remain dedicated Short Film screens; they are not redefined as Wallet states.
+- If Chai balance is insufficient, the existing approved dedicated Chai -> C02 standard Coin Purchase -> same Chai amount return flow is preserved.
+- **C02 / standard Coin Purchase may still be required for Chai**, even if Micro Drama access presents Add Coins contextually inside Wallet.
+
+---
+
 # 3. FLOW 01 — APP OPEN / HOME / DISCOVERY
 
 ```mermaid
@@ -211,6 +260,22 @@ flowchart LR
 
 - Continue Watching — first row
 - remaining editorial rows below it
+
+### Home Spotlight (Multi-Spotlight)
+
+The Home editorial stage is **Multi-Spotlight**, not a single Featured Hero.
+
+- Ordered real CMS/API items; manual horizontal swipe only.
+- Strict 9:16 posters; active poster plus a real next-item peek (the actual next ordered item).
+- No automatic movement, no dots, no arrows, no timer, no parallax, no decorative Home motion.
+- Poster tap -> Detail (Series or Short Film).
+- Active footer CTA -> **Watch** -> resolve target/access -> player / preview / paywall as appropriate.
+- `showTitle` is CMS-controlled; the canonical title shows only when `showTitle = true`.
+- No Info button inside Spotlight; Continue Watching owns Resume/progress language.
+
+### Authenticated Home wallet affordance
+
+Registered Free and 0nya Plus users must have a clear, restrained Home wallet affordance that opens **C01 Wallet**. Guest Home must not display a misleading owned wallet balance/state. (Android implementation belongs to a later UI batch.)
 
 ### Bottom navigation
 
@@ -253,7 +318,7 @@ flowchart TD
 
     G -- Yes --> H[Play preview]
     H --> I[Pause on current frame]
-    I --> W[W02 Dynamic Paywall]
+    I --> W[W02 Contextual Micro Drama Access]
 
     G -- No --> W
 ```
@@ -275,11 +340,13 @@ The client must resolve access from backend/CMS.
 
 ---
 
-# 5. FLOW 03 — DYNAMIC EPISODE PAYWALL
+# 5. FLOW 03 — DYNAMIC EPISODE PAYWALL (CONTEXTUAL MICRO DRAMA ACCESS VIA C01 WALLET)
+
+W02 is the **contextual Micro Drama access presentation associated with C01 Wallet**, not an independent standalone monetization journey. For a locked Micro Drama episode, access methods are presented contextually through Wallet; Add Coins for episode access is offered contextually inside Wallet when the viewer's coin balance is insufficient.
 
 ```mermaid
 flowchart TD
-    W[W02 Dynamic Paywall] --> A{rewarded_unlock_enabled?}
+    W[W02 Contextual Micro Drama Access (C01 Wallet)] --> A{rewarded_unlock_enabled?}
     W --> C{coin_unlock_enabled?}
     W --> P{plus_access?}
 
@@ -305,19 +372,19 @@ Never hardcode three buttons.
 
 ---
 
-# 6. FLOW 04 — COIN EPISODE UNLOCK
+# 6. FLOW 04 — COIN EPISODE UNLOCK (CONTEXTUAL ADD COINS VIA C01 WALLET)
 
 ```mermaid
 flowchart TD
-    A[Tap Unlock with Coins] --> B{Registered?}
+    A[Tap Unlock with Coins in Wallet context] --> B{Registered?}
     B -- No --> C[R01/R02 OTP]
     B -- Yes --> D{Enough coins?}
     C --> D
 
-    D -- No --> E[C02 Buy Coins]
+    D -- No --> E[Add Coins contextual in Wallet]
     E --> F{Purchase success?}
     F -- No --> E
-    F -- Yes --> G[Return to same episode unlock]
+    F -- Yes --> G[Return to same episode unlock in Wallet context]
 
     D -- Yes --> H[Confirm coin unlock]
     G --> H
@@ -330,8 +397,8 @@ flowchart TD
 ### Important return rule
 
 ```text
-Episode Paywall
- -> Buy Coins
+Micro Drama Access (W02 via C01 Wallet)
+ -> Add Coins (contextual in Wallet)
  -> Purchase Success
  -> Same Episode
  -> Coin Unlock
@@ -341,8 +408,10 @@ Episode Paywall
 Never:
 
 ```text
-Buy Coins -> Home
+Add Coins -> Home
 ```
+
+> **Note:** C02 standard Coin Purchase may still be used for the dedicated Short Film Chai flow when the Chai tip amount exceeds the wallet balance. Add Coins is contextual to Micro Drama Wallet access; it does not replace C02 for Chai. See §2A Two Distinct Consumer Monetization Systems.
 
 ---
 
@@ -373,6 +442,16 @@ No-fill:
 - no unlock
 - no forced retry
 - keep Coin/Plus methods available
+
+### Rewarded multi-completion (1 or 2 ads)
+
+Required completions are backend/CMS controlled (`requiredRewardedCompletions`, 1–2).
+
+- required = 1: explicit tap -> ad -> verified completion -> permanent entitlement.
+- required = 2: explicit tap -> Ad 1 -> verified -> 1/2 state -> NO entitlement yet -> viewer explicitly taps again -> Ad 2 -> verified -> 2/2 -> one permanent entitlement.
+- Ad 2 is never auto-launched.
+- Entitlement is granted only after the required threshold is reached and the backend confirms verified progress.
+- No ad-to-coin conversion.
 
 ---
 
@@ -516,7 +595,9 @@ flowchart TD
 
 ---
 
-# 12. FLOW 10 — CHAI COIN TIP
+# 12. FLOW 10 — CHAI COIN TIP (DEDICATED SHORT FILM FLOW — NOT WALLET-MIGRATED)
+
+Chai is a **separate, dedicated Short Film flow**. It is NOT migrated into C01 Wallet. F02 Short Film End -> T01 Chai Coin Amount -> T02 Chai Confirm / Success remain dedicated Short Film screens. C02 standard Coin Purchase is used here when the Chai tip amount exceeds the wallet balance.
 
 ```mermaid
 flowchart TD
@@ -587,6 +668,19 @@ Never:
 Logout -> forced registration
 ```
 
+P04 Settings exposes an **App Language** selection (English / हिन्दी). There is NO
+first-launch language chooser for MVP. Changing App Language applies to the
+app-owned interface and remains in Settings. App Language is SEPARATE from the
+existing **Subtitles → Default Language** preference.
+
+```text
+Profile -> Settings
+  -> App Language           English / हिन्दी
+  -> Subtitles
+       Default Language     <subtitle preference>
+  (no first-launch chooser; change later from Settings)
+```
+
 ---
 
 # 14. FLOW 12 — DEEP LINKS / COMPLIANCE
@@ -651,7 +745,7 @@ Never dump the user at Home after a recoverable error unless Home is explicitly 
 | V03 | Episode Tray / D01 overlay |
 | V04 | Auto-next |
 | W01 | Locked Preview |
-| W02 | Dynamic Episode Paywall |
+| W02 | Contextual Micro Drama Access (C01 Wallet) |
 | R01 | Phone Entry |
 | R02 | OTP |
 | C01 | Wallet |
@@ -761,3 +855,74 @@ If instructions conflict:
 **0nya / शून्य**
 
 **MASTER USER FLOW v1.1 — ALL IN ONE**
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## User Flow Final Acceptance Authority
+
+User flow implementation and screen transitions are not locked until verified through the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+```
+SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT -> PHYSICAL ONEPLUS -> LOCK
+```
+
+Flow correctness on emulator must be visually approved by Product Owner + ChatGPT before physical hardware validation on OnePlus 13R.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
+
+---
+
+## PX01 Play Together / 0chat future room flow
+
+PX01 source foundation is not a current Android realtime/chat UI. When
+consumer-activated, the room flow is: secure invite/redeem -> room and
+participant validation -> separate backend-controlled room acquisition/access
+and per-participant episode authorization -> Host-controlled playback intent ->
+canonical room timeline -> synchronized transition. Host entitlement never
+transfers to a Guest; an invite never grants episode entitlement.
+
+Room Auto-Next is singular: current episode complete -> next sequential
+published episode -> per-participant authorization -> synchronized room
+transition. It must not run two independent participant state machines.

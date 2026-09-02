@@ -24,10 +24,32 @@ export type SeriesFormat = (typeof SERIES_FORMATS)[number];
 export type EpisodeStatus = EpisodeRow["status"];
 export type RewardedAccessMode = EpisodeRow["rewarded_access_mode"];
 
-// Reused exactly from the existing schema CHECK constraints
-// (episodes_status_check, episodes rewarded_access_mode check).
+// Reused exactly from the existing schema CHECK constraint
+// (episodes_status_check).
 export const EPISODE_STATUSES = ["draft", "published", "archived"] as const satisfies readonly EpisodeStatus[];
-export const REWARDED_ACCESS_MODES = ["permanent", "session"] as const satisfies readonly RewardedAccessMode[];
+
+// Launch operational policy is permanent-only. The database type still includes
+// "session" for legacy compatibility, but CMS create/update paths must not
+// author it because rewarded RPCs reject session-mode attempts.
+export const REWARDED_ACCESS_MODES = ["permanent"] as const satisfies readonly RewardedAccessMode[];
+
+// Launch-only allowed required-rewarded-completion counts. Max is 2 (no 3/4-ad
+// unlocks at launch). The actual value is backend/CMS authoritative, never
+// derived from coin price.
+export const REWARDED_REQUIRED_COMPLETIONS_VALUES = [1, 2] as const;
+export const MAX_REWARDED_REQUIRED_COMPLETIONS = 2;
+export const MIN_REWARDED_REQUIRED_COMPLETIONS = 1;
+
+export function clampRewardedRequiredCompletions(value: number): number {
+  if (!Number.isInteger(value)) {
+    return MIN_REWARDED_REQUIRED_COMPLETIONS;
+  }
+
+  return Math.min(
+    MAX_REWARDED_REQUIRED_COMPLETIONS,
+    Math.max(MIN_REWARDED_REQUIRED_COMPLETIONS, value),
+  );
+}
 
 // Single source of truth for the compact Episode access summary shown on
 // both the legacy Episode list and SeriesEpisodeManager. Reflects ONLY

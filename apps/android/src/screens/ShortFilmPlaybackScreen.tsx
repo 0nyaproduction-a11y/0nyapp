@@ -275,7 +275,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
     );
   }
 
-  if (!shortFilm.playbackReady && !__DEV__) {
+  if (!shortFilm.playbackReady && shortFilm.status !== "published" && !__DEV__) {
     return (
       <Screen>
         <RecoveryState

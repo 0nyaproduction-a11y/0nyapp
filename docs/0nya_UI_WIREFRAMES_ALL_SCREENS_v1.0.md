@@ -119,7 +119,7 @@ Avoid nested vertical scrolling.
 | V03 | Episode Tray / D01 overlay |
 | V04 | Seamless Auto-Next |
 | W01 | Locked Preview |
-| W02 | Dynamic Episode Paywall |
+| W02 | Contextual Micro Drama Access (C01 Wallet) |
 | R01 | Phone Entry |
 | R02 | OTP Entry |
 | C01 | Wallet |
@@ -196,16 +196,16 @@ Help the viewer start watching quickly.
 
 ```text
 ┌──────────────────────────────────────┐
-│ 0nya                         Profile │
+│ 0nya                [◍ Wallet] Profile │
 │                                      │
-│ ┌──────────────────────────────────┐ │
-│ │          FEATURED HERO           │ │
-│ │                                  │ │
-│ │ Title                            │ │
-│ │ Short hook / metadata            │ │
-│ │                                  │ │
-│ │ [▶ Watch Now]      [i Info]      │ │
-│ └──────────────────────────────────┘ │
+│ ┌──────────────┐ ┌──────────────┐    │
+│ │  9:16 ACTIVE │ │ 9:16 REAL    │    │
+│ │  POSTER      │ │ NEXT-ITEM    │    │
+│ │              │ │ PEEK        │    │
+│ └──────────────┘ └──────────────┘    │
+│                                      │
+│ [optional canonical Title]            │
+│ [Watch]                              │
 │                                      │
 │ Start Here                           │
 │ ┌────────┐ ┌────────┐ ┌────────┐ →  │
@@ -237,10 +237,12 @@ Help the viewer start watching quickly.
 └──────────────────────────────────────┘
 ```
 
+> Registered Free / 0nya Plus see a restrained wallet affordance (top-right) that opens **C01 Wallet**. Guests do not see an owned wallet balance.
+
 ## Recommended row order
 
 ```text
-Hero
+Multi-Spotlight
 Start Here
 Trending Now
 New Releases
@@ -250,6 +252,14 @@ Staff Picks / Editorial
 ```
 
 Empty rows should not render.
+
+New / low-history viewers have no Continue Watching row. Do not introduce a
+Watch History screen or label. When a Continue Watching section would otherwise
+appear but no resume history exists, show only the compact exact copy:
+
+```text
+Start watching to continue here.
+```
 
 ---
 
@@ -263,12 +273,16 @@ Resume playback immediately.
 
 ```text
 ┌──────────────────────────────────────┐
-│ 0nya                         Profile │
+│ 0nya                [◍ Wallet] Profile │
 │                                      │
-│ ┌──────────────────────────────────┐ │
-│ │          FEATURED HERO           │ │
-│ │ [▶ Watch / Resume]   [i Info]    │ │
-│ └──────────────────────────────────┘ │
+│ ┌──────────────┐ ┌──────────────┐    │
+│ │  9:16 ACTIVE │ │ 9:16 REAL    │    │
+│ │  POSTER      │ │ NEXT-ITEM    │    │
+│ │              │ │ PEEK        │    │
+│ └──────────────┘ └──────────────┘    │
+│                                      │
+│ [optional canonical Title]            │
+│ [Watch]                              │
 │                                      │
 │ Continue Watching                    │
 │ ┌─────────┐  ┌─────────┐  →         │
@@ -288,11 +302,12 @@ Resume playback immediately.
 │                                      │
 │ Trending / New / Micro / Short Film  │
 │ ...                                  │
-│                                      │
 ├──────────────────────────────────────┤
 │   Home           Explore     Profile │
 └──────────────────────────────────────┘
 ```
+
+> Continue Watching remains a separate section below Spotlight and owns progress, episode metadata, and Resume behavior. Registered Free / 0nya Plus see a restrained wallet affordance (top-right) that opens **C01 Wallet**; guests do not see an owned wallet balance.
 
 ## Continue Watching default logic
 
@@ -322,31 +337,28 @@ dark matte fallback if no still exists
 
 ---
 
-# 7. HOME HERO
+# 7. HOME SPOTLIGHT STAGE (MULTI-SPOTLIGHT)
 
-## Micro Drama
+The Home editorial stage is Multi-Spotlight, not a single Featured Hero.
 
-```text
-Watch Now
- -> resolve target episode
- -> access engine
- -> player / preview / paywall
-
-Info
- -> D01 Series Detail
-```
-
-## Short Film
+## Spotlight poster tap vs Watch
 
 ```text
-Watch Now
- -> D02 Short Film Detail
+Poster tap
+ -> Series Detail (Micro Drama) or Short Film Detail
+ -> NOT direct playback
 
-Info
- -> D02 Short Film Detail
+Watch (active footer CTA)
+ -> resolve target/access
+ -> player / preview / paywall as appropriate
 ```
 
-Do not display episode-level coin pricing on the hero.
+- Strict 9:16 posters; manual horizontal swipe; real next-item peek.
+- `showTitle` is CMS-controlled; canonical title shows only when `showTitle = true`.
+- CTA label is exactly **Watch**. No Info button inside Spotlight.
+- No automatic movement, no dots, no arrows, no timer, no parallax, no decorative motion.
+- Continue Watching owns Resume/progress language; Spotlight never shows "Resume".
+- Do not display episode-level coin pricing on the Spotlight.
 
 ---
 
@@ -478,7 +490,8 @@ No results:
 │ └──────────────────────────────────┘ │
 │                                      │
 │ Series Title                         │
-│ MICRO DRAMA • Language • Rating      │
+│ MICRO DRAMA                         │
+│ U/A 13+ • descriptors                │
 │ 24 episodes • 18 published          │
 │ Creator / Director                   │
 │ Synopsis...                          │
@@ -513,7 +526,7 @@ No results:
 │ └──────────────────────────────────┘ │
 │                                      │
 │ Film Title                           │
-│ SHORT FILM • 14 min • Hindi          │
+│ SHORT FILM                          │
 │ U/A 13+ • descriptors                │
 │ Creator / Director                   │
 │                                      │
@@ -633,6 +646,20 @@ Actual cells come from the backend's published episode collection, and range gro
 
 V03 is a compact same-screen Episode Tray, not a dedicated full-screen Episode Browser. It should support long series without forcing hundreds of cells on first render, and the current/resume episode should select the containing range automatically when multiple ranges exist.
 
+Quiet Cinema direction: the full episode list should favor a quiet vertical
+row pattern over a loud grid where readable. A quiet episode row carries:
+
+```text
+episode number
+title
+duration
+access state / action
+```
+
+Only render states actually resolved for the viewer (Free, Unlocked, backend
+coin price, Watch Ad, Plus, Coming Soon). Do not document the current compact
+grid as the only future product-locked pattern.
+
 Episode tap:
 
 ```text
@@ -691,7 +718,15 @@ skip W01
 
 ---
 
-# 18. W02 — DYNAMIC EPISODE PAYWALL
+# 18. W02 — CONTEXTUAL MICRO DRAMA ACCESS (ASSOCIATED WITH C01 WALLET)
+
+W02 is the contextual Micro Drama access presentation associated with C01
+Wallet, not an independent standalone monetization journey. For a locked
+Micro Drama episode, access methods are presented contextually through the
+Wallet; Add Coins for episode access is offered contextually inside Wallet
+when the viewer's coin balance is insufficient. The Wallet UI itself is not
+final visual authority — it will be redesigned under B04 only after the
+functional access journey is stabilized (see Design System §Wallet).
 
 ## Core rule
 
@@ -739,6 +774,13 @@ Never render unavailable methods disabled unless there is a deliberate UX reason
 Prefer omitting them.
 
 ---
+
+## C02 — Coin Purchase (preserved for Chai / other valid entry points)
+
+C02 standard Coin Purchase is preserved as a dedicated full-screen route for
+the Short Film Chai flow (F02 -> T01 -> T02) when Chai balance is insufficient.
+This is separate from the contextual Add Coins presentation inside Wallet for
+Micro Drama access.
 
 # 19. R01 — PHONE ENTRY
 
@@ -817,7 +859,12 @@ Avoid exposing creator cash-equivalent promises.
 
 ---
 
-# 22. C02 — COIN PURCHASE
+# 22. C02 — COIN PURCHASE (preserved for Chai / other valid entry points)
+
+C02 standard Coin Purchase is preserved as a dedicated full-screen route for
+the Short Film Chai flow (F02 -> T01 -> T02) when Chai balance is insufficient.
+This is separate from the contextual Add Coins presentation inside Wallet for
+Micro Drama access.
 
 ## Wireframe
 
@@ -903,6 +950,19 @@ Do not create custom fake ad completion logic.
 Prefer automatic return after a brief confirmation.
 
 Entitlement grant must be idempotent.
+
+### Rewarded 1-ad and 2-ad states
+
+- required completions = 1: one verified ad -> permanent entitlement -> `Continue Watching`.
+- required completions = 2: after Ad 1 verified, show an intermediate state:
+
+```text
+Ad complete
+1 of 2 completed
+[Watch Next Ad]
+```
+
+The button requires explicit user input. After Ad 2 verified -> 2/2 -> exactly one permanent entitlement -> `Continue Watching`. Ad 2 is never auto-launched.
 
 ---
 
@@ -1207,6 +1267,9 @@ Plus does not remove coins or permanent unlocks.
 ```text
 ┌──────────────────────────────────────┐
 │ ←  Settings                          │
+│                                      │
+│ Language / App                       │
+│ App Language              English    │
 │                                      │
 │ Playback                             │
 │ Autoplay Next              [ON]      │
@@ -1934,3 +1997,59 @@ If instructions conflict:
 **0nya / शून्य**
 
 **UI WIREFRAMES — ALL CONSUMER SCREENS v1.0**
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## Screen Implementation Visual Lock Authority
+
+Visual locking of any screen implementation defined in these wireframes must follow the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+```
+SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT -> PHYSICAL ONEPLUS -> LOCK
+```
+
+Screen implementation reaches `LOCKED BASELINE` only after emulator candidate screenshots are reviewed and approved by Product Owner + ChatGPT down to the smallest detail, followed by final real hardware validation on OnePlus 13R.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*

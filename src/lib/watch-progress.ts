@@ -355,12 +355,26 @@ export async function saveServerShortFilmWatchProgress(
     durationSeconds > 0 && durationSeconds - positionSeconds <= 5;
   const now = new Date().toISOString();
 
+  const { data: existing, error: existingError } = await supabase
+    .from("watch_progress")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("content_type", "short_film")
+    .eq("short_film_slug", input.shortFilmSlug)
+    .maybeSingle();
+
+  if (existingError) {
+    console.warn("Unable to load existing short film progress.");
+    return null;
+  }
+
+  const completed = Boolean(existing?.completed || derivedCompleted);
   const { data, error } = await supabase
     .from("watch_progress")
     .upsert(
       {
         ad_break_state: input.adBreakState ?? DEFAULT_SHORT_FILM_AD_BREAK_STATE,
-        completed: derivedCompleted,
+        completed,
         content_type: "short_film",
         duration_seconds: durationSeconds,
         episode_number: null,

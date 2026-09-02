@@ -152,9 +152,56 @@ async function removeLocalHistoryItems(session: Session | null, items: WatchProg
   }
 }
 
-type HistoryMergeState = Record<string, { guestCredential: string | null; mergedAt: string }>;
+export type HistoryMergeStateEntry = {
+  guestCredential: string | null;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  mergedAt: string;
+  status?: "completed" | "pending";
+};
 
-async function readHistoryMergeState() {
+export type HistoryMergeState = Record<string, HistoryMergeStateEntry>;
+
+export type HistorySyncUiStatus = "idle" | "pending" | "retrying";
+
+export type HistorySyncUiState = {
+  errorMessage?: string;
+  status: HistorySyncUiStatus;
+};
+
+function getErrorCode(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.code;
+  }
+
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+
+  return "unknown_error";
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+
+  return "Unknown merge error.";
+}
+
+function isSystemicRetryableFailure(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.status === 0 || error.status === 401 || error.status === 403 || error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+
+  return true;
+}
+
+export async function readHistoryMergeState() {
   const raw = await supabaseSecureStorage.getItem(HISTORY_MERGE_STATE_KEY);
 
   if (!raw) {
@@ -171,6 +218,44 @@ async function readHistoryMergeState() {
 
 async function writeHistoryMergeState(state: HistoryMergeState) {
   await supabaseSecureStorage.setItem(HISTORY_MERGE_STATE_KEY, JSON.stringify(state));
+}
+
+export function getHistoryMergeUiStateFromEntry(entry?: HistoryMergeStateEntry | null): HistorySyncUiState {
+  if (!entry || entry.status === "completed") {
+    return { status: "idle" };
+  }
+
+  return {
+    errorMessage: entry.lastErrorMessage ?? "Watch history couldn't fully sync.",
+    status: "pending",
+  };
+}
+
+export async function getHistoryMergeUiState(session: Session | null): Promise<HistorySyncUiState> {
+  if (!session?.user?.id) {
+    return { status: "idle" };
+  }
+
+  const state = await readHistoryMergeState();
+  return getHistoryMergeUiStateFromEntry(state[session.user.id]);
+}
+
+export async function retryPendingGuestHistoryMerge(
+  session: Session | null,
+  mergeFn: (currentSession: Session | null) => Promise<{ pending: boolean }>,
+) {
+  if (!session?.user?.id || !session.access_token) {
+    return { pending: false, retried: false, status: "idle" as const };
+  }
+
+  const result = await mergeFn(session);
+  const status = result.pending ? "pending" : "idle";
+
+  return {
+    pending: result.pending,
+    retried: true,
+    status,
+  };
 }
 
 export async function loadWatchHistory(session: Session | null) {
@@ -289,7 +374,7 @@ function isStaleContentNotFoundError(error: unknown, item: WatchProgressItem) {
 
 export async function mergeGuestWatchHistory(session: Session | null) {
   if (!session?.user?.id || !session.access_token) {
-    return { merged: 0, skipped: true };
+    return { failed: 0, merged: 0, pending: false, skipped: true, stale: 0 };
   }
 
   const [guestHistory, serverHistory, credentials, mergeState] = await Promise.all([
@@ -307,15 +392,16 @@ export async function mergeGuestWatchHistory(session: Session | null) {
   }, 0);
 
   if (!guestHistory.length) {
-    return { merged: 0, skipped: true };
+    return { failed: 0, merged: 0, pending: false, skipped: true, stale: 0 };
   }
 
   if (
     previousMerge &&
     previousMerge.guestCredential === guestCredential &&
+    previousMerge.status !== "pending" &&
     new Date(previousMerge.mergedAt).getTime() >= latestGuestAt
   ) {
-    return { merged: 0, skipped: true };
+    return { failed: 0, merged: 0, pending: false, skipped: true, stale: 0 };
   }
 
   const serverByKey = new Map(serverHistory.map((item) => [makeLocalRecordKey(item), item]));
@@ -327,12 +413,18 @@ export async function mergeGuestWatchHistory(session: Session | null) {
         return true;
       }
 
+      if (serverItem.completed && !item.completed) {
+        return false;
+      }
+
       return new Date(item.lastWatchedAt).getTime() > new Date(serverItem.lastWatchedAt).getTime();
     })
     .sort((left, right) => new Date(left.lastWatchedAt).getTime() - new Date(right.lastWatchedAt).getTime());
 
   let merged = 0;
+  let failed = 0;
   const staleItems: WatchProgressItem[] = [];
+  const failedItems: Array<{ error: unknown; item: WatchProgressItem }> = [];
 
   for (const item of candidates) {
     try {
@@ -368,8 +460,44 @@ export async function mergeGuestWatchHistory(session: Session | null) {
         continue;
       }
 
-      console.warn("Unable to merge guest watch history.", error);
-      return { merged, skipped: false };
+      failed += 1;
+      failedItems.push({ error, item });
+
+      if (isSystemicRetryableFailure(error)) {
+        console.warn("[0nya watch history merge] systemic retryable failure", {
+          ...summarizeWatchProgressTarget(item),
+          code: getErrorCode(error),
+          message: getErrorMessage(error),
+        });
+
+        mergeState[session.user.id] = {
+          guestCredential,
+          lastErrorCode: getErrorCode(error),
+          lastErrorMessage: getErrorMessage(error),
+          mergedAt: new Date().toISOString(),
+          status: "pending",
+        };
+        await writeHistoryMergeState(mergeState);
+
+        return {
+          failed,
+          failedItems: failedItems.map(({ item: failedItem, error: failedError }) => ({
+            code: getErrorCode(failedError),
+            item: summarizeWatchProgressTarget(failedItem),
+            message: getErrorMessage(failedError),
+          })),
+          merged,
+          pending: true,
+          skipped: false,
+          stale: staleItems.length,
+        };
+      }
+
+      console.warn("[0nya watch history merge] item-specific failure; continuing with remaining candidates", {
+        ...summarizeWatchProgressTarget(item),
+        code: getErrorCode(error),
+        message: getErrorMessage(error),
+      });
     }
   }
 
@@ -381,9 +509,21 @@ export async function mergeGuestWatchHistory(session: Session | null) {
     mergeState[session.user.id] = {
       guestCredential,
       mergedAt: new Date().toISOString(),
+      status: "completed",
     };
     await writeHistoryMergeState(mergeState);
   }
 
-  return { merged, skipped: false };
+  return {
+    failed,
+    failedItems: failedItems.map(({ item: failedItem, error: failedError }) => ({
+      code: getErrorCode(failedError),
+      item: summarizeWatchProgressTarget(failedItem),
+      message: getErrorMessage(failedError),
+    })),
+    merged,
+    pending: false,
+    skipped: false,
+    stale: staleItems.length,
+  };
 }

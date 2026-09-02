@@ -180,7 +180,18 @@ export async function POST(request: Request) {
   const expectedAdUnitId = getExpectedAdUnitId();
   const adUnit = query.get("ad_unit");
 
-  if (expectedAdUnitId && adUnit !== expectedAdUnitId) {
+  // Phase 7: production rewarded requires a pinned, configured ad unit. Fail
+  // closed — do NOT silently accept any Google-signed rewarded ad unit.
+  const production = process.env.NODE_ENV === "production";
+
+  if (production) {
+    if (!expectedAdUnitId) {
+      return errorResponse("server_error", "Rewarded ads are not configured for production.", 503);
+    }
+    if (adUnit !== expectedAdUnitId) {
+      return errorResponse("forbidden", "Unexpected rewarded SSV ad unit.", 403);
+    }
+  } else if (expectedAdUnitId && adUnit !== expectedAdUnitId) {
     return errorResponse("forbidden", "Unexpected rewarded SSV ad unit.", 403);
   }
 

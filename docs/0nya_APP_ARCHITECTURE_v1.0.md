@@ -20,6 +20,10 @@ Evidence reviewed:
 
 Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is present in this repo and remains the conceptual CMS product contract. This architecture document records implementation evidence only.
 
+> **B00 documentation reconciliation note (2026-08-31):** Several sections below were written as an earlier audit and contain stale claims (e.g. "Android is only a starter shell", "no native player", "no rewarded/Short Film/Chai", "CMS Product Contract absent", "only simplified access", "only mock player", "no full account deletion flow"). These contradict the verified current implementation recorded in **§ BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT** and the **Multi-Rewarded Unlock (V1 Launch Policy)** appendix at the end of this document. Where they conflict, the checkpoint and appendix are authoritative. Current status of each area:
+> - Expo Android consumer app, React Navigation, Home/Explore/Profile, Explore/Search, Series Detail, `expo-video` player, playback lifecycle, backend playback authorization, preview/access resolver, Continue Watching, Wallet/Coins, rewarded attempt/progress/SSV foundation, Short Film detail/playback/end, Chai, parental controls, account deletion, Home Composer, Multi-Spotlight: **IMPLEMENTED / DEV-QA**.
+> - Native Google Play Billing, store purchase verification, Plus real store lifecycle, P05 Manage Subscription, Restore real Play purchases, production AdMob E2E, migration 027 remote application, production Mux asset/deliverability, Short Film production ad rolls, deep-link E2E, public legal/support surfaces, reliable A-rated age verification: **PARTIAL / NOT PRODUCTION COMPLETE**.
+
 ---
 
 ## 1. Repository structure
@@ -35,7 +39,7 @@ Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is present in this repo
 │  ├─ 0nya_UI_WIREFRAMES_ALL_SCREENS_v1.0.md
 │  ├─ android-client-bootstrap.md
 │  ├─ mobile-api-readiness.md
-│  └─ (no 0nya_CMS_PRODUCT_CONTRACT_v1.0.md found)
+│  └─ (0nya_CMS_PRODUCT_CONTRACT_v1.0.md — present in this repo; "absent" claims elsewhere in this doc are stale, see B00 note)
 ├─ public/
 ├─ src/
 │  ├─ app/
@@ -123,9 +127,9 @@ What exists:
 - App entry runs through `NavigationContainer` and `createNativeStackNavigator`.
 - Authentication uses Supabase client auth with Expo SecureStore (referenced in docs but not clearly implemented in the current file set).
 - The app calls Next.js API endpoints with `Authorization: Bearer <access token>`.
-- There is no native video player implementation in the current Android app files.
+- There IS a native video player: the Android app uses `expo-video` (`VideoView` + `useVideoPlayer`) for real HLS/media playback. Earlier audit text calling it absent is superseded — see § BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT.
 - There is no native Google Play Billing client implementation in the Android app source (`BillingClient`, `ProductDetails`, `PurchasesUpdatedListener`, `queryProductDetails`, `queryPurchases`, `acknowledgePurchase`, `consumePurchase`, or Play purchase-token handling were not found in the repository).
-- There is no true rewarded-ad verification flow in mobile code.
+- There IS a true rewarded-ad verification flow in mobile code: Android uses `react-native-google-mobile-ads`, `EpisodeAccessOptionsScreen` creates an attempt via `createRewardedAdAttempt`, shows the ad only on explicit user CTA, and grants access only after the backend SSV callback (`finalize_rewarded_ad_callback`) confirms verified completion. (See "Multi-Rewarded Unlock (V1 Launch Policy)".)
 
 ### Android app entry point
 
@@ -135,9 +139,9 @@ What exists:
 ### Android runtime reality
 
 - React Native / Expo runtime is configured by the Android app package and Expo.
-- The project is not a fully wired mobile product yet; it is a foundation shell.
+- The project is a substantially implemented consumer app (Home/Explore/Profile, `expo-video` playback, rewarded/Short Film/Chai flows). The earlier "foundation shell only" claim is stale (see B00 note). Production store/AdMob/Mux provisioning remains incomplete.
 
-Status: `PARTIALLY IMPLEMENTED`
+Status: `PARTIALLY IMPLEMENTED` for production provisioning; feature foundation is implemented.
 
 ---
 
@@ -390,7 +394,7 @@ Primary screen layers:
 
 ### Screen reality check
 
-The repo includes a thin set of screens but no full implementation of the Product Bible screens such as rewarded-ad gating, Chai tipping, short-film detail and ad flow, deep-link router, parental gate, delete-account flow, or search results UI.
+- The repo now implements the Product Bible screens including rewarded-ad gating (multi-completion), Chai tipping, Short Film detail/playback/end, parental gate, delete-account flow, and Explore/Search results UI. Earlier "no full implementation" wording is superseded (see B00 note); remaining gaps are production provisioning (store/AdMob/Mux) and physical-device verification, not missing features.
 
 Status: `PARTIALLY IMPLEMENTED`
 
@@ -617,10 +621,9 @@ Actual logic:
 
 This means the app does not compute business access on the client; it relies on the shared helper and DB RPCs.
 
-Important difference from the Bible:
+Important difference from the Bible (superseded for the current working tree — see B00 note):
 
-- This repo does not implement the Bible’s combinable/variant access model with `coin_unlock_enabled`, `rewarded_unlock_enabled`, `plus_access`, `free_access`, and `rewarded_access_mode` as distinct CMS-controlled data fields.
-- It only implements an earlier simplified access pattern: free / owned / subscription / locked.
+- The current working tree implements the Bible's combinable/variant access model with `coin_unlock_enabled`, `rewarded_unlock_enabled`, `plus_access`, `free_access`, and `rewarded_access_mode` as distinct CMS-controlled data fields, plus `required_rewarded_completions` (1–2). Earlier audit text describing only `free / owned / subscription / locked` is stale relative to the verified working tree.
 
 Status: `PARTIALLY IMPLEMENTED` but not Bible-compliant
 
@@ -639,7 +642,7 @@ Relevant files:
 
 Actual behavior:
 
-- The player is a mock vertical viewer, not a real HLS or video SDK integration.
+- The web `VerticalPlayer` is a mock vertical viewer, not a real HLS/video SDK integration. The **Android** app uses real `expo-video` playback (see § BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT). Earlier audit text claiming "no native player" is superseded.
 - It uses a poster image and UI overlays (`Playing` / `Paused`) instead of actual media playback.
 - It tracks a simulated position in seconds and saves progress to `watch_progress`.
 - `PlayerControls` is UI-only and does not control a native video element.
@@ -749,10 +752,9 @@ Actual behavior:
 
 - The purchase page includes a `Watch ad to unlock` button, but it is disabled.
 - Comments explicitly note: “Rewarded-ad entitlements must be granted only after trusted server-side ad verification.”
-- `episode_entitlements.source` includes `'rewarded_ad'`, but no actual rewarded-ad flow exists in the app.
-- No rewarded-ad API, callback, verification route, or UI flow is implemented.
+- `episode_entitlements.source` includes `'rewarded_ad'`, and a full rewarded-ad flow now exists: `POST /api/v1/episodes/[episodeId]/rewarded`, AdMob SSV `POST /api/webhooks/admob/ssv`, status polling, and the Android `EpisodeAccessOptionsScreen` UI (including multi-ad 1/2 and 2/2 flows). (See "Multi-Rewarded Unlock (V1 Launch Policy)".)
 
-Status: `MISSING` in the actual app; only placeholder UI and schema scaffolding exist.
+Status: `IMPLEMENTED` for Android development/runtime verification (see Multi-Rewarded Unlock appendix). Earlier `MISSING` claim is superseded; production AdMob account/ad-unit setup remains externally blocked.
 
 ---
 
@@ -858,7 +860,7 @@ Actual behavior:
 - Supported parental thresholds are `U/A 13+` and `U/A 16+`.
 - Backend playback authorization reads server parental state and applies the same effective policy for Series and Short Films.
 - The parental unlock session remains account-scoped and shared across Series and Short Films until expiry or Lock Now.
-- `signOut` exists in account actions but there is no full account deletion flow.
+- `signOut` exists in account actions; account deletion (Q01 Delete Account) is implemented in the current working tree (see B00 note). Earlier "no full account deletion flow" claim is superseded.
 
 Status: `PARTIALLY IMPLEMENTED`
 
@@ -1013,17 +1015,17 @@ These are the current base systems to preserve, even though several features are
 
 1. Missing true Build-15 product compliance with Bible rules.
 2. `src/data/content.ts` is still a mock catalogue used as fallback and not a live CMS-backed content source.
-3. Episode access is simplified to `free` / `owned` / `subscription` / `locked`; the Bible expects CMS-controlled mixed access methods per episode.
-4. No real rewarded-ad system exists, even though schema and placeholder UI mention it.
-5. No short-film flow exists beyond generic content placeholders.
-6. No Chai flow or ledger model exists.
+3. [SUPERSEDED — see B00 note] Episode access in the current working tree implements CMS-controlled mixed access methods per episode (free/coin/rewarded/Plus, with `required_rewarded_completions` 1–2); the earlier simplified `free / owned / subscription / locked` claim no longer reflects the verified tree.
+4. [SUPERSEDED — see B00 note] A real rewarded-ad system now exists for Android development/runtime verification (attempt creation, SSV confirmation, multi-completion 1–2); production AdMob setup remains externally blocked.
+5. [SUPERSEDED — see B00 note] A dedicated Short Film detail/playback/end flow exists on Android with `expo-video` and signed playback; production ad-roll integration remains externally blocked.
+6. [SUPERSEDED — see B00 note] Chai (coin tip) flow and ledger model exist on Android and backend; it is coin-only, not cash/UPI.
 7. No deep links or universal link routers exist.
 8. No analytics integration exists.
 9. No feature-flag configuration layer exists.
-10. No actual HLS or native video player integration is present.
+10. [SUPERSEDED — see B00 note] Android has real `expo-video` HLS playback with signed Mux URLs; the web `VerticalPlayer` remains a UI simulation.
 11. The Android app is still a foundation shell and not a full consumer app.
 12. `plans/page.tsx` and wallet top-up UI are intentionally disabled placeholders.
-13. CMS contract file `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is absent from the repo, so the CMS-authoritative contract is not represented by source evidence.
+13. [SUPERSEDED] `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` IS present in this repo and remains the CMS-authoritative contract.
 
 ---
 
@@ -1052,6 +1054,8 @@ The repository evidence is sufficient to document the actual architecture accura
 ---
 
 ## BUILD 15 GAPS
+
+> **B00 note:** Several gaps below (mixed access model, rewarded-ad unlock, short-film flow, Chai, native player, foundation-shell) were written before the verified working-tree baseline and are partially superseded by the **BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT** and the **Multi-Rewarded Unlock (V1 Launch Policy)** appendix. The Android app now implements combinable per-episode access, rewarded multi-completion, Short Film playback, and Chai. Remaining gaps are production provisioning (Google Play Billing / AdMob / Mux media) rather than missing features. Treat the checkpoint/appendix as authoritative.
 
 ### Gap 1: Mixed per-episode access model
 
@@ -1177,3 +1181,207 @@ Evidence-backed implementation status:
 | Chai | `IMPLEMENTED` for Short Films through `POST /api/v1/short-films/[slug]/chai` and `submit_short_film_chai_tip`, with atomic viewer debit, creator/film credit, idempotency, and insufficient-balance handling. |
 | Billing development boundary | `IMPLEMENTED` as a development-only boundary at `POST /api/v1/billing/google-play`; returns `DEVELOPMENT_TEST_BOUNDARY` and `entitlementChanged=false`. |
 | Real Google Play Billing | `PARTIALLY IMPLEMENTED / EXTERNALLY BLOCKED`; no production Play product setup, real purchase token verification, acknowledge/consume, or lifecycle reconciliation is complete. |
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## 25B. Micro Drama Wallet / Access Consolidation — Target Presentation/State
+
+This section documents the target presentation/state consolidation for Micro
+Drama access. It is authority/documentation only — no application, backend, CMS,
+or database changes are authorized by this section.
+
+### Target consolidation
+
+- **C01 Wallet** becomes the primary consumer-facing Micro Drama wallet / access
+  hub. For a locked Micro Drama episode, the access experience (W02) is presented
+  contextually through Wallet rather than by bouncing the viewer through multiple
+  separate full-screen monetization screens.
+- **Add Coins** for episode access is offered contextually inside Wallet when
+  the viewer's coin balance is insufficient.
+- **C02 standard Coin Purchase** remains preserved as a dedicated full-screen
+  route for the Short Film Chai flow (F02 -> T01 -> T02) when Chai balance is
+  insufficient. Chai is NOT migrated into C01 Wallet.
+- **Short Film Chai** (F02 -> T01 -> T02) remains a separate, dedicated user
+  flow. Sharing the 0nya coin balance does not share the UI journey.
+
+### Sequencing
+
+1. First stabilize/consolidate the Micro Drama functional access journey through
+   Wallet.
+2. Verify Coin / Rewarded / Plus / Add Coins / exact return-context behavior.
+3. Only after functional consolidation is stable: perform the final C01 Wallet
+   UI/UX redesign under B04.
+
+The current C01 Wallet UI is not final visual authority; the final Wallet must
+follow Quiet Cinema (flat hierarchy, restrained surfaces, strong balance
+readability, clean ledger/activity presentation, no oversized dashboard cards,
+no aggressive commerce treatment).
+
+### Authority boundaries (unchanged)
+
+The following remain separate and server/CMS/Play-Store authoritative. This
+consolidation does not merge them into the client:
+
+- server wallet/order/idempotency logic
+- entitlement semantics (permanent coin, rewarded, Plus)
+- rewarded-ad verification and SSV
+- Google Play Billing (purchase, verification, restore)
+- coin pricing (backend/CMS-controlled)
+- Chai transaction semantics (server-authoritative ledger)
+- CMS episode configuration (free/coin/rewarded/Plus, prices, release state)
+- Mux signed playback authorization
+
+### Route/component retirement is NOT authorized
+
+No existing Android route or screen is retired, deleted, or migrated by this
+documentation synchronization. A later implementation audit (READ-ONLY MICRO
+DRAMA WALLET / ACCESS IMPLEMENTATION AUDIT) must determine whether any route or
+component retirement is required. Until that audit completes and an explicit
+retirement decision is made, preserve all existing routes/screens.
+
+### Two distinct monetization systems
+
+- **A. Micro Drama Access System** — Coin, Rewarded Ad, 0nya Plus, Add Coins,
+  permanent entitlements, rewarded progress (0/2 -> 1/2 -> 2/2), exact return to
+  the initiating episode. Presented through C01 Wallet.
+- **B. Short Film Chai System** — Dedicated flow F02 -> T01 -> T02. Chai is NOT
+  migrated into C01 Wallet. Uses the same server-authoritative 0nya coin wallet
+  but a separate UI journey.
+
+---
+
+## 25C. READ-ONLY Implementation Audit — Micro Drama Wallet / Access State
+
+Audit performed against `apps/android/` source (no code or config changed by this
+sync). Findings below feed the B04 sub-gate; they are recorded as-is and do not
+alter server/CMS/playback contracts.
+
+### C01 Wallet exists, not yet the contextual Micro Drama hub
+
+- `WalletScreen.tsx` — registered in `RootStack` (`Wallet: undefined`), opened
+  from Home (`HomeScreen` -> `navigation.navigate("Wallet")`). Renders: coin
+  balance, an "Add Coins" pill -> `CoinPurchase`, a Recent Activity ledger
+  (`credit` / `episode_purchase` / `refund` / `promo`), and 0nya Plus status +
+  "Get/Manage 0nya Plus" pill -> `Plus`.
+- It is therefore a functioning wallet hub, but it is NOT yet wired as the
+  contextual Micro Drama access entry from the episode paywall.
+
+### W02 EpisodeAccessOptions — insufficient-coins path is the consolidation gap
+
+- `EpisodeAccessOptionsScreen.tsx` — registered `W02`. Currently loads wallet
+  balance INLINE (`getWallet`) and displays it as a row detail
+  ("Balance: N coins"). Unlock methods offered inline: Coin (W02), Rewarded
+  (W02 multi-completion), 0nya Plus (W02 -> `Plus`).
+- Insufficient coin balance path: `purchaseEpisodeWithCoins` returns
+  `insufficient_balance` and the screen sets `setUnlockError("Not enough
+  coins.")` — an inline error only. **There is no contextual "Add Coins"
+  affordance and no navigation to Wallet or `CoinPurchase` from this error
+  state.** The viewer is stuck on the inline error.
+- Rewarded (B03): multi-completion semantics preserved — required count is
+  backend/episode-controlled (`episode.requiredRewardedCompletions`), progress
+  is server-authoritative (`getRewardedProgress` on mount/focus), the user must
+  explicitly tap "Watch next ad" (no auto-chain), and the 0/2 -> tap -> 1/2 ->
+  tap -> 2/2 controlled sequence is intact. ✓
+- On successful unlock (any method) the screen calls `navigation.replace("Watch",
+  ...)` with the exact episode + access context, so return-after-unlock is
+  correct. ✓
+
+### Chai (System B) is a dedicated, separate flow — preserved
+
+- `ShortFilm` (F02 detail) -> `ShortFilmChaiAmount` (T01) -> `ShortFilmChaiConfirm`
+  (T02) -> `ShortFilmEnd`, each navigating to `CoinPurchase` with
+  `returnToChai: { selectedAmount, shortFilm }`. Chai does NOT route through
+  Wallet/W02, and `CoinPurchase` is NOT migrated into Wallet for the Chai flow.
+
+### C02 CoinPurchase — shared host, Chai return context preserved
+
+- `CoinPurchaseScreen.tsx` (C02) is reachable both from Wallet ("Add Coins",
+  generic) and from the Chai screens (`returnToChai` param), so the single
+  purchase host already supports both entry contexts.
+
+### Routes / components — none retired
+
+- All existing routes remain registered: `Wallet`, `CoinPurchase`, `Plus`,
+  `EpisodeAccessOptions` (W02), `ShortFilm`, `ShortFilmPlayback`,
+  `ShortFilmEnd`, `ShortFilmChaiAmount`, `ShortFilmChaiChaiConfirm`.
+  `ProfileStack` (Account / Settings / DeleteAccount / RestoreSync) is
+  unchanged. No retirement is authorized by this sync.
+
+### Audit conclusion
+
+The functional consolidation described by the product decision (Micro Drama
+episode unlock -> contextual Add Coins through C01 Wallet, exact episode
+return) is **NOT YET IMPLEMENTED**: W02 leaves the viewer on an inline
+"Not enough coins." error with no path to add coins or reach Wallet. Chai
+(System B), Rewarded (B03), Plus, and exact return are all preserved. This gap
+is the target of B04 (functional consolidation before Wallet visual redesign).
+
+---
+
+## 25. Final Product & System Acceptance Authority
+
+Code implementation completeness (`SOURCE VERIFIED`) does not constitute final product or release acceptance. All architectural components and user-facing deliverables must pass the **Locked Final Acceptance Protocol** in `AGENTS.md`:
+
+- **Consumer App:** `SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT -> PHYSICAL ONEPLUS -> LOCK`.
+- **CMS / Backend:** `CMS SOURCE/CONFIG -> DEPLOYED QA/API -> CMS WEBSITE -> SCREENSHOTS -> OWNER+CHATGPT REVIEW -> OWNER HANDS-ON CMS CHECK -> LOCK`.
+- Technical verification alone (passing typechecks, tests, or ADB commands) cannot bypass Product Owner and ChatGPT visual candidate review or subsequent physical OnePlus hardware verification.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
+
+---
+
+## 26. PX01 source-foundation status
+
+Uncommitted PX01 source provides backend/migration preparation for secure
+invite/redeem, rooms/participants, ordered room-scoped 0chat messages, and
+backend-controlled acquisition/access. It is not proof of an applied migration,
+deployed runtime, realtime room synchronization, or Android chat UI.
+
+The architecture boundary is fixed: room acquisition/access is separate from
+episode entitlement; each participant authorizes its own episode playback;
+Host entitlement never transfers to a Guest; and an invite never grants episode
+entitlement. Future synchronization requires one canonical room timeline with
+Host playback-intent authority, version/time reference, measured heartbeat/
+offset correction, and buffering/reconnect/control policy.

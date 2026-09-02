@@ -124,7 +124,7 @@ product: "0nya"
 | Primary content | Original micro-drama series. |
 | Secondary content | Curated vertical short films. |
 | Primary format | 9:16 narrative viewing on mobile. |
-| Launch language | Hindi-first; architecture may support additional languages later. |
+| App interface language | English default. App Language setting supports English / हिन्दी, changed later from Settings. No mandatory first-launch language chooser for MVP. (See §21A.) |
 | Experience promise | Open quickly, find a story quickly, stay in playback, and never lose narrative position after an interruption. |
 | Visual tone | Quiet, cinematic, premium; not a noisy social feed. |
 
@@ -197,7 +197,7 @@ The app is being built with a minimal-cost philosophy and AI-assisted developmen
 | Registered Free | Verified phone account | Guest + server history + wallet + coin purchases/unlocks + rewarded unlocks + Chai tips | Server |
 | 0nya Plus | Registered + active subscription | Access to Plus-enabled micro-drama episodes; ad-free short films; wallet remains independent | Server + store reconciliation |
 | Coin-unlocked item | Per-episode entitlement | Permanent access to that micro-drama episode | Server |
-| Ad-unlocked item | Per-episode access after verified rewarded completion | Access duration follows backend rewarded_access_mode (permanent or session). | Server |
+| Ad-unlocked item | Per-episode access after verified rewarded completion | Access is **permanent** for launch (session mode is unsupported; see §14). | Server |
 
 
 ## Guest-to-account merge
@@ -239,12 +239,32 @@ The app is being built with a minimal-cost philosophy and AI-assisted developmen
 | --- | --- |
 | Continue Watching | First row when history exists. |
 | Start Here | New/low-history viewers. Exit threshold is CONFIG. |
-| Featured / New | Editorial/CMS controlled. |
+| Multi-Spotlight | Ordered CMS/API real items; manual swipe; 9:16 posters; real next-item peek; no auto movement. |
 | Trending | Editorial/manual at launch. |
 | New Releases | CMS chronological/editorial. |
 | Micro Dramas | Core catalog row. |
 | Vertical Short Films | Dedicated row. |
 | Staff Picks | Optional editorial row. |
+
+### Home Multi-Spotlight (current approved Home editorial stage)
+
+The single Home editorial stage is **Multi-Spotlight**, not a single Featured Hero.
+
+- Ordered CMS/API real published items (no `catalog[0]` fallback, no fake card).
+- Horizontal poster rail of strict **9:16** posters.
+- Manual swipe only; **no automatic movement**, no timer, no dots, no arrows, no parallax, no decorative Home motion.
+- Active poster plus a **real next-item peek** (the actual next ordered item, never a fabricated second card).
+- `showTitle` is CMS-controlled; the canonical title shows only when `showTitle = true`.
+- Poster tap -> Series/Short Film Detail.
+- CTA label on the active footer is exactly **Watch**.
+- No Info button inside Spotlight.
+- Continue Watching owns Resume/progress language; Spotlight never shows "Resume".
+
+Approved width formula: `Math.round(Math.min(260, Math.max(220, usableWidth * 0.67)))`, gap 12dp.
+
+### Authenticated Home wallet affordance
+
+Registered Free and 0nya Plus users must have a clear, restrained Home wallet affordance that opens **C01 Wallet**. Guest Home must not display a misleading owned wallet balance/state. This is a product requirement, not a Home commerce dashboard. (Android implementation belongs to the appropriate later UI batch.)
 
 - H02 Continue Watching cards use 9:16 static video-derived stills from the exact resume target, with real progress and resume metadata; no autoplay or moving preview in MVP.
 
@@ -282,7 +302,7 @@ This replaces the old mandatory 'first three free' model.
 | --- | --- | --- |
 | Free | free_access = true | Any guest/user can play without OTP or paywall. |
 | Coin unlock | coin_unlock_enabled + coin_price | Registered user can permanently unlock the episode for the configured coin amount. |
-| Rewarded-ad unlock | rewarded_unlock_enabled + rewarded_access_mode | Registered user can choose a rewarded ad; verified completion grants episode access according to rewarded_access_mode. |
+| Rewarded-ad unlock | rewarded_unlock_enabled + rewarded_access_mode | Registered user can choose a rewarded ad; verified completion grants a **permanent** episode entitlement (launch: `rewarded_access_mode` is permanent only; see §14). |
 | 0nya Plus | plus_access = true (default for released micro-drama episodes) | Active Plus user plays without individual coin/ad unlock. |
 | Preview | locked_preview_seconds | 0-3 second narrative preview before paywall; recommended default 2-3 seconds when enabled. |
 | Release | publish_at / availability | Unreleased episode cannot be bypassed by coin/ad/Plus. |
@@ -290,6 +310,9 @@ This replaces the old mandatory 'first three free' model.
 
 > **LOCKED** — Allowed methods are combinable.  A locked episode may offer Coin + Rewarded Ad + Plus, Coin + Plus, Rewarded Ad + Plus, or Plus only. The paywall only shows methods enabled for that episode.
 
+> **LOCKED** — Coin + Rewarded offered simultaneously means both alternative unlock methods are available, not a combined partial-coin plus partial-ad payment. Rewarded progress never reduces coin price, ads never generate wallet coins, and there is no ad-to-coin conversion. All availability/prices/progress/entitlements remain server/config authoritative.
+
+> **LOCKED** — C01 Wallet is the primary consumer-facing Micro Drama wallet / access hub.  For a locked Micro Drama episode, the access experience is presented contextually through Wallet (W02 as contextual Micro Drama access) rather than by bouncing the viewer through multiple separate full-screen monetization screens. The Wallet owns Coin episode unlock, Rewarded Ad episode unlock, 0nya Plus episode access, insufficient-coin handling with Add Coins entry, permanent episode entitlements, and rewarded progress (0/2 -> 1/2 -> 2/2). Exact return to the initiating episode is required after any Wallet-initiated action.
 
 > **CONFIG** — Coin price and ad eligibility are content data.  Editorial/backend may change an episode coin price or ad eligibility without an app release. The client renders returned values only.
 
@@ -344,19 +367,27 @@ Approved quality entitlement rule:
 ## Continue Watching exact rules
 
 
+When there is no watch history, Home must NOT show a Continue Watching section. Instead show the exact copy:
+
+`Start watching to continue here.`
+
+Keep the section heading only when history exists. Do not reintroduce Watch History.
+
 | Rule | Final behavior |
 | --- | --- |
 | Enter Continue Watching | After >=5 seconds watched and content is not completed. |
 | Completed episode/film | Default completion threshold = >=95% OR within final 5 seconds; backend/config may tune. |
 | Resume position | Use last reliable saved position; clamp away from final credits/completed zone. |
 | Series detail CTA | If history exists: 'Resume Episode N', not always 'Play Episode 1'. |
+| No-history copy | When no resume history exists, show the exact compact copy: `Start watching to continue here.` Do not reintroduce a Watch History screen or label. |
 
 
-# 11. Dynamic Episode Paywall
+# 11. Contextual Micro Drama Access (W02 / C01 Wallet)
 
 
 > **LOCKED** — The paywall is dynamic, not Episode-4-specific.  It can appear on any episode when backend says the viewer lacks access.
 
+> **LOCKED** — W02 is the contextual Micro Drama access presentation associated with C01 Wallet, not an independent standalone monetization journey.  When a Micro Drama episode is locked, the access methods are presented contextually through the Wallet; Add Coins for episode access is offered contextually inside Wallet when the viewer's coin balance is insufficient. Exact return to the originating episode is preserved after any unlock or purchase path.
 
 | Element | Rule |
 | --- | --- |
@@ -364,7 +395,7 @@ Approved quality entitlement rule:
 | Rewarded ad CTA | Show only if rewarded_unlock_enabled + rewarded_access_mode and ad inventory is available. |
 | Coin CTA | Show only if coin unlock enabled; display backend coin price + current balance. |
 | Plus CTA | Show if Plus can unlock this episode and viewer is not currently Plus. |
-| Coin shortage | Open a dedicated coin-purchase sheet; do not expand a wall of packs inside the first paywall. |
+| Coin shortage | Offer Add Coins contextually inside the Wallet access presentation; do not expand a wall of packs inside the first paywall. C02 standard Coin Purchase may still be used for Chai / other valid entry points. |
 | Dismiss | Close sheet; locked player remains paused. Back exits to previous surface. |
 | Unavailable ad | Do not consume entitlement; hide/disable ad option cleanly and keep other options. |
 
@@ -412,7 +443,12 @@ Approved quality entitlement rule:
 | Chai tip | Deduct coins from viewer wallet and credit a Chai ledger entry to the film/creator. |
 | Subscription relationship | Plus never deletes coins or permanent coin unlocks. |
 | Wallet history | Purchased / spent on episode / Chai tipped / refunded or adjusted. |
-| Promotional coins | Deferred unless explicitly implemented; must be clearly distinguishable if expiry rules differ. |
+  | Promotional coins | Deferred unless explicitly implemented; must be clearly distinguishable if expiry rules differ. |
+
+
+> **LOCKED** — C01 Wallet is the primary consumer-facing Micro Drama wallet / access hub.  It owns Coin episode unlock, Rewarded Ad episode unlock, 0nya Plus episode access, insufficient-coin handling with Add Coins entry, permanent episode entitlements, and rewarded progress (0/2 -> 1/2 -> 2/2). Exact return to the initiating episode is required after any Wallet-initiated action.
+
+> **LOCKED** — Wallet visual redesign sequencing: (1) first stabilize/consolidate the Micro Drama functional access journey through Wallet; (2) verify Coin / Rewarded / Plus / Add Coins / exact return-context behavior; (3) only after functional consolidation is stable, perform the final C01 Wallet UI/UX redesign under B04. The current C01 Wallet UI is not final visual authority. The final Wallet must follow Quiet Cinema (flat hierarchy, restrained surfaces, strong balance readability, clean ledger/activity presentation, no oversized dashboard cards, no aggressive commerce treatment). Do not invent the final detailed Wallet layout until functional consolidation is complete.
 
 
 # 14. Rewarded-Ad Episode Unlock
@@ -427,7 +463,7 @@ Approved quality entitlement rule:
 | Registration | Guest selecting the ad option completes OTP first so the entitlement can be attached to an account. |
 | Verification | Grant unlock only after verified rewarded completion/callback; repeated callbacks must be idempotent. |
 | Failure/no fill | No unlock, no penalty. Return to paywall with Coin/Plus if available. |
-| Persistence | Backend controls rewarded_access_mode = permanent or session. Permanent is the recommended default to avoid repeat-ad friction. |
+| Persistence | Backend controls rewarded_access_mode. **Launch mode is permanent only** (session is unsupported and hidden from the operational CMS editor; `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`). Permanent is the default to avoid repeat-ad friction. |
 | No ad-to-coin conversion | MVP rewarded flow unlocks the episode directly; do not make viewers watch ads merely to earn wallet coins. |
 
 
@@ -532,7 +568,10 @@ D02 CTA state uses the shared resume/completion rule:
 | Amounts | CONFIG; coin amounts, not cash labels. |
 | Creator view | Creator dashboard/report shows Chai coins received per film; no viewer identity. |
 | Payout accounting | Back-office/finance converts eligible creator earnings according to the creator agreement and net revenue rules; do not promise 1 coin = fixed cash in viewer UI. |
-| Refund/adjustment | Ledger must support reversals/adjustments without corrupting viewer or creator totals. |
+  | Refund/adjustment | Ledger must support reversals/adjustments without corrupting viewer or creator totals. |
+
+
+> **LOCKED** — Short Film Chai is a SEPARATE DEDICATED user flow. F02 Short Film End -> T01 Chai Coin Amount -> T02 Chai Confirm / Success. Chai is NOT migrated into C01 Wallet, and T01/T02 remain dedicated Short Film screens. Sharing the 0nya coin balance does not share the UI journey. If Chai balance is insufficient, the existing approved dedicated Chai -> Coin Purchase -> same Chai amount return flow is preserved. C02 standard Coin Purchase may still be required for Chai even if Micro Drama access presents Add Coins contextually inside Wallet.
 
 
 # 19. Explore & Search
@@ -589,7 +628,7 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 
 - Logout returns to guest Home; it never forces OTP.
 - Delete Account is a separate destructive flow with confirmation.
-- Settings include Help & Support, Report a Content Issue, Grievance/Contact, Terms, Privacy Policy and app version.
+- Settings include App Language (English / हिन्दी), Subtitles → Default Language (subtitle preference, distinct from App Language), Help & Support, Report a Content Issue, Grievance/Contact, Terms, Privacy Policy and app version.
 - Do not show Downloads UI unless offline downloads are actually built and enabled.
 
 # 22. Sharing & Deep Links
@@ -610,6 +649,28 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 - Deep link routing order: resolve target -> content rating/parental gate -> release/access check -> player/detail/paywall.
 - A deep link must never bypass parental controls, age gates or entitlements.
 - Shared recipients may remain guests for Free content.
+
+# 21A. App Language & Interface Localization
+
+> **PRODUCT OWNER DECISION (2026-08-31)** — Supersedes any older "Hindi-first" launch-language wording. This is the authoritative App Language rule.
+
+- **App interface languages:** 0nya supports two App Language settings — **English** and **हिन्दी**.
+- **First-install default:** The app interface language defaults to **English** on first install.
+- **No first-launch chooser:** There is NO mandatory language chooser on first launch for MVP. The user may change App Language later from **Settings**.
+- **Whole-interface language:** Changing App Language changes the full APP-OWNED interface language (all app-owned strings), not a subset.
+- **No intentional mixed-language UI:** Do NOT construct mixed-language app UI strings such as "Love की कहानी", "Continue देखना", or "My प्रोफ़ाइल". App-owned interface strings must be coherent within the selected language (e.g. English: Continue Watching / Profile / Settings / Watch; Hindi: coherent Hindi equivalents). This task defines the architecture/product rule, not a translation dictionary — do not prescribe final Hindi strings here.
+- **App Language vs Subtitle Language:** App Language (English / हिन्दी) is a SEPARATE concept from the existing Settings **Subtitles → Default Language** preference. Do not rename subtitle language into app language. Both may be present and must be represented distinctly in Settings.
+- **CMS-authored metadata boundary:** App Language does NOT translate or fabricate CMS-authored content. Series titles, Short Film titles, creator names, synopses, and other CMS-fed metadata remain exactly as authored by the CMS unless the backend/CMS later provides explicit localized fields. Do not concatenate English and Hindi fragments merely because the UI language changes. Localized CMS metadata is a separate future product/backend capability unless current repository evidence already proves it exists.
+- **Product decision vs implementation status:** The above are PRODUCT DECISIONS. This document does NOT state that App Language switching or Hindi localization is technically implemented. Implementation/visual acceptance is pending (see §21B and the roadmap B04 typography sub-gate).
+
+# 21B. Typography Direction
+
+> **PRODUCT OWNER DECISION (2026-08-31)** — Approved typography direction / B04 experimental sub-gate. NOT yet implemented, visually approved, physically verified, or LOCKED.
+
+- **English / Latin — PRIMARY:** The primary typography design direction is English/Latin. The approved target family is **0nya Sans**, researched as based on the legally modifiable **Plus Jakarta Sans** (SIL Open Font License 1.1). Target semantic weights: Regular 400, Medium 500, SemiBold 600.
+- **Implementation status:** 0nya Sans is an APPROVED DIRECTION only. It is NOT yet implemented, visually approved in Android, physically verified, or LOCKED/VERIFIED COMPLETE. Do not document it as already integrated.
+- **Facelio:** Facelio is NO LONGER the implementation path for the consumer UI. Do not retain wording implying Facelio is the planned final Android font.
+- **Hindi / Devanagari:** Hindi interface mode will use a deliberately selected Devanagari companion typeface that visually harmonizes with 0nya Sans. That companion has NOT yet been selected/approved. Do NOT claim Plus Jakarta Sans contains Devanagari, and do NOT describe random Android/system glyph fallback as the intended final Hindi typography design. System/Noto fallback may exist as a technical safety fallback, but final Hindi mode requires an explicitly chosen Devanagari typography treatment before visual lock.
 
 # 23. Content Classification, Parental Controls & Age Gates
 
@@ -686,6 +747,12 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 # 27. Visual / Accessibility Rules
 
 
+## 0nya Quiet Cinema
+
+Artwork and video carry emotion. Typography carries hierarchy. Teal carries interaction. Everything else stays quiet. The full visual language lives in `docs/0nya_DESIGN_SYSTEM_v1.0.md`.
+
+Do not present a routine combined metadata strip (e.g. `MICRO DRAMA • Hindi • U/A 13+`) on cards or detail; show ratings/descriptors separately where required by policy.
+
 | Token/principle | Rule |
 | --- | --- |
 | Primary teal | #0DD1BC |
@@ -700,6 +767,31 @@ Publishing a Series is an explicit bulk publication action that publishes the Se
 | Tap targets | Accessible target sizes even over poster art. |
 | Font scaling | Paywall/OTP/content rating/parental screens must survive larger system text. |
 | Contrast | Do not rely on teal-on-black alone for critical meaning. |
+
+## Quiet Cinema visual direction
+
+Approved consumer visual direction:
+
+> Artwork and video carry emotion. Typography carries hierarchy. Teal carries
+> interaction. Everything else stays quiet.
+
+0nya is cinematic, intimate, premium, editorial, restrained, mobile-first and
+content-dominant — not gaming, not Reels/TikTok, not neon, not dashboard-heavy,
+not badge-heavy, not sales-heavy.
+
+Locked visual decisions:
+
+- Consumer artwork is universal 9:16 (Home, Continue Watching, Explore, Search, Micro Dramas, Short Films, Series artwork, Related content, resume cards). Do not use 2:3 or 16:9 for consumer posters.
+- Surfaces are matte-black, flat, spacing-based: avoid oversized bordered dashboard cards, especially Profile, Settings, Wallet and episode lists.
+- Color stays `#050505` / `#E8E4DA` / `#0DD1BC` / `#4DE5D2`; teal is interaction/progress/active state only; no neon glow; no alternate player teal.
+- Primary buttons target 48–52dp with accessible hit areas >=48dp; one dominant action normally.
+
+## Metadata presentation
+
+- Prefer artwork → title → only useful supporting context.
+- Do not present a routine combined metadata strip (for example `MICRO DRAMA • Hindi • U/A 13+` or `SHORT FILM • 32 min • Hindi`) as the standard card or detail treatment.
+- Compliance rating/descriptors must remain separately visible where required; they are not removed, only pulled out of any combined promotional strip.
+- A quiet format label (MICRO DRAMA / SHORT FILM) may sit below the artwork in muted text.
 
 
 # 28. Figma Screen Inventory
@@ -721,7 +813,7 @@ Frame names must use these IDs and state suffixes.
 | V03 | Episode Tray / D01 overlay | All | Same-screen tray / published-episode collection / access states |
 | V04 | Seamless Auto-Next | All | No overlay/countdown; immediate transition or existing access resolver |
 | W01 | Locked Preview | Guest/Free | Paused blurred frame |
-| W02 | Dynamic Episode Paywall | Guest/Free | Only valid methods |
+| W02 | Contextual Micro Drama Access (associated with C01 Wallet) | Guest/Free | Only valid methods; Add Coins contextual |
 | R01 | Phone Entry | Guest | OTP start |
 | R02 | OTP Entry | Guest | Verify/resend/errors |
 | C01 | Wallet | Registered | Balance + ledger |
@@ -983,3 +1075,273 @@ This FINAL v3.0 Bible supersedes conflicting consumer-app/UI/user-flow rules in 
 0nya / शून्य
 
 FINAL PRODUCT + UI/UX BIBLE v3.0 — IMPLEMENTATION LOCK
+
+---
+
+## Multi-Rewarded Unlock (V1 Launch Policy)
+
+Implemented on top of the existing verified rewarded foundation (`rewarded_ad_attempts`,
+`create_rewarded_ad_attempt`, `finalize_rewarded_ad_callback`). No new progress ledger was
+created; verified progress is derived from granted attempt rows bound to the active
+required-count snapshot.
+
+- **Required count is backend/CMS controlled.** Field `episodes.required_rewarded_completions`
+  (integer, NOT NULL, default 1, range 1–2). Android is told the value via
+  `requiredRewardedCompletions` on the episode; it never derives it from coin price.
+- **Launch maximum is 2.** No 3- or 4-ad unlocks at launch. If an episode is too valuable for
+  two ads, Rewarded is disabled and Coin + Plus (or another CMS combination) is used.
+- **Permanent only at launch.** `rewarded_access_mode` still permits `session` in the DB for
+  migration compatibility, but the operational CMS editor no longer offers Session and
+  `create_rewarded_ad_attempt` rejects `session` with `unsupported_pending_policy`.
+- **Commercial guideline (editorial, NOT code):** 5–7 coins ~ usually 1 ad; 8–15 coins ~
+  usually 2 ads. CMS/backend owns the actual value; there is no automatic
+  `coin_price -> required_ads` mapping.
+- **No automatic chained ads.** 0/2 -> explicit Watch Ad -> Ad1 verified -> 1/2 -> controlled
+  0nya screen -> explicit Watch next Ad -> Ad2 verified -> 2/2 -> permanent entitlement.
+  Ad 2 is never auto-launched.
+- **Partial progress is preserved** across no-fill, network failure, background, app close,
+  app kill, and later return. Backend remains authoritative; Android recovers 1/2 from
+  `GET /api/v1/episodes/:id/rewarded/progress` on mount/focus.
+- **SSV/idempotency preserved.** Google AdMob SSV ECDSA/SHA-256 verification, service-role-only
+  finalize, unique `provider_transaction_id`, row locking, entitlement uniqueness, and
+  user/episode binding are unchanged. Replayed transactions do not increase progress; a
+  transaction reused on another attempt is rejected (`transaction_conflict`).
+- **Abuse control:** `create_rewarded_ad_attempt` reuses a non-expired pending attempt for the
+  same user+episode+snapshot instead of flooding pending rows.
+- **Production ad-unit pinning is fail-closed.** In `NODE_ENV=production`,
+  `ADMOB_REWARDED_AD_UNIT_ID` must be configured and the SSV `ad_unit` must match it; otherwise
+  the callback is rejected. Dev/test uses safe test configuration.
+- **Client is never entitlement-authoritative.** Navigation to Watch happens only after the
+  backend confirms `verifiedProgress >= requiredCompletions`.
+- **Analytics:** internal `rewarded_monetization_events` table + `record_rewarded_event` RPC
+  (server-side) and `POST /api/v1/monetization/rewarded-events` (client-offer/CTA/no-fill).
+  No auth tokens, OTP, receipts, or provider secrets are stored; analytics is not a financial
+  authority — the attempt/entitlement tables remain authoritative.
+
+---
+
+## 34. Product & UI Final Acceptance Authority
+
+Final product and visual acceptance of consumer App screens and CMS editorial surfaces is governed strictly by the **Locked Final Acceptance Protocol** in `AGENTS.md`.
+
+- **Consumer App:** `SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMENT -> PHYSICAL ONEPLUS -> LOCK`.
+- **CMS:** `CMS SOURCE/CONFIG -> DEPLOYED QA/API -> CMS WEBSITE -> SCREENSHOTS -> OWNER+CHATGPT REVIEW -> OWNER HANDS-ON CMS CHECK -> LOCK`.
+- No AI coding or QA agent has authority to self-approve final visual or operational deliverables. Final visual candidate approval belongs exclusively to Product Owner + ChatGPT, followed by physical hardware validation.
+
+*Final Acceptance Protocol synchronized — Product Owner approved — 2026-08-31*
+
+---
+
+## 36. 0nya Plus Play Together / 0chat (SOURCE FOUNDATION; CONSUMER RELEASE DEFERRED)
+
+> **STATUS: APPROVED / SOURCE FOUNDATION PRESENT / RUNTIME AND ANDROID UI
+> UNVERIFIED — REQUIRES PRODUCT OWNER ACTIVATION FOR CONSUMER RELEASE**
+>
+> Current uncommitted source contains backend/migration preparation for the
+> feature. That is not deployed runtime, realtime Android synchronization, or
+> Android chat UI evidence. Do not enable or surface it to consumers before the
+> required activation and acceptance evidence exists.
+
+### Terminology
+
+The hierarchy is:
+
+```
+0nya Plus
+   ↓
+Play Together
+   ↓
+0chat
+```
+
+- **0nya Plus** — the single paid subscription tier (see §15). An active Plus member may CREATE a Play Together room.
+- **Play Together** — synchronized private co-viewing within a room (exactly 1 Host + maximum 1 Guest). Not a renaming of any existing feature.
+- **0chat** — the minimal private text communication layer inside an active Play Together room. It is NOT the name of the entire Play Together feature. *(Previous internal name "Wanna Chat" is superseded; do not retain "Wanna Chat" as the current product name.)*
+
+### Play Together V1 (locked rules)
+
+- Maximum 2 accounts per room; exactly 1 Host + maximum 1 Guest.
+- 0chat capability (including room creation) is granted by the backend access resolver — active 0nya Plus includes 0chat access; Coin / Rewarded are alternative configured access paths for non-Plus users. The exact CREATE-vs-JOIN scope for Coin / Rewarded initiation is a **PRODUCT DECISION REQUIRED BEFORE PX01 IMPLEMENTATION**.
+- A Registered Free or Plus account with backend-confirmed 0chat access may JOIN an invitation.
+- The Guest does not need Plus merely to join.
+- Every participant retains independent content entitlement; the Host's Plus entitlement NEVER transfers to the Guest.
+- The backend remains authoritative for access.
+- Micro-Drama episodes only in V1; Short Films are excluded from V1.
+- The Host controls Play / Pause / Seek / episode transition; the Guest follows Host playback state.
+- Every participant independently passes release / access / parental / playback authorization.
+- Auto-Next uses one authoritative room advance: current episode complete ->
+  next sequential published episode -> per-participant authorization ->
+  synchronized room transition. Do not create two independent Auto-Next state
+  machines.
+- If the Guest lacks access, the room waits while the Guest completes normal access; a successful Auth / OTP / unlock returns the Guest to the SAME pending room.
+- Play Together must never bypass entitlement.
+
+### 0chat V1 (locked rules)
+
+0chat V1 is deliberately minimal:
+
+```
+PRIVATE
+TWO PARTICIPANTS
+TEXT ONLY
+ROOM SCOPED
+EPHEMERAL
+```
+
+Allowed:
+
+- send text
+- receive text
+- restrained transient player message
+- compact chat panel
+- functional system messages
+
+System-message examples (room-scoped, ephemeral):
+
+```
+Priya joined
+Priya left
+Synced
+Priya is buffering…
+Waiting for Priya…
+Episode 5 starting
+```
+
+NOT in V1:
+
+- public comments
+- general-purpose DMs
+- followers / friends graph
+- public rooms / group rooms
+- voice calls / video calls
+- image/file messages
+- permanent messaging inbox
+- reactions economy
+- social feed
+- Likes / Comments
+
+Room completion must not silently create a general-purpose messaging system.
+
+### Feature-activation boundary
+
+When Play Together is eventually implemented, it must be gated behind an explicit server/config-controlled activation boundary conceptually equivalent to `play_together_enabled = false` at launch. The feature must remain invisible to consumers until explicitly activated by the Product Owner. No runtime flag is introduced during this documentation-only step.
+
+### 0chat visual identity (future)
+
+Future consumer identity is a chat-bubble silhouette with a centered `0`,
+using the existing 0nya Teal `#0DD1BC`, in a quiet/cinematic treatment. No neon
+glow, no multicolor social styling, no oversized floating social-media button.
+The compact icon does not require the written word "0chat" beside it. Accessible
+touch target; video remains visually dominant. No icon asset is created during
+this documentation-only step — final geometry/placement belongs to future PX01 UI
+refinement.
+
+### Connection model — link first
+
+0chat connects users primarily through a private invite link / room invite. No
+friends list, no follower graph, no public usernames, no contact discovery, no
+public rooms. V1 room capacity remains maximum 2 participants.
+
+### 0chat access resolver
+
+0chat capability is granted by a **backend/config-controlled** access resolver,
+not by the client. The future access surface should be capable of showing only
+methods currently enabled by backend/config:
+
+```
+0chat access:
+      ↓
+Coin
+OR
+Rewarded
+OR
+0nya Plus
+```
+
+- **0nya Plus** — Plus includes 0chat access (no additional Coin or Rewarded
+  payment for the same eligible use). Do NOT create a second Plus tier, a 0chat
+  subscription, or a separate currency.
+- **Coin** — conceptual controls `0chat_coin_access_enabled` /
+  `0chat_coin_price` (conceptual names only; do NOT create schema/runtime config
+  now). The Android client must NOT hardcode the amount. Exact commercial
+  duration/scope of a Coin 0chat unlock is a **PRODUCT DECISION REQUIRED BEFORE
+  PX01 IMPLEMENTATION**. Do NOT silently define lifetime access.
+- **Rewarded** — may be offered when backend/config enables it. Tap Watch Ad →
+  explicit rewarded ad → trusted verification (AdMob SSV) → backend confirms
+  0chat access. Never a client timer or ad-close callback. Number of rewards and
+  grant duration/scope remain configurable / future PX01 decisions.
+
+### Two independent access gates
+
+0chat access and content/episode access are **separate** gates. A participant
+may need BOTH.
+
+```
+0CHAT ACCESS  →  Coin / Rewarded / Plus
+     AND
+CONTENT ACCESS → Free / Coin entitlement / Rewarded entitlement / Plus / release state
+```
+
+- Passing 0chat access does NOT unlock an episode.
+- Passing episode access does NOT automatically grant 0chat.
+- The Host's Plus entitlement NEVER transfers to the Guest.
+- The invite link never grants content entitlement.
+
+### Guest discovery
+
+A Guest user may SEE the `0chat` icon. This is **feature discovery only**. Guest
+visibility does NOT mean the anonymous Guest owns a wallet, owns coins, owns
+Plus, has 0chat entitlement, or has episode entitlement, or can bypass
+authentication or backend access. If dismissed: continue playback normally, no
+forced registration, no punishment, no repeated harassment. Exact dismissal
+persistence / cooldown is a future UX decision.
+
+### Terminal waiting → friendly connected transition
+
+- **Waiting (terminal):** before the second participant connects, 0chat uses a
+  restrained command-line / terminal-inspired visual state with functional
+  system progression messages (e.g. `> Waiting for connection…`). This is a
+  visual language for system feedback, NOT a requirement for users to type
+  `/connect` / `/join` / `/play` / `/pause`.
+- **Connected (friendly):** after successful connection, the interface
+  transitions to a simple, human-readable chat experience.
+
+### Guest → Auth → Access return
+
+A Guest discovering 0chat and choosing an access path that requires identity
+must return to the EXACT same 0chat intent after Sign In / OTP. Do NOT return to
+Home and lose the invitation, room, intended participant, current
+episode/context, or selected 0chat access path. Reuse the completed
+return-to-origin system. No separate 0chat authentication architecture.
+
+### Existing 100 welcome coins
+
+Preserve the existing account rule: a new eligible registered account receives
+100 welcome coins, once, server-side, idempotently. 0chat must NOT create
+another 100-coin grant. Do NOT document "0chat bonus = 100 coins." Do NOT grant
+coins for seeing, tapping, inviting to, or joining 0chat or for watching
+together. An anonymous Guest does NOT own a wallet.
+
+### Invite link security / context
+
+The invite link is a connection mechanism, NOT entitlement. It may identify
+enough server-side context to resolve room / content / episode target / pending
+join. Do not expose secrets or trusted entitlement data client-authoritatively.
+Opening a link must resolve, server-side:
+
+```
+Room valid? → Identity? → 0chat access? → Episode access?
+→ Compliance / parental gates? → Playback authorization? → Connect
+```
+
+### Deferred commercial / policy questions
+
+The following remain **POLICY / IMPLEMENTATION DECISION REQUIRED BEFORE PX01
+RELEASE** — do NOT invent answers:
+
+- 0chat Coin access duration / scope.
+- 0chat Rewarded entitlement duration / scope.
+- Exact Coin / Rewarded CREATE-vs-JOIN room scope if still unresolved.
+- 0chat / Play Together message retention, room retention, room TTL, invitation
+  expiry, invitation abuse/spam, block/report behavior, moderation, message
+  length, rate limits, reconnect window, age/parental interaction.

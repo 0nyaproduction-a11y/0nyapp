@@ -81,6 +81,9 @@ type SubtitleCreateResult =
 
 type ShortFilmIntakeFormProps = {
   createShortFilmDraftAction: (input: ShortFilmCreateInput) => Promise<ShortFilmCreateResult>;
+  attachShortFilmMediaUploadIntentAction: (
+    input: { shortFilmId: string; mediaAssetId: string },
+  ) => Promise<{ success: true } | { success: false; error: string }>;
   finalizeUploadAction: (shortFilmId: string, input: { mediaAssetId: string }) => Promise<ShortFilmMediaFinalizeResult>;
   requestSubtitleUploadAction: (
     input: {
@@ -323,6 +326,7 @@ function uploadToMux(
 
 export function NewShortFilmIntakeForm({
   createShortFilmDraftAction,
+  attachShortFilmMediaUploadIntentAction,
   finalizeUploadAction,
   requestSubtitleUploadAction,
   finalizeSubtitleUploadAction,
@@ -678,6 +682,23 @@ export function NewShortFilmIntakeForm({
       throw new Error(intent.error);
     }
 
+    // Attach the pending media asset to the short film BEFORE sending any bytes,
+    // mirroring the proven episode attach-before-upload pattern. If the browser
+    // upload or reconciliation is interrupted, the media asset is already owned
+    // by this short film, so it is never left orphaned.
+    const attachResult = await attachShortFilmMediaUploadIntentAction({
+      shortFilmId: shortFilmIdValue,
+      mediaAssetId: intent.mediaAssetId,
+    });
+
+    if (!attachResult.success) {
+      throw new Error(attachResult.error);
+    }
+
+    // Set the media asset id before uploading so the auto-refresh interval above
+    // can pick this video up even if this specific reconcile call fails.
+    setVideoMediaAssetId(intent.mediaAssetId);
+
     setVideoUploadStatus("uploading");
     setVideoUploadProgress({ loadedBytes: 0, totalBytes: currentFile.size, percentage: 0 });
     await uploadToMux(intent.uploadUrl, currentFile, (progress) => {
@@ -689,9 +710,6 @@ export function NewShortFilmIntakeForm({
       percentage: 100,
     });
     setVideoUploadStatus("processing");
-    // Set the media asset id before reconciling so the auto-refresh interval
-    // above can pick this video up even if this specific reconcile call fails.
-    setVideoMediaAssetId(intent.mediaAssetId);
     const outcome = await reconcileVideoMediaStatus(shortFilmIdValue, intent.mediaAssetId);
 
     if (outcome.error) {

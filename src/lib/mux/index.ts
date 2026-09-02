@@ -336,7 +336,7 @@ function mapMuxUploadStatus(status: string | null | undefined) {
     return "processing" as const;
   }
 
-  if (status === "errored" || status === "cancelled") {
+  if (status === "errored" || status === "cancelled" || status === "timed_out") {
     return "failed" as const;
   }
 

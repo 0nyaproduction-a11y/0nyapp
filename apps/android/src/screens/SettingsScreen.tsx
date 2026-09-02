@@ -5,6 +5,14 @@ import appJson from "../../app.json";
 import { Screen } from "../components/Screen";
 import { Body, Button, Card, Label } from "../components/ui";
 import { useAuth } from "../lib/authContext";
+import { useAppLanguage } from "../lib/appLanguage";
+import {
+  buildGrievanceUrl,
+  buildHelpUrl,
+  buildPrivacyUrl,
+  buildReportContentUrl,
+  buildTermsUrl,
+} from "../lib/content-links";
 import {
   clearParentalSessionUnlock,
   getParentalScope,
@@ -23,15 +31,15 @@ import {
 } from "../lib/settingsPreferences";
 import { getSubtitlePreference, setSubtitlePreference, type SubtitlePreference } from "../lib/subtitles";
 import type { ProfileStackScreenProps } from "../navigation/types";
-import { borders, colors } from "../theme/tokens";
+import { borders, colors, radii, spacing, typography } from "../theme/tokens";
 
 type Props = ProfileStackScreenProps<"Settings">;
 
 const appVersion = appJson.expo?.version ?? "unknown";
 
-function formatSubtitleLanguage(value: string | null) {
+function formatSubtitleLanguage(value: string | null, t?: (key: string, fallback: string) => string) {
   if (!value) {
-    return "Auto";
+    return t ? t("settings.auto", "Auto") : "Auto";
   }
 
   switch (value.toLowerCase()) {
@@ -49,24 +57,29 @@ function SettingsRow({
   label,
   onPress,
   value,
+  valueVariant = "accent",
 }: {
   detail?: string;
   label: string;
   onPress?: () => void;
   value?: string;
+  valueVariant?: "accent" | "muted";
 }) {
+  const isMuted = valueVariant === "muted" || value === "Coming soon";
   const content = (
-    <View style={[styles.row, styles.staticRow]}>
+    <View style={styles.row}>
       <View style={styles.rowText}>
         <Text style={styles.rowLabel}>{label}</Text>
         {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
       </View>
-      {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+      {value ? (
+        <Text style={[styles.rowValue, isMuted && styles.rowValueMuted]}>{value}</Text>
+      ) : null}
     </View>
   );
 
   if (!onPress) {
-    return content;
+    return <View style={styles.rowWrapper}>{content}</View>;
   }
 
   return (
@@ -102,7 +115,7 @@ function SettingsToggleRow({
         accessibilityLabel={label}
         onValueChange={onValueChange}
         thumbColor={value ? colors.accent : "#f1efe9"}
-        trackColor={{ false: "#3c3a37", true: colors.accent }}
+        trackColor={{ false: "#3c3a37", true: "rgba(13, 209, 188, 0.4)" }}
         value={value}
       />
     </View>
@@ -111,6 +124,7 @@ function SettingsToggleRow({
 
 export function SettingsScreen({ navigation }: Props) {
   const { session } = useAuth();
+  const { language, setLanguage, t } = useAppLanguage();
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [newReleaseNotifications, setNewReleaseNotifications] = useState(false);
   const [marketingNotifications, setMarketingNotifications] = useState(false);
@@ -220,6 +234,18 @@ export function SettingsScreen({ navigation }: Props) {
     Alert.alert("Not available yet", `${label} is not available yet.`);
   };
 
+  const openCanonicalLink = useCallback(async (url: string | null, label: string) => {
+    if (!url) {
+      handleMissingDestination(label);
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      handleMissingDestination(label);
+    }
+  }, []);
+
   const saveParentalSettings = async (
     restrictionsEnabled: boolean,
     restrictionThreshold: ParentalRestrictionThreshold | null,
@@ -278,11 +304,37 @@ export function SettingsScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <Card>
-        <Label>Playback</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_app", "App Interface")}</Text>
+        <SettingsRow
+          detail={t("settings.app_language_detail", "Choose app interface language.")}
+          label={t("settings.app_language", "App Language")}
+          onPress={() => {
+            Alert.alert(
+              t("settings.app_language", "App Language"),
+              t("settings.app_language_detail", "Choose app interface language."),
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "English",
+                  onPress: () => setLanguage("en"),
+                },
+                {
+                  text: "हिन्दी",
+                  onPress: () => setLanguage("hi"),
+                },
+              ],
+            );
+          }}
+          value={language === "hi" ? "हिन्दी" : "English"}
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_playback", "Playback")}</Text>
         <SettingsToggleRow
-          detail="Resume to the next episode when the current one ends."
-          label="Autoplay Next"
+          detail={t("settings.autoplay_next_detail", "Resume to the next episode when the current one ends.")}
+          label={t("settings.autoplay_next", "Autoplay Next")}
           onValueChange={async (nextValue) => {
             setAutoplayNext(nextValue);
             await setAutoplayNextPreference(nextValue);
@@ -290,27 +342,27 @@ export function SettingsScreen({ navigation }: Props) {
           value={autoplayNext}
         />
         <SettingsRow
-          detail="Adaptive streaming. Manual quality selection is not available in the current expo-video setup."
-          label="Streaming Quality"
-          value="Auto"
+          detail={t("settings.streaming_quality_detail", "Automatically adjusts during playback.")}
+          label={t("settings.streaming_quality", "Streaming Quality")}
+          value={t("settings.auto", "Auto")}
         />
-      </Card>
+      </View>
 
-      <Card>
-        <Label>Subtitles</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_subtitles", "Subtitles")}</Text>
         <SettingsRow
-          detail="Use the default subtitle language on future playback when available."
-          label="Default Language"
+          detail={t("settings.default_subtitle_detail", "Preferred subtitle language when available.")}
+          label={t("settings.default_subtitle_language", "Default Language")}
           onPress={openSubtitleLanguagePicker}
-          value={formatSubtitleLanguage(subtitlePreference.preferredLanguageCode)}
+          value={formatSubtitleLanguage(subtitlePreference.preferredLanguageCode, t)}
         />
-      </Card>
+      </View>
 
-      <Card>
-        <Label>Notifications</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_notifications", "Notifications")}</Text>
         <SettingsToggleRow
-          detail="Stored locally for later push integration."
-          label="New Releases"
+          detail={t("settings.new_releases_detail", "Get notified when new episodes and films drop.")}
+          label={t("settings.new_releases", "New Releases")}
           onValueChange={async (nextValue) => {
             setNewReleaseNotifications(nextValue);
             await setNewReleaseNotificationsPreference(nextValue);
@@ -318,21 +370,21 @@ export function SettingsScreen({ navigation }: Props) {
           value={newReleaseNotifications}
         />
         <SettingsToggleRow
-          detail="Consent is stored locally and does not grant Android notification permission."
-          label="Marketing"
+          detail={t("settings.marketing_detail", "Updates on featured releases and special offers.")}
+          label={t("settings.marketing", "Marketing")}
           onValueChange={async (nextValue) => {
             setMarketingNotifications(nextValue);
             await setMarketingNotificationsPreference(nextValue);
           }}
           value={marketingNotifications}
         />
-      </Card>
+      </View>
 
-      <Card>
-        <Label>Parental Controls</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_parental_controls", "Parental Controls")}</Text>
         <SettingsToggleRow
-          detail="When off, U/A content plays normally."
-          label="Parental restrictions"
+          detail={t("settings.parental_restrictions_detail", "When off, all content plays normally.")}
+          label={t("settings.parental_restrictions", "Parental restrictions")}
           onValueChange={handleParentalRestrictionsToggle}
           value={parentalControls?.restrictionsEnabled ?? false}
         />
@@ -362,115 +414,131 @@ export function SettingsScreen({ navigation }: Props) {
           accessibilityLabel="Lock parental controls now"
           disabled={!parentalControls?.hasPin || isSavingParentalControls}
           onPress={handleLockNow}
+          style={styles.lockButton}
+          variant="secondary"
         >
           Lock now
         </Button>
-        {parentalControlsError ? <Body>{parentalControlsError}</Body> : null}
-      </Card>
+        {parentalControlsError ? <Body style={styles.errorText}>{parentalControlsError}</Body> : null}
+      </View>
 
-      <Card>
-        <Label>Privacy</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_privacy", "Privacy")}</Text>
         <SettingsRow
-          detail="Open Android app settings for app permissions and privacy controls."
-          label="Data / Permissions"
+          detail="Open Android settings for app permissions and privacy controls."
+          label={t("settings.data_permissions", "Data / Permissions")}
           onPress={() => void handleOpenDeviceSettings()}
           value="Open"
         />
-      </Card>
+      </View>
 
-      <Card>
-        <Label>Support & Legal</Label>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_support_legal", "Support & Legal")}</Text>
         <SettingsRow
-          detail="Support destination is not available yet."
-          label="Help & Support"
-          onPress={() => handleMissingDestination("Help & Support")}
-          value="Coming soon"
+          label={t("settings.help_support", "Help & Support")}
+          onPress={() => openCanonicalLink(buildHelpUrl(), "Help & Support")}
+          value="Open"
         />
         <SettingsRow
-          detail="Content issue reporting is not available yet."
-          label="Report a Content Issue"
-          onPress={() => handleMissingDestination("Report a Content Issue")}
-          value="Coming soon"
+          label={t("settings.report_content", "Report a Content Issue")}
+          onPress={() => openCanonicalLink(buildReportContentUrl(), "Report a Content Issue")}
+          value="Open"
         />
         <SettingsRow
-          detail="Grievance contact is not available yet."
-          label="Grievance / Contact"
-          onPress={() => handleMissingDestination("Grievance / Contact")}
-          value="Coming soon"
+          label={t("settings.grievance", "Grievance / Contact")}
+          onPress={() => openCanonicalLink(buildGrievanceUrl(), "Grievance / Contact")}
+          value="Open"
         />
         <SettingsRow
-          detail="Terms destination is not available yet."
-          label="Terms"
-          onPress={() => handleMissingDestination("Terms")}
-          value="Coming soon"
+          label={t("settings.terms", "Terms")}
+          onPress={() => openCanonicalLink(buildTermsUrl(), "Terms")}
+          value="Open"
         />
         <SettingsRow
-          detail="Privacy policy destination is not available yet."
-          label="Privacy Policy"
-          onPress={() => handleMissingDestination("Privacy Policy")}
-          value="Coming soon"
+          label={t("settings.privacy_policy", "Privacy Policy")}
+          onPress={() => openCanonicalLink(buildPrivacyUrl(), "Privacy Policy")}
+          value="Open"
         />
-      </Card>
+      </View>
 
-      <Card>
-        <Label>App</Label>
-        <SettingsRow label="Version" value={appVersion} />
-      </Card>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t("settings.section_app", "App")}</Text>
+        <SettingsRow label={t("settings.version", "Version")} value={appVersion} />
+      </View>
 
-      {deviceSettingsError ? <Body>{deviceSettingsError}</Body> : null}
+      {deviceSettingsError ? <Body style={styles.errorText}>{deviceSettingsError}</Body> : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    ...typography.micro,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  rowWrapper: {
+    borderBottomColor: colors.borderSubtle,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   row: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: 12,
     justifyContent: "space-between",
+    minHeight: 48,
     paddingVertical: 12,
   },
   rowPressable: {
-    borderBottomColor: borders.color,
-    borderBottomWidth: borders.width,
-    paddingVertical: 4,
-  },
-  staticRow: {
-    borderBottomColor: borders.color,
-    borderBottomWidth: borders.width,
-    paddingVertical: 12,
+    borderBottomColor: colors.borderSubtle,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   rowPressablePressed: {
-    opacity: 0.74,
+    backgroundColor: colors.surfacePressed,
   },
   rowText: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   rowLabel: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "500",
   },
   rowDetail: {
+    ...typography.caption,
     color: colors.muted,
-    fontSize: 12,
-    lineHeight: 18,
   },
   rowValue: {
+    ...typography.caption,
     color: colors.accent,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
+  rowValueMuted: {
+    color: colors.textMuted,
   },
   toggleRow: {
     alignItems: "center",
-    borderBottomColor: borders.color,
-    borderBottomWidth: borders.width,
+    borderBottomColor: colors.borderSubtle,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     gap: 12,
     justifyContent: "space-between",
+    minHeight: 48,
     paddingVertical: 12,
+  },
+  lockButton: {
+    marginTop: 12,
+  },
+  errorText: {
+    marginTop: 8,
   },
 });

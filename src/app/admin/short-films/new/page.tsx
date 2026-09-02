@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { NewShortFilmIntakeForm } from "@/components/cms/NewShortFilmIntakeForm";
 import { createArtworkUploadIntent } from "@/lib/supabase/artwork";
-import { createMediaUploadIntent, assignShortFilmMediaAsset, refreshMediaAssetStatus } from "@/lib/cms/media";
+import { attachShortFilmMediaUploadIntent, createMediaUploadIntent, assignShortFilmMediaAsset, refreshMediaAssetStatus } from "@/lib/cms/media";
 import { createShortFilm, persistShortFilmArtwork, type ShortFilmActionResult, type ShortFilmInput } from "@/lib/cms/short-films";
 import { listChaiAllowedCoinAmountsForAdmin } from "@/lib/cms/chai";
 import { shortFilmEditPath, shortFilmListPath, shortFilmNewPath } from "@/lib/routes";
@@ -135,6 +135,26 @@ export default async function NewShortFilmPage() {
       return await createMediaUploadIntent(mimeType, corsOriginOverride);
     } catch {
       return { error: "Unable to prepare upload." };
+    }
+  }
+
+  async function attachShortFilmMediaUploadIntentAction(input: {
+    shortFilmId: string;
+    mediaAssetId: string;
+  }) {
+    "use server";
+
+    const guard = await requireCmsAdmin(shortFilmNewPath);
+
+    if (guard.status !== "authorized") {
+      return { success: false as const, error: "Not authorized." };
+    }
+
+    try {
+      await attachShortFilmMediaUploadIntent(input.shortFilmId, input.mediaAssetId);
+      return { success: true as const };
+    } catch {
+      return { success: false as const, error: "Unable to attach upload to the short film." };
     }
   }
 
@@ -276,6 +296,7 @@ export default async function NewShortFilmPage() {
 
         <NewShortFilmIntakeForm
           createShortFilmDraftAction={createShortFilmDraftAction}
+          attachShortFilmMediaUploadIntentAction={attachShortFilmMediaUploadIntentAction}
           finalizeUploadAction={finalizeUploadAction}
           requestSubtitleUploadAction={requestSubtitleUploadAction}
           finalizeSubtitleUploadAction={finalizeSubtitleUploadAction}

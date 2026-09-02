@@ -13,6 +13,7 @@ import {
 } from "../components/ui";
 import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import { getBillingService, type BillingHarnessScenario } from "../billing";
 import type { ProfileStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
@@ -29,11 +30,12 @@ function formatDate(dateString: string) {
 }
 
 export function RestoreSyncScreen({ navigation }: Props) {
-  const { session } = useAuth();
+  const { historySyncStatus, retryGuestHistoryMerge, session } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isRetryingHistorySync, setIsRetryingHistorySync] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const token = session?.access_token;
   const billingService = getBillingService();
@@ -65,6 +67,20 @@ export function RestoreSyncScreen({ navigation }: Props) {
       void loadStatus();
     }, [loadStatus]),
   );
+
+  async function handleRetryHistorySync() {
+    if (!session || isRetryingHistorySync) {
+      return;
+    }
+
+    setIsRetryingHistorySync(true);
+
+    try {
+      await retryGuestHistoryMerge();
+    } finally {
+      setIsRetryingHistorySync(false);
+    }
+  }
 
   async function handleRestore(scenario?: BillingHarnessScenario) {
     if (!token || isSyncing) {
@@ -109,6 +125,22 @@ export function RestoreSyncScreen({ navigation }: Props) {
       ) : null}
       {token ? (
         <>
+          {historySyncStatus.status !== "idle" ? (
+            <Card>
+              <Label>Watch history</Label>
+              <Title>Watch history couldn't fully sync.</Title>
+              <Body>
+                {historySyncStatus.errorMessage ?? "Retry to finish syncing your watch history."}
+              </Body>
+              <Button
+                accessibilityLabel="Retry watch history sync"
+                disabled={isRetryingHistorySync || historySyncStatus.status === "retrying"}
+                onPress={() => void handleRetryHistorySync()}
+              >
+                {isRetryingHistorySync || historySyncStatus.status === "retrying" ? "Retrying..." : "Retry"}
+              </Button>
+            </Card>
+          ) : null}
           {me ? (
             <Card>
               <Label>Current status</Label>
@@ -164,7 +196,7 @@ export function RestoreSyncScreen({ navigation }: Props) {
           <Label>Guest</Label>
           <Title>Sign in to view your status</Title>
           <Body>Sign in first, then return here to check your account status.</Body>
-          <Button accessibilityLabel="Sign in to restore purchases" onPress={() => navigation.navigate("SignIn")}>
+          <Button accessibilityLabel="Sign in to restore purchases" onPress={async () => { await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "restoreSync" }); }}>
             Sign in
           </Button>
         </Card>

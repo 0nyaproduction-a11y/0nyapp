@@ -8,6 +8,7 @@ import { getCatalog, getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { buildShortFilmShareMessage } from "../lib/content-links";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import { resolveShortFilmArtwork } from "../lib/shortFilmArtwork";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm } from "../types/api";
@@ -141,7 +142,10 @@ export function ShortFilmEndScreen({ navigation, route }: Props) {
     }
 
     if (!accessToken) {
-      navigation.navigate("SignIn");
+      await navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "chai", shortFilm, selectedAmount },
+      );
       return;
     }
 

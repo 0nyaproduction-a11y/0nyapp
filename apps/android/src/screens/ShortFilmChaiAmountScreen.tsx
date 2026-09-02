@@ -6,6 +6,7 @@ import { Screen } from "../components/Screen";
 import { Body, Button, Card, Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { getShortFilm, getWallet } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm, ShortFilmChaiAvailability } from "../types/api";
 import { borders, colors } from "../theme/tokens";
@@ -108,7 +109,10 @@ export function ShortFilmChaiAmountScreen({ navigation, route }: Props) {
     }
 
     if (!accessToken) {
-      navigation.navigate("SignIn");
+      await navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "chai", shortFilm, selectedAmount },
+      );
       return;
     }
 

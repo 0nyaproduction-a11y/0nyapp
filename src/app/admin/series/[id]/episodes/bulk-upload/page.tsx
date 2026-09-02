@@ -5,7 +5,7 @@ import { BulkEpisodeUploadForm } from "@/components/cms/BulkEpisodeUploadForm";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { createEpisode, listEpisodesForSeries } from "@/lib/cms/episodes";
 import { getSeriesForAdminById } from "@/lib/cms/series";
-import { assignEpisodeMediaAsset, createMediaUploadIntent, refreshMediaAssetStatus } from "@/lib/cms/media";
+import { assignEpisodeMediaAsset, attachEpisodeMediaUploadIntent, createMediaUploadIntent, refreshMediaAssetStatus } from "@/lib/cms/media";
 import {
   buildEpisodeInputForBulkCreate,
   type BulkEpisodeCreateInput,
@@ -101,6 +101,26 @@ export default async function BulkEpisodeUploadPage({ params }: BulkEpisodeUploa
     }
   }
 
+  async function attachEpisodeMediaUploadIntentAction(input: {
+    episodeId: string;
+    mediaAssetId: string;
+  }) {
+    "use server";
+
+    const guard = await requireCmsAdmin(episodeBulkUploadPath(id));
+
+    if (guard.status !== "authorized") {
+      return { success: false as const, error: "Not authorized." };
+    }
+
+    try {
+      await attachEpisodeMediaUploadIntent(input.episodeId, input.mediaAssetId);
+      return { success: true as const };
+    } catch {
+      return { success: false as const, error: "Unable to attach upload to the episode." };
+    }
+  }
+
   async function finalizeUploadAction(input: { episodeId: string; mediaAssetId: string }): Promise<BulkEpisodeFinalizeResult> {
     "use server";
 
@@ -145,6 +165,7 @@ export default async function BulkEpisodeUploadPage({ params }: BulkEpisodeUploa
         </div>
 
         <BulkEpisodeUploadForm
+          attachEpisodeMediaUploadIntentAction={attachEpisodeMediaUploadIntentAction}
           createEpisodeAction={createEpisodeAction}
           existingEpisodeNumbers={existingNumbers}
           finalizeUploadAction={finalizeUploadAction}

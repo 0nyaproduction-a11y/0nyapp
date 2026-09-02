@@ -262,6 +262,7 @@ function buildWatchableEpisode(
     coinUnlockEnabled: episode.coin_unlock_enabled,
     rewardedUnlockEnabled: episode.rewarded_unlock_enabled,
     rewardedAccessMode: episode.rewarded_access_mode,
+    requiredRewardedCompletions: episode.required_rewarded_completions,
     plusAccess: episode.plus_access,
     lockedPreviewSeconds: episode.locked_preview_seconds,
     contentRatingOverride: normalizeContentRating(episode.content_rating_override),

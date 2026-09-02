@@ -9,12 +9,16 @@
       "distribution": "internal"
     },
     "preview": {
+      "channel": "0nya-qa-approved",
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_ONYA_API_BASE_URL": "https://onya-qa-api-gwkke6nq5a-el.a.run.app"
+        "EXPO_PUBLIC_ONYA_API_BASE_URL": "https://onya-qa-api-gwkke6nq5a-el.a.run.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://grxflnpofubqddtltkoe.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_4_5PsKWA78d_J56Dx0jtDg_qXtn9HHN"
       }
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true
     }
   },

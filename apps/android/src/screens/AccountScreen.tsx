@@ -13,10 +13,12 @@ import {
 } from "../components/ui";
 import { getMe } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
+import { useAppLanguage } from "../lib/appLanguage";
 import type { ProfileStackScreenProps } from "../navigation/types";
 import appJson from "../../app.json";
 import type { MeResponse } from "../types/api";
-import { colors } from "../theme/tokens";
+import { borders, colors, radii, spacing, typography } from "../theme/tokens";
 
 const appVersion = appJson.expo?.version ?? "1.0.0";
 
@@ -24,6 +26,7 @@ type Props = ProfileStackScreenProps<"Account">;
 
 export function AccountScreen({ navigation }: Props) {
   const { session, signOut } = useAuth();
+  const { t } = useAppLanguage();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -106,23 +109,34 @@ export function AccountScreen({ navigation }: Props) {
     return (
       <Screen>
         <View style={styles.guestHeader}>
-          <Text style={styles.guestTitle}>Profile</Text>
-          <Text style={styles.guestStatus}>Guest</Text>
-          <Text style={styles.guestSubtitle}>Sign in to keep history and unlocks.</Text>
+          <Text style={styles.guestStatus}>{t("profile.guest_account", "Guest Account")}</Text>
+          <Text style={styles.guestSubtitle}>
+            {t(
+              "profile.guest_subtitle",
+              "Sign in to keep your watch history, unlocked episodes, and coins synced across devices.",
+            )}
+          </Text>
           <Button
-            accessibilityLabel="Sign in"
-            onPress={() => navigation.navigate("SignIn")}
+            accessibilityLabel={t("profile.sign_in", "Sign in")}
+            onPress={async () => {
+              await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "profile" });
+            }}
             style={styles.signInButton}
+            variant="primary"
           >
-            Sign In
+            {t("profile.sign_in", "Sign In")}
           </Button>
         </View>
 
         <View style={styles.actionList}>
-          <ActionRow label="Settings" onPress={() => navigation.navigate("Settings")} />
-          <View style={styles.versionRow}>
-            <Text style={styles.versionText}>Version {appVersion}</Text>
-          </View>
+          <ActionRow
+            label={t("profile.settings", "Settings")}
+            onPress={() => navigation.navigate("Settings")}
+          />
+        </View>
+
+        <View style={styles.versionRow}>
+          <Text style={styles.versionText}>{`${t("profile.version", "Version")} ${appVersion}`}</Text>
         </View>
       </Screen>
     );
@@ -249,57 +263,52 @@ function SecondaryAction({ accessibilityLabel, disabled, onPress, text, variant 
 
 const styles = StyleSheet.create({
   guestHeader: {
-    paddingVertical: 12,
-    gap: 8,
-  },
-  guestTitle: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: "800",
-    marginBottom: 4,
+    paddingTop: 0,
+    paddingBottom: 4,
+    gap: 6,
   },
   guestStatus: {
+    ...typography.micro,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
   },
   guestSubtitle: {
+    ...typography.body,
     color: colors.muted,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     marginBottom: 8,
   },
   signInButton: {
-    alignSelf: "flex-start",
-    minWidth: 140,
-    borderRadius: 8,
+    alignSelf: "stretch",
+    borderRadius: radii.md,
+    minHeight: 50,
   },
   actionList: {
-    gap: 12,
-    marginTop: 12,
+    borderTopColor: colors.borderSubtle,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 20,
   },
   actionRow: {
     alignItems: "center",
-    backgroundColor: "rgba(232, 228, 218, 0.03)",
-    borderColor: "rgba(232, 228, 218, 0.10)",
-    borderWidth: 1,
-    borderRadius: 8,
+    backgroundColor: "transparent",
+    borderBottomColor: colors.borderSubtle,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: 52,
+    paddingHorizontal: 4,
+    paddingVertical: 14,
   },
   actionRowPressed: {
-    backgroundColor: "rgba(13, 209, 188, 0.08)",
-    borderColor: "rgba(13, 209, 188, 0.20)",
+    backgroundColor: colors.surfacePressed,
   },
   actionLabel: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 15,
-    fontWeight: "600",
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "500",
   },
   actionMeta: {
     alignItems: "center",
@@ -307,55 +316,53 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionDetail: {
+    ...typography.micro,
     color: colors.muted,
-    fontSize: 11,
-    fontWeight: "700",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   actionValue: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
+    ...typography.caption,
+    color: colors.textMuted,
+    fontFamily: typography.label.fontFamily,
+    fontWeight: "500",
   },
   chevron: {
     color: colors.muted,
-    fontSize: 20,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 18,
     marginLeft: 4,
   },
   versionRow: {
-    marginTop: 8,
+    alignItems: "center",
+    marginTop: 32,
     paddingHorizontal: 4,
   },
   versionText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "500",
+    ...typography.caption,
+    color: colors.textMuted,
   },
   email: {
+    ...typography.body,
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
   },
   identityLabel: {
+    ...typography.micro,
     color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
     letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   status: {
+    ...typography.label,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   secondaryAction: {
     alignItems: "center",
     backgroundColor: "transparent",
-    borderColor: "rgba(232, 228, 218, 0.18)",
+    borderColor: colors.borderSubtle,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 48,
     paddingHorizontal: 16,
@@ -369,14 +376,14 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   secondaryActionPressed: {
-    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    backgroundColor: colors.surfacePressed,
   },
   secondaryActionText: {
+    ...typography.label,
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
   },
   secondaryActionTextDestructive: {
+    ...typography.label,
     color: "#ff8d76",
   },
 });

@@ -7,6 +7,7 @@ import { Body, Button, Card, Label, LoadingState, RecoveryState, Title } from ".
 import { getShortFilm, getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm, ShortFilmChaiAvailability } from "../types/api";
 import { colors } from "../theme/tokens";
@@ -60,7 +61,10 @@ export function ShortFilmChaiConfirmScreen({ navigation, route }: Props) {
       }
 
       if (!accessToken) {
-        navigation.navigate("SignIn");
+        await navigateToSignIn(
+          () => navigation.navigate("SignIn"),
+          { kind: "chai", shortFilm, selectedAmount: coinAmount },
+        );
         return;
       }
 
@@ -118,7 +122,10 @@ export function ShortFilmChaiConfirmScreen({ navigation, route }: Props) {
     }
 
     if (!accessToken) {
-      navigation.navigate("SignIn");
+      await navigateToSignIn(
+        () => navigation.navigate("SignIn"),
+        { kind: "chai", shortFilm, selectedAmount: coinAmount },
+      );
       return;
     }
 
@@ -184,7 +191,10 @@ export function ShortFilmChaiConfirmScreen({ navigation, route }: Props) {
       if (result.status === "not_authenticated") {
         shouldResetToIdle = false;
         setSubmitStatus("idle");
-        navigation.navigate("SignIn");
+        await navigateToSignIn(
+          () => navigation.navigate("SignIn"),
+          { kind: "chai", shortFilm, selectedAmount: coinAmount },
+        );
         return;
       }
 
