@@ -4,13 +4,17 @@ import type { Session } from "@supabase/supabase-js";
 import { StatusBar } from "expo-status-bar";
 import { VideoView } from "expo-video";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { BackHandler, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FacetedLoader } from "../components/FacetedLoader";
 import { TransientFeedback } from "../components/ui";
+import { borders, colors, radii, spacing, surfaces, typography } from "../theme/tokens";
 import { getPlayTogetherConfig, getWallet } from "../lib/api";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { perfMark, perfSetAutoNextPlaybackPending } from "../lib/perf";
 import { navigateToSignIn } from "../lib/authReturnIntentStorage";
+import { emitBehaviorEvidence } from "../lib/behavioralEvents";
+import { toPlaybackOriginContext } from "../lib/behaviorContext";
 import { usePlayTogetherRoom } from "../lib/usePlayTogetherRoom";
 import { EpisodeListSheet } from "./EpisodeListSheet";
 import { PlayerControls } from "./PlayerControls";
@@ -36,8 +40,9 @@ import { usePlaybackController } from "./usePlaybackController";
 import { usePlayTogetherPlaybackSync, type PlayTogetherPlaybackTarget } from "./usePlayTogetherPlaybackSync";
 import { useWatchProgressSync } from "./useWatchProgressSync";
 import { getResumePositionSeconds } from "./resumePosition";
+import { getPlaybackResumeOwner, resolveInitialPlaybackSeek } from "./targetResume";
 import type { PlaybackContext, PlaybackEndedPayload, PlaybackMode } from "./types";
-import type { RootStackParamList } from "../navigation/types";
+import type { DiscoveryContext, RootStackParamList } from "../navigation/types";
 import type {
   ApiEpisode,
   ApiShortFilm,
@@ -77,6 +82,7 @@ type PlayerScreenProps = {
   shortFilm?: ApiShortFilm | null;
   shortFilmChai?: ShortFilmChaiAvailability | null;
   source: PlaybackSource;
+  searchContext?: DiscoveryContext;
 };
 
 const DOUBLE_TAP_DELAY_MS = 280;
@@ -169,6 +175,7 @@ export function PlayerScreen({
   shortFilm,
   shortFilmChai,
   source,
+  searchContext,
 }: PlayerScreenProps) {
   const isPreviewMode = playbackMode === "preview";
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -185,6 +192,11 @@ export function PlayerScreen({
   const completionHandoffBlurredRef = useRef(false);
   const resumeAppliedContextRef = useRef<string | null>(null);
   const progressSyncArmedRef = useRef(false);
+  const behaviorStartedRef = useRef(false);
+  const behaviorCompletedRef = useRef(false);
+  const behaviorQualifiedRef = useRef(false);
+  const behaviorLastTimeRef = useRef(0);
+  const behaviorWatchedSecondsRef = useRef(0);
   const subtitlePreferenceLoadedRef = useRef(false);
   const lastAppliedSubtitleSourceLoadRef = useRef(0);
   const allowBeforeRemoveRef = useRef(false);
@@ -197,6 +209,16 @@ export function PlayerScreen({
     context.type === "SERIES_EPISODE"
       ? `${context.seriesSlug}:${context.episodeNumber}`
       : `film:${context.filmSlug}`;
+  const resumeOwner = getPlaybackResumeOwner(context, session?.user.id);
+  const behaviorContext = useMemo(() => ({
+    contentId: context.type === "SERIES_EPISODE" ? `${context.seriesSlug}:${context.episodeNumber}` : context.filmSlug,
+    contentType: context.type,
+    ...toPlaybackOriginContext(searchContext),
+  }), [context, searchContext]);
+  const emitPlaybackEvidence = useCallback((eventType: "play_start" | "qualified_watch" | "play_complete" | "play_abandon", metadata?: Record<string, unknown>) => {
+    if (isPreviewMode) return;
+    emitBehaviorEvidence(session?.access_token, { eventType, ...behaviorContext, metadata });
+  }, [behaviorContext, isPreviewMode, session?.access_token]);
   // Tracks the most recently rendered contextKey so an in-flight saveFinal() can
   // detect that the episode/context changed underneath it before handing off
   // to the next episode (prevents a stale continuation from advancing an
@@ -309,13 +331,16 @@ export function PlayerScreen({
       void (async () => {
         await progressSyncRef.current.saveFinal();
 
+        behaviorCompletedRef.current = true;
+        emitPlaybackEvidence("play_complete", { completion_source: "watch_progress_final_save" });
+
         onEnded?.({
           ...payload,
           chaiSentThisPlayback: context.type === "SHORT_FILM" ? hasSentChai : undefined,
         });
       })();
     },
-    [autoplayNextEnabled, context, hasSentChai, isPreviewMode, onEnded],
+    [autoplayNextEnabled, context, emitPlaybackEvidence, hasSentChai, isPreviewMode, onEnded],
   );
 
   const controller = usePlaybackController({
@@ -324,6 +349,23 @@ export function PlayerScreen({
     playbackLimitSeconds: isPreviewMode ? previewSeconds ?? null : null,
     source: source.source,
   });
+  useEffect(() => {
+    if (isPreviewMode || !controller.isPlaying) {
+      behaviorLastTimeRef.current = controller.currentTime;
+      return;
+    }
+    if (!behaviorStartedRef.current) {
+      behaviorStartedRef.current = true;
+      emitPlaybackEvidence("play_start");
+    }
+    const delta = controller.currentTime - behaviorLastTimeRef.current;
+    behaviorLastTimeRef.current = controller.currentTime;
+    if (delta > 0 && delta <= 2) behaviorWatchedSecondsRef.current += delta;
+    if (!behaviorQualifiedRef.current && behaviorWatchedSecondsRef.current >= 30) {
+      behaviorQualifiedRef.current = true;
+      emitPlaybackEvidence("qualified_watch", { definition: "continuous_playback_30s_v1", watched_seconds: Math.floor(behaviorWatchedSecondsRef.current) });
+    }
+  }, [controller.currentTime, controller.isPlaying, emitPlaybackEvidence, isPreviewMode]);
   useEffect(() => {
     if (!isTransitionRequested || seamlessTransitionQueuedRef.current === false) {
       return undefined;
@@ -345,6 +387,9 @@ export function PlayerScreen({
 
       await progressSyncRef.current.saveFinal();
 
+      behaviorCompletedRef.current = true;
+      emitPlaybackEvidence("play_complete", { completion_source: "watch_progress_final_save" });
+
       if (cancelled || transitionStartedRef.current || latestContextKeyRef.current !== contextKey) {
         autoNextActiveRef.current = false;
         setIsAutoAdvancing(false);
@@ -364,7 +409,7 @@ export function PlayerScreen({
     return () => {
       cancelled = true;
     };
-  }, [advanceToNext, autoplayNextEnabled, context, contextKey, isTransitionRequested]);
+  }, [advanceToNext, autoplayNextEnabled, context, contextKey, emitPlaybackEvidence, isTransitionRequested]);
   const player = controller.player;
   const playbackRate = controller.playbackRate;
   const sourceLoadCount = controller.sourceLoadCount;
@@ -517,8 +562,7 @@ export function PlayerScreen({
     resumeAppliedContextRef.current = null;
     progressSyncArmedRef.current = false;
     completionHandoffBlurredRef.current = false;
-    replayStartPendingRef.current =
-      context.type === "SHORT_FILM" && initialSeekSeconds === 0;
+    replayStartPendingRef.current = context.type === "SHORT_FILM";
     // A new episode/context means any in-flight auto-advance handoff from the
     // previous episode is no longer valid. Reset the rendered state in a microtask
     // so the state clears after the new context has mounted without forcing a
@@ -534,7 +578,7 @@ export function PlayerScreen({
     return () => {
       active = false;
     };
-  }, [context.type, contextKey, initialSeekSeconds]);
+  }, [context.type, contextKey, resumeOwner]);
 
   const resetChaiPresentation = useCallback(() => {
     setHasSentChai(false);
@@ -629,23 +673,24 @@ export function PlayerScreen({
   useEffect(() => {
     if (
       isPreviewMode ||
-      resumeAppliedContextRef.current === contextKey ||
-      controller.sourceLoadCount === 0 ||
-      !isProgressResolved
+      resumeAppliedContextRef.current === resumeOwner
     ) {
       return;
     }
 
-    const resumePosition =
-      typeof initialSeekSeconds === "number"
-        ? Math.max(0, Math.min(initialSeekSeconds, controller.duration || initialSeekSeconds))
-        : getResumePositionSeconds(savedProgress, controller.duration);
+    const decision = resolveInitialPlaybackSeek({
+      owner: resumeOwner,
+      appliedOwner: resumeAppliedContextRef.current,
+      isProgressResolved,
+      sourceLoadCount: controller.sourceLoadCount,
+      initialSeekSeconds,
+      savedProgress,
+      durationSeconds: controller.duration,
+    });
+    if (!decision) return;
+    controller.seekTo(decision.positionSeconds);
 
-    if (resumePosition !== null) {
-      controller.seekTo(resumePosition);
-    }
-
-    resumeAppliedContextRef.current = contextKey;
+    resumeAppliedContextRef.current = resumeOwner;
     progressSyncArmedRef.current = true;
     if (replayStartPendingRef.current) {
       replayStartPendingRef.current = false;
@@ -654,6 +699,7 @@ export function PlayerScreen({
     context.type,
     context,
     contextKey,
+    resumeOwner,
     controller,
     controller.duration,
     controller.sourceLoadCount,
@@ -664,14 +710,14 @@ export function PlayerScreen({
   ]);
 
   const handlePlayPause = useCallback(() => {
+    if (controller.isPlaying) {
+      void progressSync.saveNow();
+    }
+
     if (playTogetherSync.active) {
       playTogetherSync.handlePlayPause();
       revealControls();
       return;
-    }
-
-    if (controller.isPlaying) {
-      void progressSync.saveNow();
     }
 
     controller.togglePlay();
@@ -702,10 +748,25 @@ export function PlayerScreen({
   );
 
   const handleBack = useCallback(() => {
+    // Progress must never block the Back gesture. Fire the latest write in
+    // the background and let navigation proceed immediately; the sync is
+    // already best-effort and non-blocking by design.
+    void progressSync.saveNow().catch(() => undefined);
+    if (behaviorStartedRef.current && !behaviorCompletedRef.current) emitPlaybackEvidence("play_abandon", { reason: "explicit_exit" });
+    allowBeforeRemoveRef.current = true;
+
     if (navigation.canGoBack()) {
       navigation.goBack();
+      return;
     }
-  }, [navigation]);
+
+    // Deep links and direct browser loads start the player with no history to
+    // pop, so fall back to the canonical Home destination instead of no-oping.
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "MainTabs", params: { screen: "Home" } }],
+    });
+  }, [emitPlaybackEvidence, navigation, progressSync]);
 
   const handleShare = useCallback(() => {
     const message =
@@ -927,10 +988,13 @@ export function PlayerScreen({
   const handleOpenEpisodes = useCallback(() => {
     // Reuses the existing pause() lifecycle; matches how blur already pauses playback.
     wasPlayingBeforeSheetRef.current = controller.isPlaying;
+    if (controller.isPlaying) {
+      void progressSync.saveNow();
+    }
     pause();
     setIsMoreSheetOpen(false);
     setIsEpisodeListOpen(true);
-  }, [controller.isPlaying, pause]);
+  }, [controller.isPlaying, pause, progressSync]);
 
   const closeEpisodeSheet = useCallback(() => {
     setIsEpisodeListOpen(false);
@@ -1116,7 +1180,7 @@ export function PlayerScreen({
 
                 {controller.isBuffering ? (
                   <View pointerEvents="none" style={styles.loadingOverlay}>
-                    <ActivityIndicator color="#00E5CC" />
+                    <FacetedLoader color={colors.accent} size={36} />
                   </View>
                 ) : null}
 
@@ -1137,7 +1201,7 @@ export function PlayerScreen({
                             return;
                           }
 
-                          navigation.goBack();
+                          handleBack();
                         }}
                         style={({ pressed }) => [styles.previewEndedButton, pressed && styles.pressed]}
                       >
@@ -1167,7 +1231,7 @@ export function PlayerScreen({
                         <Pressable
                           accessibilityLabel="Exit video player"
                           accessibilityRole="button"
-                          onPress={() => navigation.goBack()}
+                          onPress={handleBack}
                           style={({ pressed }) => [styles.endedButton, pressed && styles.pressed]}
                         >
                           <Text style={styles.endedButtonText}>Back</Text>
@@ -1226,7 +1290,7 @@ export function PlayerScreen({
                     <Pressable
                       accessibilityLabel="Exit video player"
                       accessibilityRole="button"
-                      onPress={() => navigation.goBack()}
+                      onPress={handleBack}
                       style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
                     >
                       <Text style={styles.secondaryText}>Back</Text>
@@ -1396,17 +1460,17 @@ export function PlayerScreen({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#050A0A",
+    backgroundColor: colors.background,
   },
   shell: {
     flex: 1,
     alignItems: "center",
-    backgroundColor: "#050A0A",
+    backgroundColor: colors.background,
     justifyContent: "center",
   },
   videoViewport: {
     aspectRatio: 9 / 16,
-    backgroundColor: "#000000",
+    backgroundColor: colors.background,
     maxHeight: "100%",
     overflow: "hidden",
     width: "100%",
@@ -1416,7 +1480,7 @@ const styles = StyleSheet.create({
   },
   autoAdvanceScrim: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "#050505",
+    backgroundColor: colors.backgroundDeep,
   },
   overlayLayer: {
     ...StyleSheet.absoluteFill,
@@ -1437,13 +1501,13 @@ const styles = StyleSheet.create({
     top: "28%",
   },
   fastPlayIndicator: {
-    backgroundColor: "rgba(5, 10, 10, 0.55)",
-    borderRadius: 999,
+    backgroundColor: "rgba(3, 5, 4, 0.65)",
+    borderRadius: radii.pill,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   fastPlayIndicatorText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 13,
     fontWeight: "800",
   },
@@ -1460,7 +1524,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   previewEndedScrim: {
-    backgroundColor: "rgba(5, 10, 10, 0.78)",
+    backgroundColor: "rgba(3, 5, 4, 0.82)",
     bottom: 0,
     left: 0,
     position: "absolute",
@@ -1473,21 +1537,22 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   previewEndedTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "900",
     textAlign: "center",
   },
   previewEndedBody: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     textAlign: "center",
   },
   previewEndedButton: {
     alignItems: "center",
-    borderColor: "rgba(0, 229, 204, 0.72)",
-    borderRadius: 999,
+    backgroundColor: colors.ctaResting,
+    borderColor: colors.accent,
+    borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 40,
@@ -1495,7 +1560,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   previewEndedButtonText: {
-    color: "#00E5CC",
+    color: colors.accentOnPrimary,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -1508,7 +1573,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   endedTopScrim: {
-    backgroundColor: "rgba(5, 10, 10, 0.24)",
+    backgroundColor: "rgba(3, 5, 4, 0.24)",
     height: "42%",
     left: 0,
     position: "absolute",
@@ -1516,7 +1581,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   endedBottomScrim: {
-    backgroundColor: "rgba(5, 10, 10, 0.76)",
+    backgroundColor: "rgba(3, 5, 4, 0.82)",
     bottom: 0,
     height: "58%",
     left: 0,
@@ -1529,13 +1594,13 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   endedTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "900",
     textAlign: "center",
   },
   endedBody: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     textAlign: "center",
@@ -1549,8 +1614,9 @@ const styles = StyleSheet.create({
   },
   endedButton: {
     alignItems: "center",
-    borderColor: "rgba(0, 229, 204, 0.72)",
-    borderRadius: 999,
+    backgroundColor: colors.ctaResting,
+    borderColor: colors.accent,
+    borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 40,
@@ -1558,16 +1624,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   endedButtonText: {
-    color: "#00E5CC",
+    color: colors.accentOnPrimary,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   chaiButton: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 10, 10, 0.7)",
-    borderColor: "rgba(0, 229, 204, 0.35)",
-    borderRadius: 14,
+    backgroundColor: "rgba(3, 5, 4, 0.72)",
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
     borderWidth: 1,
     bottom: 98,
     justifyContent: "center",
@@ -1577,7 +1643,7 @@ const styles = StyleSheet.create({
     position: "absolute",
   },
   chaiButtonText: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 13,
     fontWeight: "800",
   },
@@ -1587,13 +1653,15 @@ const styles = StyleSheet.create({
   },
   chaiSheetBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(5, 10, 10, 0.58)",
+    backgroundColor: "rgba(3, 5, 4, 0.65)",
     justifyContent: "flex-end",
   },
   chaiSheet: {
-    backgroundColor: "#111414",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: colors.surfaceElevated,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
+    borderColor: borders.color,
+    borderTopWidth: borders.width,
     padding: 20,
     paddingBottom: 28,
   },
@@ -1604,7 +1672,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   chaiSheetTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 20,
     fontWeight: "900",
   },
@@ -1612,13 +1680,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   closeChaiText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   chaiSheetBody: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 16,
@@ -1631,36 +1699,36 @@ const styles = StyleSheet.create({
   },
   chaiAmountButton: {
     alignItems: "center",
-    backgroundColor: "#1A1F1F",
-    borderColor: "rgba(0, 229, 204, 0.4)",
-    borderRadius: 12,
+    backgroundColor: surfaces.s1,
+    borderColor: borders.color,
+    borderRadius: radii.sm,
     borderWidth: 1,
     flexBasis: "30%",
     justifyContent: "center",
     minHeight: 54,
   },
   chaiAmountButtonSelected: {
-    backgroundColor: "rgba(0, 229, 204, 0.12)",
-    borderColor: "#00E5CC",
+    backgroundColor: colors.surfaceSelected,
+    borderColor: colors.accent,
   },
   chaiAmountText: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "800",
   },
   chaiAmountTextSelected: {
-    color: "#00E5CC",
+    color: colors.accent,
   },
   chaiErrorText: {
-    color: "#FF8A8A",
+    color: colors.error,
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 12,
   },
   primaryActionButton: {
     alignItems: "center",
-    backgroundColor: "#00E5CC",
-    borderRadius: 12,
+    backgroundColor: colors.accent,
+    borderRadius: radii.sm,
     justifyContent: "center",
     minHeight: 48,
     paddingHorizontal: 16,
@@ -1669,7 +1737,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryActionText: {
-    color: "#050A0A",
+    color: colors.accentOnPrimary,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -1680,12 +1748,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   chaiSuccessTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 20,
     fontWeight: "900",
   },
   chaiSuccessBody: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 20,
     textAlign: "center",
@@ -1694,18 +1762,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(5, 5, 5, 0.88)",
+    backgroundColor: "rgba(3, 5, 4, 0.92)",
     justifyContent: "center",
     padding: 24,
   },
   errorTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 22,
     fontWeight: "900",
     textAlign: "center",
   },
   errorBody: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 22,
     maxWidth: 290,
@@ -1713,15 +1781,15 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     alignItems: "center",
-    borderRadius: 8,
-    backgroundColor: "#00E5CC",
+    borderRadius: radii.sm,
+    backgroundColor: colors.accent,
     justifyContent: "center",
     minHeight: 48,
     minWidth: 128,
     paddingHorizontal: 18,
   },
   retryText: {
-    color: "#050A0A",
+    color: colors.accentOnPrimary,
     fontSize: 13,
     fontWeight: "900",
     letterSpacing: 0.2,
@@ -1733,7 +1801,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   secondaryText: {
-    color: "#D8EDE9",
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "800",
     letterSpacing: 0.2,

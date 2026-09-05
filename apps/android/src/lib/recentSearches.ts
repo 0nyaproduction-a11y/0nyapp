@@ -1,7 +1,11 @@
 import { supabaseSecureStorage } from "./secureStorage";
+import {
+  normalizeRecentSearchList,
+  normalizeRecentSearchQuery,
+  prependRecentSearch,
+} from "./recentSearchModel";
 
 const RECENT_SEARCHES_KEY = "0nya.recent-searches.v1";
-const MAX_RECENT_SEARCHES = 8;
 
 export async function loadRecentSearches(): Promise<string[]> {
   const raw = await supabaseSecureStorage.getItem(RECENT_SEARCHES_KEY);
@@ -17,26 +21,21 @@ export async function loadRecentSearches(): Promise<string[]> {
       return [];
     }
 
-    return parsed
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index)
-      .slice(0, MAX_RECENT_SEARCHES);
+    return normalizeRecentSearchList(parsed);
   } catch {
     return [];
   }
 }
 
 export async function saveRecentSearch(query: string) {
-  const sanitized = query.trim();
+  const sanitized = normalizeRecentSearchQuery(query);
 
   if (!sanitized) {
     return;
   }
 
   const searches = await loadRecentSearches();
-  const next = [sanitized, ...searches.filter((value) => value.toLowerCase() !== sanitized.toLowerCase())].slice(0, MAX_RECENT_SEARCHES);
+  const next = prependRecentSearch(searches, sanitized);
 
   await supabaseSecureStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
 }

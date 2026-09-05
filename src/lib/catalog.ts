@@ -11,6 +11,20 @@ import {
 } from "@/lib/classification";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timePerf } from "@/lib/api/perf";
+import {
+  isMediaAssetReady,
+  isSeriesConsumerVisible,
+  isShortFilmConsumerVisible,
+  resolveShortFilmPlaybackReady,
+} from "@/lib/catalog-rules";
+import {
+  normalizeGenreAssignments,
+  normalizeSeriesContentFormat,
+  normalizeShortFilmContentFormat,
+  serializeGenreLabel,
+  type CanonicalGenre,
+  type ContentFormatId,
+} from "@/lib/taxonomy";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -22,7 +36,11 @@ export type ShortFilm = {
   id: string;
   slug: string;
   title: string;
+  contentType: ContentFormatId;
   synopsis: string;
+  genre: string | null;
+  primaryGenre: CanonicalGenre | null;
+  secondaryGenres: CanonicalGenre[];
   poster: string;
   heroImage: string | null;
   creatorReference: string | null;
@@ -56,6 +74,72 @@ async function getSupabase(supabase?: SupabaseClient<Database>) {
   }
 }
 
+/**
+ * Returns the ids of media_assets that are actually playable, using the exact
+ * same readiness source the playback path reads (`media_assets.status` and
+ * `provider_playback_reference`). Returns null when the readiness lookup
+ * failed so callers can fail open instead of blanking the catalog.
+ */
+async function getReadyMediaAssetIds(
+  rows: readonly Pick<EpisodeRow, "media_asset_id">[],
+  supabase: SupabaseClient<Database>,
+): Promise<Set<string> | null> {
+  const assetIds = [
+    ...new Set(
+      rows
+        .map((row) => row.media_asset_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  if (!assetIds.length) {
+    return new Set();
+  }
+
+  const { data: assets, error } = await timePerf("media_ready_q", () =>
+    supabase
+      .from("media_assets")
+      .select("id,status,provider_playback_reference")
+      .in("id", assetIds),
+  );
+
+  if (error) {
+    console.warn("Unable to load media readiness.");
+    return null;
+  }
+
+  return new Set(
+    (assets ?? [])
+      .filter((asset) => isMediaAssetReady(asset))
+      .map((asset) => asset.id),
+  );
+}
+
+/**
+ * Resolves short-film playback readiness (media_assets-based) for a set of
+ * short-film rows. Returns null when the lookup failed.
+ */
+async function resolveShortFilmMediaReadiness(
+  rows: readonly ShortFilmRow[],
+  supabase: SupabaseClient<Database>,
+): Promise<Map<string, boolean> | null> {
+  if (!rows.length) {
+    return new Map();
+  }
+
+  const readyAssetIds = await getReadyMediaAssetIds(rows, supabase);
+  if (readyAssetIds === null) {
+    return null;
+  }
+
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      Boolean(row.media_asset_id && readyAssetIds.has(row.media_asset_id)),
+    ]),
+  );
+}
+
 function toContentFormat(format: string | null): ContentFormat {
   if (format === "Series" || format === "Mini" || format === "Short") {
     return format;
@@ -84,8 +168,12 @@ function formatShortFilmDuration(seconds: number) {
 }
 
 function mapEpisode(row: EpisodeRow): Episode {
-  const contentRatingOverride = normalizeContentRating(row.content_rating_override);
-  const contentDescriptorsOverride = normalizeContentDescriptors(row.content_descriptors_override);
+  const contentRatingOverride = normalizeContentRating(
+    row.content_rating_override,
+  );
+  const contentDescriptorsOverride = normalizeContentDescriptors(
+    row.content_descriptors_override,
+  );
   const classification = resolveContentClassification(
     contentRatingOverride,
     contentDescriptorsOverride,
@@ -117,9 +205,15 @@ function mapEpisode(row: EpisodeRow): Episode {
 
 function mapSeries(row: SeriesRow, episodes: EpisodeRow[] = []): ContentItem {
   const fallback = getMockSeriesBySlug(row.slug);
+  const genreAssignment = normalizeGenreAssignments(row.genre);
   const contentRating = normalizeContentRating(row.content_rating);
-  const contentDescriptors = normalizeContentDescriptors(row.content_descriptors);
-  const classification = resolveContentClassification(contentRating, contentDescriptors);
+  const contentDescriptors = normalizeContentDescriptors(
+    row.content_descriptors,
+  );
+  const classification = resolveContentClassification(
+    contentRating,
+    contentDescriptors,
+  );
   const mappedEpisodes = episodes
     .filter((episode) => episode.series_id === row.id)
     .sort((first, second) => first.episode_number - second.episode_number)
@@ -130,12 +224,22 @@ function mapSeries(row: SeriesRow, episodes: EpisodeRow[] = []): ContentItem {
     id: row.slug,
     title: row.title,
     slug: row.slug,
-    genre: row.genre ?? fallback?.genre ?? "Drama",
+    contentType: normalizeSeriesContentFormat(),
+    publishedAt: row.published_at,
+    language: row.language,
+    genre: serializeGenreLabel(genreAssignment),
+    primaryGenre: genreAssignment.primaryGenre,
+    secondaryGenres: genreAssignment.secondaryGenres,
     format: toContentFormat(row.format),
-    episodeCount: row.episode_count,
-    episodeDuration: row.episode_duration_label ?? fallback?.episodeDuration ?? "",
-    synopsis: row.synopsis ?? fallback?.synopsis ?? "",
-    poster: row.poster_url ?? row.hero_image_url ?? fallback?.poster ?? fallbackPoster,
+    episodeCount: mappedEpisodes.length,
+    episodeDuration:
+      row.episode_duration_label ?? fallback?.episodeDuration ?? "",
+    synopsis: row.synopsis ?? "",
+    poster:
+      row.poster_url ??
+      row.hero_image_url ??
+      fallback?.poster ??
+      fallbackPoster,
     accent: fallback?.accent ?? getFallbackAccent(row.slug),
     episodes: mappedEpisodes,
     contentRating: classification.contentRating,
@@ -149,17 +253,26 @@ function mapSeries(row: SeriesRow, episodes: EpisodeRow[] = []): ContentItem {
   };
 }
 
-function mapShortFilm(row: ShortFilmRow): ShortFilm {
+function mapShortFilm(row: ShortFilmRow, mediaReady: boolean): ShortFilm {
+  const genreAssignment = normalizeGenreAssignments(undefined);
   const contentRating = normalizeContentRating(row.content_rating);
-  const contentDescriptors = normalizeContentDescriptors(row.content_descriptors);
-  const classification = resolveContentClassification(contentRating, contentDescriptors);
-  const isPublished = row.status === "published" && (!row.publish_at || new Date(row.publish_at).getTime() <= Date.now());
+  const contentDescriptors = normalizeContentDescriptors(
+    row.content_descriptors,
+  );
+  const classification = resolveContentClassification(
+    contentRating,
+    contentDescriptors,
+  );
 
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
+    contentType: normalizeShortFilmContentFormat(),
     synopsis: row.synopsis ?? "",
+    genre: serializeGenreLabel(genreAssignment),
+    primaryGenre: genreAssignment.primaryGenre,
+    secondaryGenres: genreAssignment.secondaryGenres,
     poster: row.poster_url ?? row.hero_image_url ?? fallbackPoster,
     heroImage: row.hero_image_url ?? row.poster_url ?? null,
     creatorReference: row.creator_reference,
@@ -176,7 +289,12 @@ function mapShortFilm(row: ShortFilmRow): ShortFilm {
     midrollTimecodes: row.midroll_timecodes,
     postrollEnabled: row.postroll_enabled,
     chaiEnabled: row.chai_enabled,
-    playbackReady: isPublished && Boolean(row.playback_reference) && !classification.ageVerificationRequired,
+    playbackReady: resolveShortFilmPlaybackReady({
+      status: row.status,
+      publishAt: row.publish_at,
+      mediaReady,
+      ageVerificationRequired: classification.ageVerificationRequired,
+    }),
     sharePath: `/short-films/${row.slug}`,
   };
 }
@@ -184,7 +302,7 @@ function mapShortFilm(row: ShortFilmRow): ShortFilm {
 async function getPublishedEpisodeRows(
   seriesIds: string[],
   supabaseClient?: SupabaseClient<Database> | null,
-) {
+): Promise<EpisodeRow[] | null> {
   if (!seriesIds.length) {
     return [];
   }
@@ -200,18 +318,27 @@ async function getPublishedEpisodeRows(
       .select("*")
       .in("series_id", seriesIds)
       .eq("status", "published")
-      .order("episode_number", { ascending: true })
+      .order("episode_number", { ascending: true }),
   );
 
   if (error) {
     console.warn("Unable to load catalog episodes.");
-    return [];
+    return null;
   }
 
-  return data;
+  const readyAssetIds = await getReadyMediaAssetIds(data, supabase);
+  if (readyAssetIds === null) {
+    return data;
+  }
+
+  return data.filter(
+    (row) => row.media_asset_id && readyAssetIds.has(row.media_asset_id),
+  );
 }
 
-export async function getPublishedSeries(supabaseClient?: SupabaseClient<Database>) {
+export async function getPublishedSeries(
+  supabaseClient?: SupabaseClient<Database>,
+) {
   const supabase = await getSupabase(supabaseClient);
   if (!supabase) {
     return [];
@@ -222,7 +349,7 @@ export async function getPublishedSeries(supabaseClient?: SupabaseClient<Databas
       .from("series")
       .select("*")
       .eq("status", "published")
-      .order("sort_order", { ascending: true })
+      .order("sort_order", { ascending: true }),
   );
 
   if (error) {
@@ -236,11 +363,15 @@ export async function getPublishedSeries(supabaseClient?: SupabaseClient<Databas
   );
 
   return data
-    .map((series) => mapSeries(series, episodes))
-    .filter((series) => !(series.ageVerificationRequired && series.episodes.length === 0));
+    .map((series) => mapSeries(series, episodes ?? []))
+    .filter(
+      (series) => episodes === null || isSeriesConsumerVisible(series.episodes),
+    );
 }
 
-export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database>) {
+export async function getFeaturedSeries(
+  supabaseClient?: SupabaseClient<Database>,
+) {
   const supabase = await getSupabase(supabaseClient);
   if (!supabase) {
     return null;
@@ -254,7 +385,7 @@ export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database
       .eq("featured", true)
       .order("sort_order", { ascending: true })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle(),
   );
 
   if (error || !data) {
@@ -267,10 +398,19 @@ export async function getFeaturedSeries(supabaseClient?: SupabaseClient<Database
 
   const episodes = await getEpisodesForSeries(data.id, supabase);
 
-  return mapSeries(data, episodes.map((episode) => ({
-    ...episode,
-    series_id: data.id,
-  })));
+  if (episodes === null) {
+    return mapSeries(data, []);
+  }
+
+  const series = mapSeries(
+    data,
+    episodes.map((episode) => ({
+      ...episode,
+      series_id: data.id,
+    })),
+  );
+
+  return isSeriesConsumerVisible(series.episodes) ? series : null;
 }
 
 export async function getSeriesBySlug(
@@ -288,7 +428,7 @@ export async function getSeriesBySlug(
       .select("*")
       .eq("slug", slug)
       .eq("status", "published")
-      .maybeSingle()
+      .maybeSingle(),
   );
 
   if (error || !data) {
@@ -300,16 +440,18 @@ export async function getSeriesBySlug(
   }
 
   const episodes = await getEpisodesForSeries(data.id, supabase);
-  const series = mapSeries(data, episodes);
+  const series = mapSeries(data, episodes ?? []);
 
-  if (series.ageVerificationRequired && series.episodes.length === 0) {
+  if (episodes !== null && !isSeriesConsumerVisible(series.episodes)) {
     return null;
   }
 
   return series;
 }
 
-export async function getPublishedShortFilms(supabaseClient?: SupabaseClient<Database>) {
+export async function getPublishedShortFilms(
+  supabaseClient?: SupabaseClient<Database>,
+) {
   const supabase = await getSupabase(supabaseClient);
   if (!supabase) {
     return [];
@@ -321,7 +463,7 @@ export async function getPublishedShortFilms(supabaseClient?: SupabaseClient<Dat
       .select("*")
       .eq("status", "published")
       .order("publish_at", { ascending: true, nullsFirst: true })
-      .order("title", { ascending: true })
+      .order("title", { ascending: true }),
   );
 
   if (error) {
@@ -329,9 +471,16 @@ export async function getPublishedShortFilms(supabaseClient?: SupabaseClient<Dat
     return [];
   }
 
+  const mediaReadiness = await resolveShortFilmMediaReadiness(data, supabase);
+
   return data
-    .filter((row) => !row.publish_at || new Date(row.publish_at).getTime() <= Date.now())
-    .map(mapShortFilm);
+    .map((row) => mapShortFilm(row, mediaReadiness?.get(row.id) ?? false))
+    .filter((shortFilm) =>
+      isShortFilmConsumerVisible({
+        status: shortFilm.status,
+        publish_at: shortFilm.publishAt,
+      }),
+    );
 }
 
 export async function getShortFilmBySlug(
@@ -349,7 +498,7 @@ export async function getShortFilmBySlug(
       .select("*")
       .eq("slug", slug)
       .eq("status", "published")
-      .maybeSingle()
+      .maybeSingle(),
   );
 
   if (error || !data) {
@@ -364,22 +513,18 @@ export async function getShortFilmBySlug(
     return null;
   }
 
-  const shortFilm = mapShortFilm(data);
+  const mediaReadiness = await resolveShortFilmMediaReadiness([data], supabase);
 
-  if (shortFilm.ageVerificationRequired && shortFilm.contentRating === "A") {
-    return shortFilm;
-  }
-
-  return shortFilm;
+  return mapShortFilm(data, mediaReadiness?.get(data.id) ?? false);
 }
 
 export async function getEpisodesForSeries(
   seriesId: string,
   supabaseClient?: SupabaseClient<Database>,
-) {
+): Promise<EpisodeRow[] | null> {
   const supabase = await getSupabase(supabaseClient);
   if (!supabase) {
-    return [];
+    return null;
   }
 
   const { data, error } = await timePerf("episodes_q", () =>
@@ -388,15 +533,69 @@ export async function getEpisodesForSeries(
       .select("*")
       .eq("series_id", seriesId)
       .eq("status", "published")
-      .order("episode_number", { ascending: true })
+      .order("episode_number", { ascending: true }),
   );
 
   if (error) {
     console.warn("Unable to load series episodes.");
-    return [];
+    return null;
   }
 
-  return data;
+  const readyAssetIds = await getReadyMediaAssetIds(data, supabase);
+
+  if (readyAssetIds === null) {
+    return data;
+  }
+
+  return data.filter(
+    (row) => row.media_asset_id && readyAssetIds.has(row.media_asset_id),
+  );
+}
+
+/**
+ * Returns the ids of series that serve at least one published, media-ready
+ * episode — the exact same rule the consumer catalog applies. Used by Home so
+ * spotlight/editorial rows stay consistent with the catalog. Returns null when
+ * the lookup failed so Home can fail open and keep curated rows visible.
+ */
+export async function getSeriesIdsWithConsumerEpisodes(
+  seriesIds: string[],
+  supabaseClient?: SupabaseClient<Database> | null,
+): Promise<Set<string> | null> {
+  if (!seriesIds.length) {
+    return new Set();
+  }
+
+  const supabase = await getSupabase(supabaseClient ?? undefined);
+  if (!supabase) {
+    return null;
+  }
+
+  const { data: episodeRows, error } = await timePerf("home_episodes_q", () =>
+    supabase
+      .from("episodes")
+      .select("series_id,media_asset_id")
+      .eq("status", "published")
+      .in("series_id", seriesIds),
+  );
+
+  if (error || !episodeRows) {
+    console.warn("Unable to load series consumer episodes.");
+    return null;
+  }
+
+  const readyAssetIds = await getReadyMediaAssetIds(episodeRows, supabase);
+  if (readyAssetIds === null) {
+    return new Set(episodeRows.map((row) => row.series_id));
+  }
+
+  return new Set(
+    episodeRows
+      .filter(
+        (row) => row.media_asset_id && readyAssetIds.has(row.media_asset_id),
+      )
+      .map((row) => row.series_id),
+  );
 }
 
 export async function getEpisodeBySeriesSlugAndNumber(

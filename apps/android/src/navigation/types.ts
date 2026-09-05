@@ -30,6 +30,28 @@ export type ProfileStackParamList = {
 
 export type ExploreFormat = "all" | "micro-dramas" | "short-films";
 
+export type SearchResultContext = {
+  contentId: string;
+  contentSlug: string;
+  contentType: "MICRO_DRAMA" | "SHORT_FILM";
+  searchQueryContext: string;
+  searchResultPosition: number;
+  sourceSurface: "search";
+  rankingDecisionId?: string | null;
+  recommendationReason?: "SEARCH_RELEVANCE" | "GENRE_FILTER" | "FORMAT_FILTER" | null;
+};
+
+export type DiscoveryContext = SearchResultContext | {
+  contentId: string;
+  contentSlug: string;
+  contentType: "MICRO_DRAMA" | "SHORT_FILM";
+  position: number;
+  rowId: string | null;
+  sourceSurface: "home" | "explore" | "continue_watching";
+  rankingDecisionId?: string | null;
+  recommendationReason?: "NEW_RELEASE" | "CONTINUE_WATCHING" | "SEARCH_RELEVANCE" | "GENRE_FILTER" | "FORMAT_FILTER" | "EDITORIAL" | null;
+};
+
 export type MainTabParamList = {
   Home: undefined;
   Explore: undefined;
@@ -40,6 +62,7 @@ export type MicroDramaAccessContext = {
   access: EpisodeAccess;
   episode: ApiEpisode;
   episodeAccess: Record<string, EpisodeAccess>;
+  episodeNumber: number;
   resumeAtSeconds?: number | null;
   seriesSlug: string;
   seriesTitle: string;
@@ -72,29 +95,35 @@ export type RootStackParamList = {
     query: string;
   };
   Series: {
+    searchContext?: DiscoveryContext;
     slug: string;
   };
   SeriesEpisodes: {
     episodeAccess?: Record<string, EpisodeAccess>;
     series?: ApiSeries;
     seriesSlug?: string;
+    searchContext?: DiscoveryContext;
   };
   Watch: {
     series?: ApiSeries;
     episode?: ApiEpisode;
     access?: EpisodeAccess;
     episodeAccess?: Record<string, EpisodeAccess>;
-    seriesSlug?: string;
-    episodeNumber?: number;
+    seriesSlug: string;
+    episodeNumber: number;
     resumeAtSeconds?: number | null;
+    startFromBeginning?: boolean;
+    searchContext?: DiscoveryContext;
   };
   ShortFilm: {
+    searchContext?: DiscoveryContext;
     slug: string;
   };
   ShortFilmPlayback: {
     slug: string;
     resumeAtSeconds?: number | null;
     startFromBeginning?: boolean;
+    searchContext?: DiscoveryContext;
   };
   ShortFilmEnd: {
     shortFilm: ApiShortFilm;
@@ -120,6 +149,7 @@ export type RootStackParamList = {
     access: MicroDramaAccessContext["access"];
     episode: MicroDramaAccessContext["episode"];
     episodeAccess: MicroDramaAccessContext["episodeAccess"];
+    episodeNumber: number;
     resumeAtSeconds?: MicroDramaAccessContext["resumeAtSeconds"];
     seriesSlug: MicroDramaAccessContext["seriesSlug"];
     seriesTitle: MicroDramaAccessContext["seriesTitle"];

@@ -17,14 +17,15 @@ import {
   shouldRequireParentalGate,
 } from "../lib/parentalControls";
 import type { RootStackParamList } from "../navigation/types";
+import { getWatchEpisodeTransitionParams, getWatchRouteParams } from "../navigation/routeSerialization";
 import { PlayerScreen } from "../player/PlayerScreen";
+import { getPlaybackResumeOwner, loadTargetPlaybackHistory, type TargetHistoryState } from "../player/targetResume";
 import { usePlaybackSource } from "../player/usePlaybackSource";
 import type { PlaybackContext } from "../player/types";
 import type {
   ApiEpisode,
   ApiSeries,
   EpisodeAccess,
-  WatchProgressItem,
 } from "../types/api";
 import type { ParentalControlState } from "../lib/parentalControls";
 
@@ -39,27 +40,29 @@ type PlaybackTarget = {
   series: ApiSeries;
 };
 
-function hasInitialTarget(params: Props["route"]["params"]) {
-  return Boolean(params.series && params.episode && params.access && params.episodeAccess);
+export function WatchScreen({ navigation, route }: Props) {
+  const { session, isLoading } = useAuth();
+  const params = getWatchRouteParams(route.params);
+  const owner = params ? getPlaybackResumeOwner({ type: "SERIES_EPISODE", ...params }, session?.user.id) : "invalid";
+  if (isLoading) return <PlaybackTransitionScreen />;
+  // Target, identity and explicit re-entry intent own the entire playback lifetime.
+  // setParams changes the durable URL while preserving the originating Back stack.
+  return <WatchTargetScreen key={JSON.stringify([owner, params?.resumeAtSeconds, params?.startFromBeginning])} navigation={navigation} route={params ? { ...route, params: { ...route.params, ...params } } : route} />;
 }
 
-export function WatchScreen({ navigation, route }: Props) {
+function WatchTargetScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const parentalScope = useMemo(() => getParentalScope(session), [session]);
 
-  const [targetSeries, setTargetSeries] = useState<ApiSeries | null>(route.params.series ?? null);
-  const [targetEpisode, setTargetEpisode] = useState<ApiEpisode | null>(route.params.episode ?? null);
-  const [targetAccess, setTargetAccess] = useState<EpisodeAccess | null>(route.params.access ?? null);
+  const [targetSeries, setTargetSeries] = useState<ApiSeries | null>(null);
+  const [targetEpisode, setTargetEpisode] = useState<ApiEpisode | null>(null);
+  const [targetAccess, setTargetAccess] = useState<EpisodeAccess | null>(null);
   const [targetEpisodeAccess, setTargetEpisodeAccess] = useState<Record<string, EpisodeAccess>>(
-    route.params.episodeAccess ?? {},
+    {},
   );
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable" | "error">(() => {
-    if (hasInitialTarget(route.params)) {
-      return "ready";
-    }
-
-    if (!route.params.seriesSlug || typeof route.params.episodeNumber !== "number") {
+    if (!getWatchRouteParams(route.params)) {
       return "unavailable";
     }
 
@@ -69,20 +72,22 @@ export function WatchScreen({ navigation, route }: Props) {
   const [acknowledgedTargetKey, setAcknowledgedTargetKey] = useState<string | null>(null);
   const [blockedTargetKey, setBlockedTargetKey] = useState<string | null>(null);
   const [blockedReason, setBlockedReason] = useState<GateBlocker | null>(null);
-  const [progressByEpisode, setProgressByEpisode] = useState<Record<number, WatchProgressItem>>({});
-  const [loadedProgressToken, setLoadedProgressToken] = useState<string | null>(null);
+  const resumeOwner = getPlaybackResumeOwner({ type: "SERIES_EPISODE", ...route.params }, session?.user.id);
+  const [history, setHistory] = useState<TargetHistoryState>({ owner: resumeOwner, status: "loading" });
+  const [historyRetryNonce, setHistoryRetryNonce] = useState(0);
   const [parentalControlState, setParentalControlState] = useState<ParentalControlState | null>(null);
   const [resumeSeconds, setResumeSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     perfMark("WATCH_MOUNT", {
       episode_number: route.params.episode?.number ?? route.params.episodeNumber,
-      has_initial_target: hasInitialTarget(route.params),
+      has_initial_target: Boolean(route.params.series && route.params.episode),
       series_slug: route.params.series?.slug ?? route.params.seriesSlug,
     });
   }, [route.params]);
 
   const currentTargetKey = targetSeries && targetEpisode ? `${targetSeries.slug}:${targetEpisode.number}` : null;
+  const hasValidWatchRoute = getWatchRouteParams(route.params) !== null;
   const classification = useMemo(
     () =>
       targetSeries && targetEpisode
@@ -90,7 +95,7 @@ export function WatchScreen({ navigation, route }: Props) {
         : null,
     [targetEpisode, targetSeries],
   );
-  const accessTokenReady = !accessToken || loadedProgressToken === accessToken;
+  const isProgressResolved = history.owner === resumeOwner && history.status === "resolved";
   const isSlateAcknowledged = currentTargetKey ? acknowledgedTargetKey === currentTargetKey : false;
   const isBlockedTarget = currentTargetKey ? blockedTargetKey === currentTargetKey : false;
   const requiresParentalGateForClassification = classification
@@ -138,11 +143,13 @@ export function WatchScreen({ navigation, route }: Props) {
       setLoadState("ready");
       setBlockedTargetKey(null);
       setBlockedReason(null);
-      setProgressByEpisode({});
-      setLoadedProgressToken(null);
     },
     [],
   );
+
+  const navigateToEpisode = useCallback((episodeNumber: number) => {
+    navigation.setParams(getWatchEpisodeTransitionParams(route.params.seriesSlug, episodeNumber));
+  }, [navigation, route.params.seriesSlug]);
 
   const openEpisodeAccessOptionsFor = useCallback(
     (episode: ApiEpisode, access: EpisodeAccess, resumeAtSeconds?: number | null) => {
@@ -154,6 +161,7 @@ export function WatchScreen({ navigation, route }: Props) {
         access,
         episode,
         episodeAccess: targetEpisodeAccess,
+        episodeNumber: episode.number,
         resumeAtSeconds,
         seriesSlug: targetSeries.slug,
         seriesTitle: targetSeries.title,
@@ -200,12 +208,7 @@ export function WatchScreen({ navigation, route }: Props) {
       );
 
       if (nextClassification.ageVerificationRequired) {
-        activateTarget({
-          access,
-          episode,
-          episodeAccess: targetEpisodeAccess,
-          series: targetSeries,
-        });
+        navigateToEpisode(episodeNumber);
         return;
       }
 
@@ -217,6 +220,7 @@ export function WatchScreen({ navigation, route }: Props) {
               params: {
                 access,
                 episode,
+                episodeNumber: episode.number,
                 episodeAccess: targetEpisodeAccess,
                 resumeAtSeconds: undefined,
                 seriesSlug: targetSeries.slug,
@@ -233,24 +237,14 @@ export function WatchScreen({ navigation, route }: Props) {
       }
 
       if (nextClassification.contentRating) {
-        activateTarget({
-          access,
-          episode,
-          episodeAccess: targetEpisodeAccess,
-          series: targetSeries,
-        });
+        navigateToEpisode(episodeNumber);
         return;
       }
 
-      activateTarget({
-        access,
-        episode,
-        episodeAccess: targetEpisodeAccess,
-        series: targetSeries,
-      });
+      navigateToEpisode(episodeNumber);
     },
     [
-      activateTarget,
+      navigateToEpisode,
       navigation,
       openEpisodeAccessOptionsFor,
       parentalScope,
@@ -268,6 +262,7 @@ export function WatchScreen({ navigation, route }: Props) {
     navigation.navigate("EpisodeAccessOptions", {
       access: targetAccess,
       episode: targetEpisode,
+      episodeNumber: targetEpisode.number,
       episodeAccess: targetEpisodeAccess,
       resumeAtSeconds: targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
       seriesSlug: targetSeries.slug,
@@ -281,44 +276,40 @@ export function WatchScreen({ navigation, route }: Props) {
     }
 
     return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (!seriesResponse) {
+        setTargetAccess(null);
+        setTargetEpisodeAccess({});
+        setLoadState("loading");
+        setRetryNonce((value) => value + 1);
+        return;
+      }
       if (seriesResponse.series.slug !== targetSeries.slug) {
         return;
       }
 
       const refreshedEpisode = targetEpisode
-        ? seriesResponse.series.episodes.find((candidate) => candidate.number === targetEpisode.number) ?? targetEpisode
+        ? seriesResponse.series.episodes.find((candidate) => candidate.number === targetEpisode.number) ?? null
         : null;
       const refreshedAccess = refreshedEpisode
-        ? seriesResponse.episodeAccess[String(refreshedEpisode.number)] ?? targetAccess
-        : targetAccess;
+        ? seriesResponse.episodeAccess[String(refreshedEpisode.number)] ?? null
+        : null;
 
       setTargetSeries(seriesResponse.series);
       setTargetEpisode(refreshedEpisode);
       setTargetEpisodeAccess(seriesResponse.episodeAccess);
 
-      if (refreshedAccess) {
-        setTargetAccess(refreshedAccess);
-      }
+      setTargetAccess(refreshedAccess);
+      if (!refreshedEpisode || !refreshedAccess) setLoadState("unavailable");
     });
   }, [targetAccess, targetEpisode, targetSeries]);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (hasInitialTarget(route.params)) {
-      perfMark("ACCESS_END", {
-        episode_number: route.params.episode?.number,
-        source: "ROUTE_PARAMS",
-        status: "ready",
-      });
-      return () => {
-        isMounted = false;
-      };
-    }
+    const episodeNumber = route.params.episodeNumber;
+    const seriesSlug = route.params.seriesSlug;
 
-    const { episodeNumber, seriesSlug } = route.params;
-
-    if (!seriesSlug || typeof episodeNumber !== "number") {
+    if (!hasValidWatchRoute) {
       return () => {
         isMounted = false;
       };
@@ -380,57 +371,35 @@ export function WatchScreen({ navigation, route }: Props) {
   }, [
     accessToken,
     activateTarget,
-    route.params,
+    hasValidWatchRoute,
+    route.params.seriesSlug,
+    route.params.episodeNumber,
     retryNonce,
   ]);
 
   useEffect(() => {
-    if (!targetSeries || !targetEpisode) {
+    if (!currentTargetKey) {
       return undefined;
     }
 
-    let isMounted = true;
+    const request = loadTargetPlaybackHistory({
+      owner: resumeOwner,
+      target: { type: "SERIES_EPISODE", seriesSlug: route.params.seriesSlug, episodeNumber: route.params.episodeNumber },
+      load: () => loadWatchHistory(session),
+      publish: setHistory,
+    });
+    return request.cancel;
+  }, [currentTargetKey, historyRetryNonce, resumeOwner, route.params.seriesSlug, route.params.episodeNumber, session]);
 
-    void Promise.all([loadWatchHistory(session), loadParentalControls(session)])
-      .then(([progress, parentalControlStatus]) => {
-        if (!isMounted) {
-          return;
-        }
-
-        const nextProgressByEpisode = progress.reduce<Record<number, WatchProgressItem>>(
-          (progressMap, progress) => {
-            if (
-              progress.contentType === "series_episode" &&
-              progress.seriesSlug === targetSeries.slug &&
-              progress.episodeNumber !== null
-            ) {
-              progressMap[progress.episodeNumber] = progress;
-            }
-
-            return progressMap;
-          },
-          {},
-        );
-
-        setProgressByEpisode(nextProgressByEpisode);
-        setParentalControlState(parentalControlStatus);
-      })
-      .catch(() => {
-        if (isMounted) {
-          setProgressByEpisode({});
-          setParentalControlState(null);
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setLoadedProgressToken(session?.access_token ?? null);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [session, targetEpisode, targetSeries]);
+  useEffect(() => {
+    let active = true;
+    void loadParentalControls(session).then((state) => {
+      if (active) setParentalControlState(state);
+    }).catch(() => {
+      if (active) setParentalControlState(null);
+    });
+    return () => { active = false; };
+  }, [session]);
 
   const context = useMemo(
     () =>
@@ -471,8 +440,10 @@ export function WatchScreen({ navigation, route }: Props) {
           params: {
             access: targetAccess,
             episode: targetEpisode,
+            episodeNumber: targetEpisode.number,
             episodeAccess: targetEpisodeAccess,
             resumeAtSeconds: route.params.resumeAtSeconds,
+            seriesSlug: targetSeries.slug,
             series: targetSeries,
           },
           screen: "Watch",
@@ -546,8 +517,10 @@ export function WatchScreen({ navigation, route }: Props) {
                   params: {
                     access: targetAccess,
                     episode: targetEpisode,
+                    episodeNumber: targetEpisode.number,
                     episodeAccess: targetEpisodeAccess,
                     resumeAtSeconds: route.params.resumeAtSeconds,
+                    seriesSlug: targetSeries.slug,
                     series: targetSeries,
                   },
                   screen: "Watch",
@@ -556,6 +529,7 @@ export function WatchScreen({ navigation, route }: Props) {
                   params: {
                     access: targetAccess,
                     episode: targetEpisode,
+                    episodeNumber: targetEpisode.number,
                     episodeAccess: targetEpisodeAccess,
                     resumeAtSeconds:
                       targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
@@ -751,14 +725,21 @@ export function WatchScreen({ navigation, route }: Props) {
     return <PlaybackTransitionScreen />;
   }
 
+  if (!shouldUsePreview && history.status === "error") {
+    return <Screen><RecoveryState body="Your saved position couldn't load. Please try again." onPrimaryAction={() => setHistoryRetryNonce((value) => value + 1)} primaryActionLabel="Retry" onSecondaryAction={backToPrevious} secondaryActionLabel="Back" title="Unable to load your progress" /></Screen>;
+  }
+
+  if (!shouldUsePreview && !isProgressResolved) return <PlaybackTransitionScreen />;
+
   return (
     <PlayerScreen
-      key={playback.source.playbackUri}
-      initialSeekSeconds={resumeSeconds !== null ? resumeSeconds : (route.params.resumeAtSeconds ?? null)}
+      searchContext={route.params.searchContext}
+      key={`${resumeOwner}:${playback.source.playbackUri}`}
+      initialSeekSeconds={resumeSeconds ?? (route.params.startFromBeginning ? 0 : route.params.resumeAtSeconds ?? null)}
       context={context}
       episodeAccess={targetEpisodeAccess}
       episodes={targetSeries!.episodes}
-      isProgressResolved={accessTokenReady}
+      isProgressResolved={isProgressResolved}
       onSeeOptions={openEpisodeAccessOptions}
       onRefreshSource={(currentTime) => {
         setResumeSeconds(currentTime);
@@ -772,7 +753,7 @@ export function WatchScreen({ navigation, route }: Props) {
       }}
       playbackMode={playback.playbackMode}
       previewSeconds={playback.previewSeconds}
-      savedProgress={targetEpisode ? progressByEpisode[targetEpisode.number] : undefined}
+      savedProgress={isProgressResolved ? history.progress : undefined}
       session={session}
       source={playback.source}
     />

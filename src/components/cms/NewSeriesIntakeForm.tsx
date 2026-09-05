@@ -31,6 +31,7 @@ import {
 import type { MediaUploadIntent } from "@/components/cms/MediaDirectUploadField";
 import type { BulkEpisodeCreateInput, BulkEpisodeDefaults, BulkEpisodeFinalizeResult } from "@/lib/cms/bulk-episodes";
 import type { SubtitleUploadIntent } from "@/lib/subtitles";
+import { CANONICAL_GENRES } from "@/lib/taxonomy";
 
 type ArtworkUploadIntent = {
   bucket: string;
@@ -1772,7 +1773,17 @@ export function NewSeriesIntakeForm({
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="block space-y-1.5">
               <span className={labelClassName}>Genre</span>
-              <input className={inputClassName} value={seriesValues.genre} onChange={(event) => handleSeriesField("genre", event.target.value)} disabled={isRunning} />
+              <CmsSelect
+                className={inputClassName}
+                value={seriesValues.genre}
+                onChange={(newValue) => handleSeriesField("genre", newValue)}
+                disabled={isRunning}
+                placeholderLabel="Unset"
+                options={[
+                  { label: "Unset", value: "" },
+                  ...CANONICAL_GENRES.map((genre) => ({ label: genre.displayName, value: genre.id })),
+                ]}
+              />
             </label>
             <label className="block space-y-1.5">
               <span className={labelClassName}>Language</span>

@@ -77,7 +77,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Low-history threshold must be a non-negative whole number."));
     }
 
-    const result = await updateHomeLowHistoryThreshold(threshold);
+    const result = await updateHomeLowHistoryThreshold(threshold, { actorId: guard.user.id });
     if (!result) {
       redirect(buildFlashUrl("error", "Unable to save low-history threshold."));
     }
@@ -107,6 +107,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     }
 
     const result = await addSpotlightItem({
+      actorId: guard.user.id,
       contentId,
       contentType: contentType as "series" | "short_film",
     });
@@ -142,7 +143,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item ID is required."));
     }
 
-    const success = await removeSpotlightItem(itemId);
+    const success = await removeSpotlightItem(itemId, { actorId: guard.user.id });
     if (!success) {
       redirect(buildFlashUrl("error", "Unable to remove Spotlight item."));
     }
@@ -168,7 +169,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item ID is required."));
     }
 
-    await moveSpotlightItem(itemId, direction);
+    await moveSpotlightItem(itemId, direction, { actorId: guard.user.id });
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath("/api/v1/catalog");
@@ -190,7 +191,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item ID is required."));
     }
 
-    const result = await updateSpotlightItemShowTitle(itemId, showTitle);
+    const result = await updateSpotlightItemShowTitle(itemId, showTitle, { actorId: guard.user.id });
     if (!result) {
       redirect(buildFlashUrl("error", "Unable to update title visibility."));
     }
@@ -210,7 +211,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     }
 
     const enabled = formData.get("enabled") === "on";
-    await toggleHomeSpotlight(enabled);
+    await toggleHomeSpotlight(enabled, { actorId: guard.user.id });
 
     revalidatePath(homeListPath);
     revalidatePath("/");
@@ -237,7 +238,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Row sort order must be a whole number."));
     }
 
-    const result = await createHomeEditorialRow({ sortOrder, title });
+    const result = await createHomeEditorialRow({ actorId: guard.user.id, sortOrder, title });
 
     if (!result) {
       redirect(buildFlashUrl("error", "Unable to create home row."));
@@ -274,7 +275,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Row sort order must be a whole number."));
     }
 
-    const result = await updateHomeRow(rowId, { enabled, sortOrder, title });
+    const result = await updateHomeRow(rowId, { actorId: guard.user.id, enabled, sortOrder, title });
     if (!result) {
       redirect(buildFlashUrl("error", "Unable to update row."));
     }
@@ -298,7 +299,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Row ID is required."));
     }
 
-    const success = await deleteHomeEditorialRow(rowId);
+    const success = await deleteHomeEditorialRow(rowId, { actorId: guard.user.id });
     if (!success) {
       redirect(buildFlashUrl("error", "Unable to delete row (Start Here and Spotlight cannot be deleted)."));
     }
@@ -324,7 +325,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Row ID is required."));
     }
 
-    await moveHomeRow(rowId, direction);
+    await moveHomeRow(rowId, direction, { actorId: guard.user.id });
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath("/api/v1/catalog");
@@ -357,6 +358,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     }
 
     const result = await addHomeRowItem({
+      actorId: guard.user.id,
       contentId,
       contentType: contentType,
       rowId,
@@ -404,7 +406,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item sort order must be a whole number."));
     }
 
-    const result = await updateHomeRowItem(itemId, sortOrder);
+    const result = await updateHomeRowItem(itemId, sortOrder, { actorId: guard.user.id });
     if (!result) {
       redirect(buildFlashUrl("error", "Unable to update item order."));
     }
@@ -430,7 +432,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item ID is required."));
     }
 
-    await moveHomeRowItem(itemId, direction);
+    await moveHomeRowItem(itemId, direction, { actorId: guard.user.id });
     revalidatePath(homeListPath);
     revalidatePath("/");
     revalidatePath("/api/v1/catalog");
@@ -450,7 +452,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
       redirect(buildFlashUrl("error", "Item ID is required."));
     }
 
-    const success = await removeHomeRowItem(itemId);
+    const success = await removeHomeRowItem(itemId, { actorId: guard.user.id });
     if (!success) {
       redirect(buildFlashUrl("error", "Unable to remove item."));
     }

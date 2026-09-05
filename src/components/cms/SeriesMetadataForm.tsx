@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import { SERIES_FORMATS, type SeriesRow } from "@/lib/cms/constants";
+import { CANONICAL_GENRES, normalizeGenreAssignments } from "@/lib/taxonomy";
 import type { SeriesFormState } from "@/lib/cms/series-form";
 
 const inputClassName =
@@ -20,6 +21,7 @@ type SeriesMetadataFormProps = {
 export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetadataFormProps) {
   const [state, formAction, pending] = useActionState(action, { errors: {} });
   const errors = state.errors;
+  const selectedGenreId = normalizeGenreAssignments(series?.genre).primaryGenre?.id ?? "";
 
   return (
     <form action={formAction} className="space-y-5">
@@ -54,7 +56,16 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Genre" error={errors.genre}>
-          <input className={inputClassName} name="genre" defaultValue={series?.genre ?? ""} />
+          <CmsSelect
+            className={inputClassName}
+            name="genre"
+            defaultValue={selectedGenreId}
+            placeholderLabel="Unset"
+            options={[
+              { label: "Unset", value: "" },
+              ...CANONICAL_GENRES.map((genre) => ({ label: genre.displayName, value: genre.id })),
+            ]}
+          />
         </Field>
         <Field label="Language" error={errors.language}>
           <input className={inputClassName} name="language" defaultValue={series?.language ?? ""} />

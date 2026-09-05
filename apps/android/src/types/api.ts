@@ -46,9 +46,15 @@ export type ApiEpisode = {
 };
 
 export type ApiSeries = {
+  id?: string;
   title: string;
   slug: string;
-  genre: string;
+  contentType?: "MICRO_DRAMA";
+  publishedAt?: string | null;
+  language?: string | null;
+  genre: string | null;
+  primaryGenre?: ApiGenre | null;
+  secondaryGenres?: ApiGenre[];
   format: string;
   episodeCount: number;
   episodeDuration: string;
@@ -68,11 +74,20 @@ export type ApiSeries = {
   episodes: ApiEpisode[];
 };
 
+export type ApiGenre = {
+  id: string;
+  displayName: string;
+};
+
 export type ApiShortFilm = {
   id: string;
   slug: string;
   title: string;
+  contentType?: "SHORT_FILM";
   synopsis: string;
+  genre?: string | null;
+  primaryGenre?: ApiGenre | null;
+  secondaryGenres?: ApiGenre[];
   poster: string;
   heroImage: string | null;
   creatorReference: string | null;
@@ -217,15 +232,21 @@ export type HomeRowItem = {
   title: string;
   poster: string | null;
   showTitle?: boolean;
+  source?: "editorial_pin" | "deterministic_release_date";
 };
 
 export type HomeRow = {
   id: string;
   slug: string;
   title: string;
-  role: "start_here" | "editorial" | "spotlight";
+  role: "start_here" | "editorial" | "spotlight" | "category";
   enabled: boolean;
   sortOrder: number;
+  rankingPolicy: "editorial";
+  rankingPolicyVersion: "home_editorial_v1";
+  configVersion: string;
+  configHash: string;
+  rankingDecisionId: string;
   items: HomeRowItem[];
 };
 
@@ -238,6 +259,8 @@ export type HomeState = {
   isGuest: boolean;
   spotlight: HomeSpotlight | null;
   spotlights: HomeSpotlight[];
+  spotlightRowId: string | null;
+  spotlightRankingDecisionId: string | null;
   rows: HomeRow[];
 };
 

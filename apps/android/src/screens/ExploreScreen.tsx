@@ -1,9 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { useEffect } from "react";
 import {
   Image,
   Keyboard,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,17 +13,35 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Screen } from "../components/Screen";
+import { BehaviorImpression } from "../components/BehaviorImpression";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getCatalog, getRequestRecoveryCopy, type RecoveryCopy } from "../lib/api";
 import { resolveMediaUrl } from "../lib/media";
-import { loadWatchHistory } from "../lib/playbackHistory";
-import { perfMark, perfNow } from "../lib/perf";
+import { useDiscoveryCatalog } from "../lib/useDiscoveryCatalog";
+import { isContinueWatchingProgress } from "../lib/playbackCompletion";
+import { createScreenRequestOwner } from "../lib/screenResources";
+import { perfMark } from "../lib/perf";
 import { clearRecentSearches, loadRecentSearches, saveRecentSearch } from "../lib/recentSearches";
+import {
+  ALL_GENRES_FILTER,
+  filterDiscoverableItems,
+  getAvailableGenreOptions,
+  sortDiscoverableItems,
+  toDiscoverableItems,
+  type DiscoverableItem,
+} from "../lib/discovery";
 import { useAuth } from "../lib/authContext";
+import { recordRankingDecision } from "../lib/api";
+import { emitBehaviorEvidence } from "../lib/behavioralEvents";
+import { markCollectionServed } from "../lib/behaviorImpressionModel";
+import {
+  createExploreRankingDecision,
+  recommendationReasonForResult,
+  runRankingDecisionEvidenceFailOpen,
+} from "../lib/rankingDecisionEvidence";
 import { findStartEpisode } from "../lib/seriesPlayback";
 import type { ExploreFormat, MainTabScreenProps } from "../navigation/types";
-import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
-import { borders, colors, typography } from "../theme/tokens";
+import type { ApiSeries, ApiShortFilm } from "../types/api";
+import { borders, colors, radii, typography } from "../theme/tokens";
 import { useAppLanguage } from "../lib/appLanguage";
 
 type Props = MainTabScreenProps<"Explore">;
@@ -31,7 +49,7 @@ type Props = MainTabScreenProps<"Explore">;
 const GRID_HORIZONTAL_PADDING = 20;
 const GRID_GAP = 12;
 const NARROW_WIDTH_BREAKPOINT = 360;
-const ALL_GENRES_FILTER = "All";
+
 const formatOptions: Array<{ label: string; value: ExploreFormat }> = [
   { label: "All", value: "all" },
   { label: "Micro Dramas", value: "micro-dramas" },
@@ -58,166 +76,120 @@ export function ExploreScreen({ navigation }: Props) {
   const { t } = useAppLanguage();
   const accessToken = session?.access_token;
   const { width } = useWindowDimensions();
-  const [catalog, setCatalog] = useState<ApiSeries[]>([]);
-  const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
-  const [progress, setProgress] = useState<WatchProgressItem[]>([]);
-  const [error, setError] = useState<RecoveryCopy | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const resource = useDiscoveryCatalog(session, true);
+  const { catalog, shortFilms } = resource;
+  const progress = resource.progress;
+  const { isLoading, error, reload: reloadCatalog } = resource;
   const [query, setQuery] = useState("");
   const [selectedFormat, setSelectedFormat] = useState<ExploreFormat>("all");
   const [selectedGenre, setSelectedGenre] = useState(ALL_GENRES_FILTER);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
+  const [isGenreModalOpen, setIsGenreModalOpen] = useState(false);
+  const [viewportSignal, setViewportSignal] = useState(0);
+  const servedCollectionsRef = useRef(new Set<string>());
+  const submittedDecisionIdsRef = useRef(new Set<string>());
+  const recentSearchOwner = useMemo(() => createScreenRequestOwner(), []);
+  const refreshRecentSearches = useCallback((operation?: () => Promise<unknown>) => {
+    const isCurrent = recentSearchOwner.begin();
+    void Promise.resolve().then(() => operation?.()).then(loadRecentSearches).then((items) => {
+      if (isCurrent()) setRecentSearches(items);
+    }).catch(() => { /* Optional device-local history stays available on retry/focus. */ });
+  }, [recentSearchOwner]);
 
   useEffect(() => {
     perfMark("EXPLORE_MOUNT");
   }, []);
 
-  const loadCatalog = useCallback(async () => {
-    const startedAt = perfNow();
-    const [data, progressData] = await Promise.all([
-      getCatalog(accessToken),
-      loadWatchHistory(session),
-    ]);
-    setCatalog(data.catalog);
-    setShortFilms(data.shortFilms);
-    setProgress(progressData);
-    setError(null);
-    perfMark("EXPLORE_DATA_READY", {
-      catalog_count: data.catalog.length,
-      duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
-      progress_count: progressData.length,
-      short_film_count: data.shortFilms.length,
-    });
-    return data;
-  }, [accessToken, session]);
-
-  const reloadCatalog = useCallback(async () => {
-    setIsLoading(true);
-
-    try {
-      await loadCatalog();
-    } catch (error) {
-      setError(
-        getRequestRecoveryCopy(error, {
-          body: "Please try again.",
-          title: "We couldn't load this right now.",
-        }),
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [loadCatalog]);
-
   useFocusEffect(
     useCallback(() => {
-      let isMounted = true;
-
-      const runLoad = async () => {
-        try {
-          const data = await loadCatalog();
-
-          if (!isMounted) {
-            return;
-          }
-
-          setCatalog(data.catalog);
-          setShortFilms(data.shortFilms);
-        } catch (error) {
-          if (!isMounted) {
-            return;
-          }
-
-          setError(
-            getRequestRecoveryCopy(error, {
-              body: "Please try again.",
-              title: "We couldn't load this right now.",
-            }),
-          );
-        } finally {
-          if (isMounted) {
-            setIsLoading(false);
-          }
-        }
-      };
-
-      void runLoad();
-
-      return () => {
-        isMounted = false;
-      };
-    }, [loadCatalog]),
+      refreshRecentSearches();
+      return () => recentSearchOwner.invalidate();
+    }, [recentSearchOwner, refreshRecentSearches]),
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
-
-      void loadRecentSearches().then((items) => {
-        if (isActive) {
-          setRecentSearches(items);
-        }
-      });
-
-      return () => {
-        isActive = false;
-      };
-    }, []),
+  const discoverableItems = useMemo(
+    () => toDiscoverableItems(catalog, shortFilms),
+    [catalog, shortFilms],
   );
-
-  const effectiveGenre = selectedFormat === "micro-dramas" ? selectedGenre : ALL_GENRES_FILTER;
 
   const availableGenres = useMemo(() => {
-    const genres = new Set<string>();
+    return getAvailableGenreOptions(discoverableItems, selectedFormat);
+  }, [discoverableItems, selectedFormat]);
 
-    catalog.forEach((series) => {
-      if (series.genre) {
-        genres.add(series.genre);
-      }
-    });
+  const shouldShowGenreFilter = availableGenres.length > 0;
 
-    return [ALL_GENRES_FILTER, ...Array.from(genres).sort((a, b) => a.localeCompare(b))];
-  }, [catalog]);
-
-  const shouldShowGenreFilter = selectedFormat === "micro-dramas" && availableGenres.length > 1;
-
-  const visibleCatalog = useMemo(() => {
-    return catalog.filter((series) => {
-      const matchesFormat = selectedFormat === "all" || selectedFormat === "micro-dramas";
-      const matchesGenre =
-        !shouldShowGenreFilter ||
-        effectiveGenre === ALL_GENRES_FILTER ||
-        series.genre === effectiveGenre;
-
-      return matchesFormat && matchesGenre;
-    });
-  }, [catalog, effectiveGenre, selectedFormat, shouldShowGenreFilter]);
-
-  const visibleShortFilms = useMemo(() => {
-    if (selectedFormat === "micro-dramas") {
-      return [];
+  const selectedGenreLabel = useMemo(() => {
+    if (selectedGenre === ALL_GENRES_FILTER) {
+      return ALL_GENRES_FILTER;
     }
 
-    return selectedFormat === "short-films" || selectedFormat === "all" ? shortFilms : [];
-  }, [selectedFormat, shortFilms]);
+    return (
+      availableGenres.find((genre) => genre.id === selectedGenre)?.displayName ??
+      selectedGenre
+    );
+  }, [availableGenres, selectedGenre]);
 
   const hasQuery = query.trim().length > 0;
   const normalizedQuery = query.trim().toLowerCase();
 
-  const filteredCatalog = useMemo(() => {
-    return visibleCatalog.filter((series) => {
+  const filteredItems = useMemo(() => {
+    const entries = filterDiscoverableItems(
+      discoverableItems,
+      selectedFormat,
+      selectedGenre,
+    ).filter((entry) => {
       if (!hasQuery) return true;
-      return matchesMicroDramaQuery(series, normalizedQuery);
+      return entry.contentType === "MICRO_DRAMA"
+        ? matchesMicroDramaQuery(entry.item, normalizedQuery)
+        : matchesShortFilmQuery(entry.item, normalizedQuery);
     });
-  }, [hasQuery, normalizedQuery, visibleCatalog]);
 
-  const filteredShortFilms = useMemo(() => {
-    return visibleShortFilms.filter((film) => {
-      if (!hasQuery) return true;
-      return matchesShortFilmQuery(film, normalizedQuery);
-    });
-  }, [hasQuery, normalizedQuery, visibleShortFilms]);
+    return sortDiscoverableItems(entries, "default");
+  }, [
+    discoverableItems,
+    hasQuery,
+    normalizedQuery,
+    selectedFormat,
+    selectedGenre,
+  ]);
+
+  const totalCount = filteredItems.length;
+  const collectionContext = useMemo(
+    () => `explore:${selectedFormat}:${selectedGenre}:${normalizedQuery}:${filteredItems.map((entry) => `${entry.contentType}:${entry.item.id ?? entry.item.slug}`).join(",")}`,
+    [filteredItems, normalizedQuery, selectedFormat, selectedGenre],
+  );
+  const rankingDecision = useMemo(
+    () => createExploreRankingDecision({
+      candidates: discoverableItems,
+      displayedResults: filteredItems,
+      normalizedQuery,
+      selectedFormat,
+      selectedGenre,
+    }),
+    [discoverableItems, filteredItems, normalizedQuery, selectedFormat, selectedGenre],
+  );
+
+  useEffect(() => {
+    if (isLoading || error || submittedDecisionIdsRef.current.has(rankingDecision.rankingDecisionId)) return;
+    submittedDecisionIdsRef.current.add(rankingDecision.rankingDecisionId);
+    runRankingDecisionEvidenceFailOpen(recordRankingDecision(accessToken, rankingDecision));
+  }, [accessToken, error, isLoading, rankingDecision]);
+
+  useEffect(() => {
+    if (isLoading || error) return;
+    if (!markCollectionServed(servedCollectionsRef.current, collectionContext)) return;
+    filteredItems.forEach((entry, index) => emitBehaviorEvidence(accessToken, {
+      eventType: "content_served",
+      contentId: entry.item.id ?? `${entry.contentType}:${entry.item.slug}`,
+      contentType: entry.contentType,
+      sourceSurface: "explore",
+      position: index + 1,
+      rankingDecisionId: rankingDecision.rankingDecisionId,
+      recommendationReason: recommendationReasonForResult(rankingDecision, entry),
+    }));
+  }, [accessToken, collectionContext, error, filteredItems, isLoading, rankingDecision]);
 
   const columns = width < NARROW_WIDTH_BREAKPOINT ? 2 : 3;
   const cardWidth =
@@ -246,7 +218,7 @@ export function ExploreScreen({ navigation }: Props) {
           (first, second) =>
             new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
         )
-        .find((item) => !item.completed && item.positionSeconds >= 5);
+        .find(isContinueWatchingProgress);
       const resumeEpisode = resumeProgress
         ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
         : undefined;
@@ -278,14 +250,14 @@ export function ExploreScreen({ navigation }: Props) {
       return;
     }
 
-    void saveRecentSearch(trimmedQuery).then(() => loadRecentSearches().then(setRecentSearches));
+    refreshRecentSearches(() => saveRecentSearch(trimmedQuery));
     Keyboard.dismiss();
     navigation.navigate("SearchResults", {
       format: selectedFormat,
-      genre: shouldShowGenreFilter && effectiveGenre !== ALL_GENRES_FILTER ? effectiveGenre : undefined,
+      genre: shouldShowGenreFilter && selectedGenre !== ALL_GENRES_FILTER ? selectedGenre : undefined,
       query: trimmedQuery,
     });
-  }, [effectiveGenre, navigation, query, selectedFormat, shouldShowGenreFilter]);
+  }, [navigation, query, refreshRecentSearches, selectedFormat, selectedGenre, shouldShowGenreFilter]);
 
   const openRecentSearch = useCallback(
     (search: string) => {
@@ -296,15 +268,15 @@ export function ExploreScreen({ navigation }: Props) {
       }
 
       setQuery(trimmed);
-      void saveRecentSearch(trimmed).then(() => loadRecentSearches().then(setRecentSearches));
+      refreshRecentSearches(() => saveRecentSearch(trimmed));
       Keyboard.dismiss();
       navigation.navigate("SearchResults", {
         format: selectedFormat,
-        genre: shouldShowGenreFilter && effectiveGenre !== ALL_GENRES_FILTER ? effectiveGenre : undefined,
+        genre: shouldShowGenreFilter && selectedGenre !== ALL_GENRES_FILTER ? selectedGenre : undefined,
         query: trimmed,
       });
     },
-    [effectiveGenre, navigation, selectedFormat, shouldShowGenreFilter],
+    [navigation, refreshRecentSearches, selectedFormat, selectedGenre, shouldShowGenreFilter],
   );
 
   if (isLoading) {
@@ -330,7 +302,7 @@ export function ExploreScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen>
+    <Screen onScroll={() => setViewportSignal((value) => value + 1)}>
       <Text style={styles.screenTitle}>{t("nav.explore", "Explore")}</Text>
 
       <View style={styles.searchRow}>
@@ -364,7 +336,7 @@ export function ExploreScreen({ navigation }: Props) {
         ) : null}
       </View>
 
-      {(isSearchFocused || query.trim().length > 0) && recentSearches.length > 0 ? (
+      {isSearchFocused && query.trim().length === 0 && recentSearches.length > 0 ? (
         <View style={styles.recentWrap}>
           <View style={styles.recentHeader}>
             <Text style={styles.sectionTitle}>{t("explore.recent_searches", "Recent searches")}</Text>
@@ -372,7 +344,7 @@ export function ExploreScreen({ navigation }: Props) {
               accessibilityLabel="Clear recent searches"
               accessibilityRole="button"
               onPress={() => {
-                void clearRecentSearches().then(() => setRecentSearches([]));
+                refreshRecentSearches(clearRecentSearches);
               }}
             >
               <Text style={styles.clearRecentText}>Clear</Text>
@@ -409,9 +381,7 @@ export function ExploreScreen({ navigation }: Props) {
               accessibilityRole="button"
               onPress={() => {
                 setSelectedFormat(option.value);
-                if (option.value !== "micro-dramas") {
-                  setSelectedGenre(ALL_GENRES_FILTER);
-                }
+                setSelectedGenre(ALL_GENRES_FILTER);
               }}
               style={[styles.filterChip, isSelected && styles.filterChipSelected]}
             >
@@ -424,47 +394,86 @@ export function ExploreScreen({ navigation }: Props) {
       </ScrollView>
 
       {shouldShowGenreFilter ? (
-        <ScrollView contentContainerStyle={styles.filterRow} horizontal showsHorizontalScrollIndicator={false}>
-          {availableGenres.map((genre) => {
-            const isSelected = genre === selectedGenre;
+        <View style={styles.secondaryFilterRow}>
+          <Pressable
+            accessibilityLabel={`Filter by genre. Currently selected: ${selectedGenreLabel}`}
+            accessibilityRole="button"
+            onPress={() => setIsGenreModalOpen(true)}
+            style={[
+              styles.genreSelectButton,
+              selectedGenre !== ALL_GENRES_FILTER && styles.genreSelectButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.genreSelectButtonText,
+                selectedGenre !== ALL_GENRES_FILTER && styles.genreSelectButtonTextActive,
+              ]}
+            >
+              {selectedGenre === ALL_GENRES_FILTER ? "Genre ▾" : `${selectedGenreLabel} ▾`}
+            </Text>
+          </Pressable>
 
-            return (
-              <Pressable
-                key={genre}
-                accessibilityLabel={`Filter by ${genre}`}
-                accessibilityRole="button"
-                onPress={() => setSelectedGenre(genre)}
-                style={[styles.filterChip, isSelected && styles.filterChipSelected]}
-              >
-                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                  {genre}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+          {selectedGenre !== ALL_GENRES_FILTER ? (
+            <Pressable
+              accessibilityLabel="Reset genre filter"
+              accessibilityRole="button"
+              onPress={() => setSelectedGenre(ALL_GENRES_FILTER)}
+              style={styles.resetButton}
+            >
+              <Text style={styles.resetButtonText}>Reset ×</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
-      {!hasQuery ? <Text style={styles.sectionTitle}>{t("explore.discover", "Discover")}</Text> : null}
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>
+          {hasQuery
+            ? `Results for "${query.trim()}"`
+            : t("explore.discover", "Discover")}
+        </Text>
+        <Text style={styles.sectionCountText}>
+          {`${totalCount} ${totalCount === 1 ? "title" : "titles"}`}
+        </Text>
+      </View>
 
-      {filteredCatalog.length > 0 || filteredShortFilms.length > 0 ? (
+      {filteredItems.length > 0 ? (
         <View style={styles.grid}>
-          {filteredCatalog.map((series) => {
-            const isBusy = resolvingKey === `series-${series.slug}`;
+          {filteredItems.map((entry, index) => {
+            const isSeries = entry.contentType === "MICRO_DRAMA";
+            const item = entry.item;
+            const contentId = item.id ?? `${entry.contentType}:${item.slug}`;
+            const recommendationReason = recommendationReasonForResult(rankingDecision, entry);
+            const isBusy = resolvingKey === `${isSeries ? "series" : "short"}-${item.slug}`;
 
             return (
-              <View key={series.slug} style={{ width: cardWidth }}>
+              <BehaviorImpression
+                key={`${entry.contentType}-${item.slug}`}
+                accessToken={accessToken}
+                collectionContext={collectionContext}
+                enabled={!isGenreModalOpen}
+                evidence={{ contentId, contentType: entry.contentType, sourceSurface: "explore", position: index + 1, rankingDecisionId: rankingDecision.rankingDecisionId, recommendationReason }}
+                scrollSignal={viewportSignal}
+                style={{ width: cardWidth }}
+              >
                 <Pressable
-                  accessibilityLabel={`Open details for ${series.title}`}
+                  accessibilityLabel={`Open details for ${item.title}`}
                   accessibilityRole="button"
                   disabled={isBusy}
                   onPress={() => {
+                    const searchContext = { contentId, contentSlug: item.slug, contentType: entry.contentType, position: index + 1, rowId: null, sourceSurface: "explore" as const, rankingDecisionId: rankingDecision.rankingDecisionId, recommendationReason };
+                    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId, contentType: entry.contentType, sourceSurface: "explore", position: index + 1, rankingDecisionId: rankingDecision.rankingDecisionId, recommendationReason });
                     perfMark("CONTENT_TAP", {
-                      content_type: "series",
-                      series_slug: series.slug,
+                      content_type: isSeries ? "series" : "short_film",
+                      slug: item.slug,
                       source: "EXPLORE",
                     });
-                    navigation.navigate("Series", { slug: series.slug });
+                    if (isSeries) {
+                      navigation.navigate("Series", { searchContext, slug: item.slug });
+                    } else {
+                      navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                    }
                   }}
                   style={({ pressed }) => [
                     styles.cardMainPressable,
@@ -474,80 +483,35 @@ export function ExploreScreen({ navigation }: Props) {
                   ]}
                 >
                   <View style={[styles.coverWrap, { width: cardWidth, height: cardWidth * (16 / 9) }]}>
-                    {hasValidPoster(series.poster) ? (
+                    {hasValidPoster(item.poster) ? (
                       <Image
-                        accessibilityLabel={`${series.title} poster`}
+                        accessibilityLabel={`${item.title} poster`}
                         accessible
                         alt=""
-                        source={{ uri: resolveMediaUrl(series.poster)! }}
+                        source={{ uri: resolveMediaUrl(item.poster)! }}
                         style={styles.coverImage}
                         resizeMode="cover"
                       />
                     ) : (
                       <View style={styles.coverFallback}>
                         <Text style={styles.coverTitle} numberOfLines={2}>
-                          {series.title}
+                          {item.title}
                         </Text>
                       </View>
                     )}
                   </View>
-                  <Text style={styles.cardTitle} numberOfLines={2}>
-                    {series.title}
-                  </Text>
-                  <Text style={styles.cardMeta}>{t("explore.micro_drama_tag", "Micro Drama")}</Text>
-                </Pressable>
-              </View>
-            );
-          })}
-
-          {filteredShortFilms.map((shortFilm) => {
-            const isBusy = resolvingKey === `short-${shortFilm.slug}`;
-
-            return (
-              <View key={shortFilm.slug} style={{ width: cardWidth }}>
-                <Pressable
-                  accessibilityLabel={`Open details for ${shortFilm.title}`}
-                  accessibilityRole="button"
-                  disabled={isBusy}
-                  onPress={() => {
-                    perfMark("CONTENT_TAP", {
-                      content_type: "short_film",
-                      short_film_slug: shortFilm.slug,
-                      source: "EXPLORE",
-                    });
-                    navigation.navigate("ShortFilm", { slug: shortFilm.slug });
-                  }}
-                  style={({ pressed }) => [
-                    styles.cardMainPressable,
-                    { width: cardWidth },
-                    isBusy && styles.cardBusy,
-                    pressed && styles.cardPressed,
-                  ]}
-                >
-                  <View style={[styles.coverWrap, { width: cardWidth, height: cardWidth * (16 / 9) }]}>
-                    {hasValidPoster(shortFilm.poster) ? (
-                      <Image
-                        accessibilityLabel={`${shortFilm.title} poster`}
-                        accessible
-                        alt=""
-                        source={{ uri: resolveMediaUrl(shortFilm.poster)! }}
-                        style={styles.coverImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.coverFallback}>
-                        <Text style={styles.coverTitle} numberOfLines={2}>
-                          {shortFilm.title}
-                        </Text>
-                      </View>
-                    )}
+                  <View style={styles.cardInfo}>
+                    <Text style={styles.cardTitle} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.cardMeta} numberOfLines={1}>
+                      {isSeries
+                        ? t("explore.micro_drama_tag", "MICRO DRAMA")
+                        : t("explore.short_film_tag", "SHORT FILM")}
+                    </Text>
                   </View>
-                  <Text style={styles.cardTitle} numberOfLines={2}>
-                    {shortFilm.title}
-                  </Text>
-                  <Text style={styles.cardMeta}>{t("explore.short_film_tag", "Short Film")}</Text>
                 </Pressable>
-              </View>
+              </BehaviorImpression>
             );
           })}
         </View>
@@ -568,6 +532,80 @@ export function ExploreScreen({ navigation }: Props) {
           </Pressable>
         </View>
       ) : null}
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setIsGenreModalOpen(false)}
+        transparent
+        visible={isGenreModalOpen}
+      >
+        <Pressable
+          accessibilityLabel="Close genre filter sheet"
+          onPress={() => setIsGenreModalOpen(false)}
+          style={styles.modalBackdrop}
+        >
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filter by Genre</Text>
+              <Pressable
+                accessibilityLabel="Close modal"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => setIsGenreModalOpen(false)}
+              >
+                <Text style={styles.modalCloseText}>{"\u00D7"}</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalScroll}>
+              <Pressable
+                accessibilityLabel="Select All Genres"
+                accessibilityRole="button"
+                onPress={() => {
+                  setSelectedGenre(ALL_GENRES_FILTER);
+                  setIsGenreModalOpen(false);
+                }}
+                style={[
+                  styles.modalItem,
+                  selectedGenre === ALL_GENRES_FILTER && styles.modalItemSelected,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modalItemText,
+                    selectedGenre === ALL_GENRES_FILTER && styles.modalItemTextSelected,
+                  ]}
+                >
+                  All Genres
+                </Text>
+              </Pressable>
+              {availableGenres.map((genre) => {
+                const isSelected = genre.id === selectedGenre;
+                return (
+                  <Pressable
+                    key={genre.id}
+                    accessibilityLabel={`Select genre ${genre.displayName}`}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setSelectedGenre(genre.id);
+                      setIsGenreModalOpen(false);
+                    }}
+                    style={[styles.modalItem, isSelected && styles.modalItemSelected]}
+                  >
+                    <Text
+                      style={[
+                        styles.modalItemText,
+                        isSelected && styles.modalItemTextSelected,
+                      ]}
+                    >
+                      {genre.displayName}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -585,24 +623,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     flexDirection: "row",
-    minHeight: 52,
+    minHeight: 46,
     paddingHorizontal: 12,
   },
   searchIcon: {
     color: colors.muted,
-    fontSize: 18,
+    fontSize: 16,
     marginRight: 8,
     transform: [{ rotate: "45deg" }],
   },
   searchInput: {
     color: colors.text,
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 12,
+    fontSize: 15,
+    paddingVertical: 10,
   },
   clearButton: {
     alignItems: "center",
-    height: 44,
+    height: 40,
     justifyContent: "center",
     width: 32,
   },
@@ -646,17 +684,17 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   filterRow: {
-    gap: 10,
-    paddingVertical: 8,
+    gap: 8,
+    paddingVertical: 6,
   },
   filterChip: {
     backgroundColor: "rgba(232, 228, 218, 0.04)",
     borderColor: "rgba(232, 228, 218, 0.12)",
     borderWidth: 1,
     borderRadius: 8,
-    minHeight: 48,
+    minHeight: 38,
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
   },
   filterChipSelected: {
     backgroundColor: "rgba(13, 209, 188, 0.12)",
@@ -670,14 +708,60 @@ const styles = StyleSheet.create({
   filterChipTextSelected: {
     color: colors.accent,
   },
-  sectionTitle: {
-    color: colors.text,
-    ...typography.h3,
+  secondaryFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 4,
+  },
+  genreSelectButton: {
+    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderWidth: 1,
+    borderRadius: 8,
+    minHeight: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  genreSelectButtonActive: {
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    borderColor: colors.accent,
+  },
+  genreSelectButtonText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  genreSelectButtonTextActive: {
+    color: colors.accent,
+  },
+  resetButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  resetButtonText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 8,
     marginBottom: 4,
   },
+  sectionTitle: {
+    color: colors.text,
+    ...typography.h3,
+  },
+  sectionCountText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
+  },
   cardMainPressable: {
-    gap: 10,
+    gap: 8,
   },
   grid: {
     flexDirection: "row",
@@ -706,9 +790,13 @@ const styles = StyleSheet.create({
     ...typography.h3,
     textAlign: "center",
   },
+  cardInfo: {
+    gap: 4,
+  },
   cardTitle: {
     color: colors.text,
     ...typography.homeCardTitle,
+    minHeight: 36,
   },
   cardMeta: {
     color: colors.muted,
@@ -747,5 +835,54 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     opacity: 0.8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#16161A",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
+    maxHeight: "60%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: colors.text,
+    ...typography.h3,
+  },
+  modalCloseText: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: "bold",
+    lineHeight: 24,
+  },
+  modalScroll: {
+    maxHeight: 300,
+  },
+  modalItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(232, 228, 218, 0.08)",
+  },
+  modalItemSelected: {
+    backgroundColor: "rgba(13, 209, 188, 0.12)",
+  },
+  modalItemText: {
+    color: colors.text,
+    fontSize: 15,
+  },
+  modalItemTextSelected: {
+    color: colors.accent,
+    fontWeight: "600",
   },
 });

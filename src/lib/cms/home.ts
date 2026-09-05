@@ -1,12 +1,22 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  EDITORIAL_RANKING_POLICY,
+  HOME_EDITORIAL_POLICY_VERSION,
+  computeHomeEditorialConfigHash,
+  computeHomeEditorialConfigVersion,
+  editorialInterventionForChange,
+  type EditorialChangeType,
+} from "@/lib/ranking/editorial-provenance";
 import type { Database } from "@/types/database";
 
 export type HomeSettingsRow = Database["public"]["Tables"]["home_settings"]["Row"];
 export type HomeRowRow = Database["public"]["Tables"]["home_rows"]["Row"];
 export type HomeRowItemRow = Database["public"]["Tables"]["home_row_items"]["Row"];
 export type HomeContentType = HomeRowItemRow["content_type"];
+type HomeEditorialAuditState =
+  Database["public"]["Tables"]["home_editorial_change_events"]["Insert"]["previous_state"];
 
 export type HomeItemAdminRecord = HomeRowItemRow & {
   contentStatus: string | null;
@@ -42,6 +52,61 @@ export type HomeContentChoice = {
   value: string;
 };
 
+type EditorialAuditActor = {
+  actorId?: string | null;
+};
+
+async function recordHomeEditorialChangeEvent(
+  supabase: ReturnType<typeof getAdminClient>,
+  input: {
+    actorId?: string | null;
+    affectedContent?: {
+      contentType: HomeContentType;
+      seriesId: string | null;
+      shortFilmId: string | null;
+    } | null;
+    changeType: EditorialChangeType;
+    homeRowId?: string | null;
+    homeRowItemId?: string | null;
+    newState?: HomeEditorialAuditState;
+    previousState?: HomeEditorialAuditState;
+  },
+) {
+  const [{ data: settingsRow }, { data: rows }, { data: items }] = await Promise.all([
+    supabase.from("home_settings").select("value").eq("key", "low_history_threshold").maybeSingle(),
+    supabase.from("home_rows").select("*").order("sort_order", { ascending: true }),
+    supabase.from("home_row_items").select("*").order("sort_order", { ascending: true }),
+  ]);
+  const lowHistoryThreshold = getLowHistoryThreshold(settingsRow?.value ?? null);
+  const configInput = {
+    lowHistoryThreshold,
+    rows: rows ?? [],
+    items: items ?? [],
+  };
+
+  const { error } = await supabase.from("home_editorial_change_events").insert({
+    actor_id: input.actorId ?? null,
+    actor_source: input.actorId ? "cms_admin" : "system",
+    affected_content_type: input.affectedContent?.contentType ?? null,
+    change_type: input.changeType,
+    config_hash: computeHomeEditorialConfigHash(configInput),
+    config_version: computeHomeEditorialConfigVersion(configInput),
+    home_row_id: input.homeRowId ?? null,
+    home_row_item_id: input.homeRowItemId ?? null,
+    new_state: input.newState ?? null,
+    previous_state: input.previousState ?? null,
+    ranking_policy: EDITORIAL_RANKING_POLICY,
+    ranking_policy_version: HOME_EDITORIAL_POLICY_VERSION,
+    series_id: input.affectedContent?.seriesId ?? null,
+    short_film_id: input.affectedContent?.shortFilmId ?? null,
+    intervention_type: editorialInterventionForChange(input.changeType),
+  });
+
+  if (error) {
+    console.warn("Unable to record home editorial provenance.", error);
+  }
+}
+
 function getAdminClient() {
   return createAdminClient();
 }
@@ -61,7 +126,11 @@ function isPublishedShortFilm(row: Pick<Database["public"]["Tables"]["short_film
 export async function getHomeAdminData(): Promise<HomeAdminData> {
   const supabase = getAdminClient();
 
-  const [{ data: settingsRow }, { data: rows }, { data: featuredSeries }] = await Promise.all([
+  const [
+    settingsResult,
+    rowsResult,
+    featuredResult,
+  ] = await Promise.all([
     supabase.from("home_settings").select("value").eq("key", "low_history_threshold").maybeSingle(),
     supabase.from("home_rows").select("*").order("sort_order", { ascending: true }),
     supabase
@@ -74,15 +143,30 @@ export async function getHomeAdminData(): Promise<HomeAdminData> {
       .maybeSingle(),
   ]);
 
-  const allRows = rows ?? [];
+  if (settingsResult.error) {
+    console.warn("Unable to load home settings for CMS.", settingsResult.error);
+    throw new Error("Unable to load home settings. Please try again.");
+  }
+
+  if (rowsResult.error) {
+    console.warn("Unable to load home rows for CMS.", rowsResult.error);
+    throw new Error("Unable to load home rows. Please try again.");
+  }
+
+  const allRows = rowsResult.data ?? [];
   const rowIds = allRows.map((row) => row.id);
-  const { data: items } = rowIds.length
+  const { data: items, error: itemsError } = rowIds.length
     ? await supabase
         .from("home_row_items")
         .select("*")
         .in("row_id", rowIds)
         .order("sort_order", { ascending: true })
-    : { data: [] as HomeRowItemRow[] };
+    : { data: [] as HomeRowItemRow[], error: null };
+
+  if (itemsError) {
+    console.warn("Unable to load home row items for CMS.", itemsError);
+    throw new Error("Unable to load home row items. Please try again.");
+  }
 
   const seriesIds = (items ?? [])
     .filter((item) => item.content_type === "series" && item.series_id)
@@ -91,17 +175,27 @@ export async function getHomeAdminData(): Promise<HomeAdminData> {
     .filter((item) => item.content_type === "short_film" && item.short_film_id)
     .map((item) => item.short_film_id as string);
 
-  const [seriesRows, shortFilmRows] = await Promise.all([
+  const [seriesRowsResult, shortFilmRowsResult] = await Promise.all([
     seriesIds.length
       ? supabase.from("series").select("*").in("id", seriesIds)
-      : Promise.resolve({ data: [] as Database["public"]["Tables"]["series"]["Row"][] }),
+      : Promise.resolve({ data: [] as Database["public"]["Tables"]["series"]["Row"][], error: null }),
     shortFilmIds.length
       ? supabase.from("short_films").select("*").in("id", shortFilmIds)
-      : Promise.resolve({ data: [] as Database["public"]["Tables"]["short_films"]["Row"][] }),
+      : Promise.resolve({ data: [] as Database["public"]["Tables"]["short_films"]["Row"][], error: null }),
   ]);
 
-  const seriesById = new Map((seriesRows.data ?? []).map((series) => [series.id, series]));
-  const shortFilmById = new Map((shortFilmRows.data ?? []).map((shortFilm) => [shortFilm.id, shortFilm]));
+  if (seriesRowsResult.error) {
+    console.warn("Unable to load series for home CMS.", seriesRowsResult.error);
+    throw new Error("Unable to load series for home. Please try again.");
+  }
+
+  if (shortFilmRowsResult.error) {
+    console.warn("Unable to load short films for home CMS.", shortFilmRowsResult.error);
+    throw new Error("Unable to load short films for home. Please try again.");
+  }
+
+  const seriesById = new Map((seriesRowsResult.data ?? []).map((series) => [series.id, series]));
+  const shortFilmById = new Map((shortFilmRowsResult.data ?? []).map((shortFilm) => [shortFilm.id, shortFilm]));
   const itemsByRow = new Map<string, HomeItemAdminRecord[]>();
 
   for (const item of items ?? []) {
@@ -144,9 +238,9 @@ export async function getHomeAdminData(): Promise<HomeAdminData> {
     }));
 
   return {
-    featuredSeriesSlug: featuredSeries?.slug ?? null,
+    featuredSeriesSlug: featuredResult?.data?.slug ?? null,
     homeRows: editorialAndStartHereRows,
-    lowHistoryThreshold: getLowHistoryThreshold(settingsRow?.value ?? null),
+    lowHistoryThreshold: getLowHistoryThreshold(settingsResult.data?.value ?? null),
     spotlight: spotlightRow
       ? {
           enabled: spotlightRow.enabled,
@@ -168,12 +262,22 @@ export async function listHomeContentChoices(publishedOnly?: boolean): Promise<H
     shortFilmsQuery = shortFilmsQuery.eq("status", "published");
   }
 
-  const [seriesRows, shortFilmRows] = await Promise.all([
+  const [seriesRowsResult, shortFilmRowsResult] = await Promise.all([
     seriesQuery.order("updated_at", { ascending: false }),
     shortFilmsQuery.order("updated_at", { ascending: false }),
   ]);
 
-  const seriesChoices = (seriesRows.data ?? []).map((series) => ({
+  if (seriesRowsResult.error) {
+    console.warn("Unable to load series choices for home CMS.", seriesRowsResult.error);
+    throw new Error("Unable to load content choices. Please try again.");
+  }
+
+  if (shortFilmRowsResult.error) {
+    console.warn("Unable to load short film choices for home CMS.", shortFilmRowsResult.error);
+    throw new Error("Unable to load content choices. Please try again.");
+  }
+
+  const seriesChoices = (seriesRowsResult.data ?? []).map((series) => ({
     contentType: "series" as const,
     consumerVisible: series.status === "published",
     id: series.id,
@@ -184,7 +288,7 @@ export async function listHomeContentChoices(publishedOnly?: boolean): Promise<H
     value: `series:${series.id}`,
   }));
 
-  const shortFilmChoices = (shortFilmRows.data ?? [])
+  const shortFilmChoices = (shortFilmRowsResult.data ?? [])
     .filter((shortFilm) => !publishedOnly || isPublishedShortFilm(shortFilm))
     .map((shortFilm) => ({
       contentType: "short_film" as const,
@@ -234,7 +338,7 @@ async function getOrCreateSpotlightRow() {
 export async function addSpotlightItem(input: {
   contentId: string;
   contentType: HomeContentType;
-}) {
+} & EditorialAuditActor) {
   const supabase = getAdminClient();
 
   // Validate published status (Spotlight only allows published canonical content)
@@ -298,17 +402,17 @@ export async function addSpotlightItem(input: {
   return { item: result };
 }
 
-export async function removeSpotlightItem(id: string) {
-  return removeHomeRowItem(id);
+export async function removeSpotlightItem(id: string, actor?: EditorialAuditActor) {
+  return removeHomeRowItem(id, actor);
 }
 
-export async function moveSpotlightItem(id: string, direction: "up" | "down") {
-  return moveHomeRowItem(id, direction);
+export async function moveSpotlightItem(id: string, direction: "up" | "down", actor?: EditorialAuditActor) {
+  return moveHomeRowItem(id, direction, actor);
 }
 
-export async function updateSpotlightItemShowTitle(id: string, showTitle: boolean) {
+export async function updateSpotlightItemShowTitle(id: string, showTitle: boolean, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
-  const { data: existing } = await supabase.from("home_row_items").select("id").eq("id", id).maybeSingle();
+  const { data: existing } = await supabase.from("home_row_items").select("*").eq("id", id).maybeSingle();
 
   if (!existing) {
     return null;
@@ -325,14 +429,28 @@ export async function updateSpotlightItemShowTitle(id: string, showTitle: boolea
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    affectedContent: {
+      contentType: data.content_type,
+      seriesId: data.series_id,
+      shortFilmId: data.short_film_id,
+    },
+    changeType: "ITEM_UPDATE",
+    homeRowId: data.row_id,
+    homeRowItemId: data.id,
+    previousState: existing,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function toggleHomeSpotlight(enabled: boolean) {
+export async function toggleHomeSpotlight(enabled: boolean, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
   const { data: spotlightRow } = await supabase
     .from("home_rows")
-    .select("id")
+    .select("*")
     .eq("row_role", "spotlight")
     .maybeSingle();
 
@@ -347,6 +465,15 @@ export async function toggleHomeSpotlight(enabled: boolean) {
       })
       .select("*")
       .maybeSingle();
+    if (created) {
+      await recordHomeEditorialChangeEvent(supabase, {
+        actorId: actor?.actorId,
+        changeType: "ROW_CREATE",
+        homeRowId: created.id,
+        previousState: null,
+        newState: created,
+      });
+    }
     return created;
   }
 
@@ -361,12 +488,25 @@ export async function toggleHomeSpotlight(enabled: boolean) {
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    changeType: "SPOTLIGHT_TOGGLE",
+    homeRowId: data.id,
+    previousState: spotlightRow,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function updateHomeLowHistoryThreshold(value: number) {
+export async function updateHomeLowHistoryThreshold(value: number, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
   const normalizedValue = Math.max(0, Math.floor(value));
+  const { data: existing } = await supabase
+    .from("home_settings")
+    .select("*")
+    .eq("key", "low_history_threshold")
+    .maybeSingle();
 
   const { data, error } = await supabase
     .from("home_settings")
@@ -381,10 +521,17 @@ export async function updateHomeLowHistoryThreshold(value: number) {
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    changeType: "HOME_SETTING_UPDATE",
+    previousState: existing,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function createHomeEditorialRow(input: { title: string; sortOrder: number }) {
+export async function createHomeEditorialRow(input: { title: string; sortOrder: number } & EditorialAuditActor) {
   const supabase = getAdminClient();
   if (!input.title.trim()) {
     return null;
@@ -405,14 +552,23 @@ export async function createHomeEditorialRow(input: { title: string; sortOrder: 
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: input.actorId,
+    changeType: "ROW_CREATE",
+    homeRowId: data.id,
+    previousState: null,
+    newState: data,
+  });
+
   return { createdRow: data };
 }
 
 export async function updateHomeRow(
   id: string,
-  input: { enabled: boolean; sortOrder: number; title: string },
+  input: { enabled: boolean; sortOrder: number; title: string } & EditorialAuditActor,
 ) {
   const supabase = getAdminClient();
+  const { data: existing } = await supabase.from("home_rows").select("*").eq("id", id).maybeSingle();
   const { data, error } = await supabase
     .from("home_rows")
     .update({
@@ -428,22 +584,42 @@ export async function updateHomeRow(
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: input.actorId,
+    changeType: "ROW_UPDATE",
+    homeRowId: data.id,
+    previousState: existing,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function deleteHomeEditorialRow(id: string) {
+export async function deleteHomeEditorialRow(id: string, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
-  const { data: row } = await supabase.from("home_rows").select("id,row_role").eq("id", id).maybeSingle();
+  const { data: row } = await supabase.from("home_rows").select("*").eq("id", id).maybeSingle();
 
   if (!row || row.row_role !== "editorial") {
     return false;
   }
 
   const { error } = await supabase.from("home_rows").delete().eq("id", id);
-  return !error;
+  if (error) {
+    return false;
+  }
+
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    changeType: "ROW_DELETE",
+    homeRowId: row.id,
+    previousState: row,
+    newState: null,
+  });
+
+  return true;
 }
 
-export async function moveHomeRow(id: string, direction: "up" | "down") {
+export async function moveHomeRow(id: string, direction: "up" | "down", actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
   const { data: rows } = await supabase
     .from("home_rows")
@@ -478,6 +654,17 @@ export async function moveHomeRow(id: string, direction: "up" | "down") {
     supabase.from("home_rows").update({ sort_order: currentOrder }).eq("id", targetRow.id),
   ]);
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    changeType: "ROW_REORDER",
+    homeRowId: currentRow.id,
+    previousState: { currentRow, targetRow },
+    newState: {
+      currentRow: { ...currentRow, sort_order: targetOrder },
+      targetRow: { ...targetRow, sort_order: currentOrder },
+    },
+  });
+
   return true;
 }
 
@@ -486,7 +673,7 @@ export async function addHomeRowItem(input: {
   contentType: HomeContentType;
   rowId: string;
   sortOrder: number;
-}) {
+} & EditorialAuditActor) {
   const supabase = getAdminClient();
   const { data: row } = await supabase.from("home_rows").select("id").eq("id", input.rowId).maybeSingle();
 
@@ -560,12 +747,26 @@ export async function addHomeRowItem(input: {
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: input.actorId,
+    affectedContent: {
+      contentType: data.content_type,
+      seriesId: data.series_id,
+      shortFilmId: data.short_film_id,
+    },
+    changeType: "ITEM_ADD",
+    homeRowId: data.row_id,
+    homeRowItemId: data.id,
+    previousState: null,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function updateHomeRowItem(id: string, sortOrder: number) {
+export async function updateHomeRowItem(id: string, sortOrder: number, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
-  const { data: existing } = await supabase.from("home_row_items").select("id").eq("id", id).maybeSingle();
+  const { data: existing } = await supabase.from("home_row_items").select("*").eq("id", id).maybeSingle();
 
   if (!existing) {
     return null;
@@ -582,14 +783,28 @@ export async function updateHomeRowItem(id: string, sortOrder: number) {
     return null;
   }
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    affectedContent: {
+      contentType: data.content_type,
+      seriesId: data.series_id,
+      shortFilmId: data.short_film_id,
+    },
+    changeType: "ITEM_UPDATE",
+    homeRowId: data.row_id,
+    homeRowItemId: data.id,
+    previousState: existing,
+    newState: data,
+  });
+
   return data;
 }
 
-export async function moveHomeRowItem(id: string, direction: "up" | "down") {
+export async function moveHomeRowItem(id: string, direction: "up" | "down", actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
   const { data: currentItem } = await supabase
     .from("home_row_items")
-    .select("id,row_id,sort_order")
+    .select("id,row_id,sort_order,content_type,series_id,short_film_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -628,17 +843,52 @@ export async function moveHomeRowItem(id: string, direction: "up" | "down") {
     supabase.from("home_row_items").update({ sort_order: currentOrder }).eq("id", targetItem.id),
   ]);
 
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    affectedContent: {
+      contentType: currentItem.content_type,
+      seriesId: currentItem.series_id,
+      shortFilmId: currentItem.short_film_id,
+    },
+    changeType: "ITEM_REORDER",
+    homeRowId: currentItem.row_id,
+    homeRowItemId: currentItem.id,
+    previousState: { currentItem, targetItem },
+    newState: {
+      currentItem: { ...currentItem, sort_order: targetOrder },
+      targetItem: { ...targetItem, sort_order: currentOrder },
+    },
+  });
+
   return true;
 }
 
-export async function removeHomeRowItem(id: string) {
+export async function removeHomeRowItem(id: string, actor?: EditorialAuditActor) {
   const supabase = getAdminClient();
-  const { data: existing } = await supabase.from("home_row_items").select("id").eq("id", id).maybeSingle();
+  const { data: existing } = await supabase.from("home_row_items").select("*").eq("id", id).maybeSingle();
 
   if (!existing) {
     return false;
   }
 
   const { error } = await supabase.from("home_row_items").delete().eq("id", id);
-  return !error;
+  if (error) {
+    return false;
+  }
+
+  await recordHomeEditorialChangeEvent(supabase, {
+    actorId: actor?.actorId,
+    affectedContent: {
+      contentType: existing.content_type,
+      seriesId: existing.series_id,
+      shortFilmId: existing.short_film_id,
+    },
+    changeType: "ITEM_REMOVE",
+    homeRowId: existing.row_id,
+    homeRowItemId: existing.id,
+    previousState: existing,
+    newState: null,
+  });
+
+  return true;
 }

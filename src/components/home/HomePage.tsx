@@ -21,7 +21,6 @@ export async function HomePage() {
   );
   const continueWatchingItems = savedContinueWatching;
   const startHereItems = catalogSeries.slice(0, 6);
-  const trendingItems = catalogSeries.slice(1, 7);
   const newReleaseItems = catalogSeries.toReversed().slice(0, 6);
 
   return (
@@ -53,7 +52,6 @@ export async function HomePage() {
           items={continueWatchingItems}
         />
         <ContentRow title="Start Here" kicker="0nya essentials" items={startHereItems} />
-        <ContentRow title="Trending" kicker="Tonight in India" items={trendingItems} />
         <ContentRow title="New Releases" kicker="Fresh episodes" items={newReleaseItems} />
       </main>
       <MobileBottomNav />

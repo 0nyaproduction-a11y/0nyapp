@@ -30,10 +30,16 @@ const MIN_COLUMNS = 3;
 const PREFERRED_COLUMNS = 5;
 const PLUS_MARKER_COLOR = "#B91825";
 
-export function SeriesEpisodesScreen({ navigation, route }: Props) {
+export function SeriesEpisodesScreen(props: Props) {
+  const { session } = useAuth();
+  return <SeriesEpisodesScreenContent key={`${session?.user.id ?? "guest"}:${props.route.params.seriesSlug ?? props.route.params.series?.slug}`} {...props} />;
+}
+
+function SeriesEpisodesScreenContent({ navigation, route }: Props) {
   const { width } = useWindowDimensions();
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const [accessRevision, setAccessRevision] = useState(0);
   const routedSeries = route.params.series;
   const routedSeriesSlug = route.params.seriesSlug ?? routedSeries?.slug;
   const confirmedInitialSeriesAccess = getConfirmedSeriesAccess(routedSeriesSlug);
@@ -41,10 +47,10 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
     confirmedInitialSeriesAccess?.series ?? routedSeries ?? null,
   );
   const [resolvedEpisodeAccess, setResolvedEpisodeAccess] = useState<Record<string, EpisodeAccess>>(
-    confirmedInitialSeriesAccess?.episodeAccess ?? route.params.episodeAccess ?? {},
+    confirmedInitialSeriesAccess?.episodeAccess ?? {},
   );
   const [seriesError, setSeriesError] = useState<string | null>(null);
-  const shouldFetchSeries = !routedSeries || routedSeries.episodes.length === 0;
+  const shouldFetchSeries = true;
   const [isSeriesLoading, setIsSeriesLoading] = useState(() => shouldFetchSeries && !confirmedInitialSeriesAccess);
   const hasHydratedRef = useRef(Boolean(confirmedInitialSeriesAccess) || !shouldFetchSeries);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
@@ -81,7 +87,7 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [accessToken, routedSeriesSlug, shouldFetchSeries]);
+  }, [accessToken, routedSeriesSlug, shouldFetchSeries, accessRevision]);
 
   useEffect(() => {
     if (!routedSeriesSlug) {
@@ -89,6 +95,12 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
     }
 
     return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (!seriesResponse) {
+        setAccessRevision((value) => value + 1);
+        setResolvedEpisodeAccess({});
+        setIsSeriesLoading(true);
+        return;
+      }
       if (seriesResponse.series.slug !== routedSeriesSlug) {
         return;
       }
@@ -193,28 +205,10 @@ export function SeriesEpisodesScreen({ navigation, route }: Props) {
       return;
     }
 
-    const access = episodeAccess[String(episode.number)] ?? {
-      canWatch: false,
-      kind: "locked" as const,
-      label: "Locked" as const,
-    };
-
-    if (access.canWatch) {
-      navigation.navigate("Watch", {
-        access,
-        episode,
-        episodeAccess,
-        series,
-      });
-      return;
-    }
-
-    navigation.navigate("EpisodeAccessOptions", {
-      access,
-      episode,
-      episodeAccess,
+    navigation.navigate("Watch", {
       seriesSlug: series.slug,
-      seriesTitle: series.title,
+      episodeNumber: episode.number,
+      searchContext: route.params.searchContext,
     });
   };
 
@@ -451,7 +445,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   rangeChipSelected: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    backgroundColor: colors.surfaceSelected,
     borderColor: colors.accent,
   },
   rangePressed: {
@@ -481,7 +475,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   cellCurrent: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    backgroundColor: colors.surfaceSelected,
     borderColor: colors.accent,
   },
   pressed: {

@@ -13,6 +13,7 @@ import {
 import { useAuth } from "../lib/authContext";
 import { PlayerScreen } from "../player/PlayerScreen";
 import { getResumePositionSeconds } from "../player/resumePosition";
+import { getPlaybackResumeOwner } from "../player/targetResume";
 import { usePlaybackSource } from "../player/usePlaybackSource";
 import type { PlaybackContext, PlaybackEndedPayload } from "../player/types";
 import type { RootStackParamList } from "../navigation/types";
@@ -22,6 +23,13 @@ import type { ParentalControlState } from "../lib/parentalControls";
 type Props = NativeStackScreenProps<RootStackParamList, "ShortFilmPlayback">;
 
 export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
+  const { session, isLoading } = useAuth();
+  const owner = getPlaybackResumeOwner({ type: "SHORT_FILM", filmSlug: route.params.slug }, session?.user.id);
+  if (isLoading) return <Screen><LoadingState /></Screen>;
+  return <ShortFilmPlaybackTargetScreen key={JSON.stringify([owner, route.params.resumeAtSeconds, route.params.startFromBeginning])} navigation={navigation} route={route} />;
+}
+
+function ShortFilmPlaybackTargetScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
@@ -44,6 +52,18 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "MainTabs", params: { screen: "Home" } }],
+    });
   }, [navigation]);
 
   useEffect(() => {
@@ -195,7 +215,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="This short film link is unavailable."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Unavailable"
         />
@@ -246,7 +266,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="This short film is unavailable right now."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Unavailable"
         />
@@ -259,7 +279,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="Age verification is not available yet, so this film stays blocked."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Age verification unavailable"
         />
@@ -280,7 +300,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="This short film is not ready to play yet."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Playback not ready"
         />
@@ -309,7 +329,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="Age verification is not available yet, so this film stays blocked."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Age verification unavailable"
         />
@@ -335,7 +355,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
       <Screen>
         <RecoveryState
           body="This short film is unavailable right now."
-          onPrimaryAction={() => navigation.goBack()}
+          onPrimaryAction={handleBack}
           primaryActionLabel="Back"
           title="Unavailable"
         />
@@ -353,6 +373,7 @@ export function ShortFilmPlaybackScreen({ navigation, route }: Props) {
 
   return (
     <PlayerScreen
+      searchContext={route.params.searchContext}
       key={playback.source.playbackUri}
       context={context!}
       onEnded={handleEnded}

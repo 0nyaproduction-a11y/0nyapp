@@ -14,32 +14,42 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Screen } from "../components/Screen";
-import { BrandWordmark, RecoveryState } from "../components/ui";
+import { BehaviorImpression } from "../components/BehaviorImpression";
+import { Button, RecoveryState } from "../components/ui";
 import {
   ApiError,
   authorizePlayback,
-  getCatalog,
-  getRequestRecoveryCopy,
   getSeries,
-  type RecoveryCopy,
+  recordRankingDecision,
 } from "../lib/api";
 import { resolveMediaUrl } from "../lib/media";
-import { loadWatchHistory } from "../lib/playbackHistory";
+import { useDiscoveryCatalog } from "../lib/useDiscoveryCatalog";
+import {
+  CONTINUE_WATCHING_MIN_SECONDS,
+  isContinueWatchingProgress,
+  isPlaybackCompleted,
+} from "../lib/playbackCompletion";
+import { createScreenRequestOwner } from "../lib/screenResources";
 import { getPlaybackAuthorizationCredentials } from "../lib/parentalControls";
-import { perfMark, perfNow } from "../lib/perf";
+import { perfMark } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
+import { emitBehaviorEvidence } from "../lib/behavioralEvents";
+import { markCollectionServed } from "../lib/behaviorImpressionModel";
+import {
+  createContinueWatchingRankingDecision,
+  runRankingDecisionEvidenceFailOpen,
+} from "../lib/rankingDecisionEvidence";
 import { findStartEpisode } from "../lib/seriesPlayback";
 import { useAppLanguage } from "../lib/appLanguage";
-import type { MainTabScreenProps } from "../navigation/types";
+import type { DiscoveryContext, MainTabScreenProps } from "../navigation/types";
 import type {
   ApiSeries,
   ApiShortFilm,
   HomeSpotlight,
-  HomeState,
   PlaybackAuthorizationResponse,
   WatchProgressItem,
 } from "../types/api";
-import { colors, typography } from "../theme/tokens";
+import { colors, radii, surfaces, typography } from "../theme/tokens";
 
 type Props = MainTabScreenProps<"Home">;
 
@@ -47,14 +57,19 @@ type Props = MainTabScreenProps<"Home">;
 // "watched >= 5 seconds"). The current watch-progress API does not expose a
 // backend/CMS-configurable threshold, so this is isolated as the single
 // temporary product-default constant rather than a magic number inline.
-const CONTINUE_WATCHING_MIN_SECONDS = 5;
-
 const HOME_POSTER_MIN_WIDTH = 120;
 const HOME_POSTER_MAX_WIDTH = 160;
 // Continue Watching: compact enough to show the edge of the next card on screen.
 // 150–200dp shows ~1.4 cards on a 360dp device, making horizontal scroll obvious.
 const HOME_RESUME_MIN_WIDTH = 150;
 const HOME_RESUME_MAX_WIDTH = 200;
+// Spotlight rail geometry. MUST stay in sync with styles.spotlightRail below:
+// paddingLeft 16 mirrors the Screen horizontal padding and gap 12 is the
+// inter-poster spacing. The snap offsets and the active-index derivation both
+// use this single geometry so snapping and indexing share one coordinate
+// system instead of duplicating the stride in two places.
+const SPOTLIGHT_RAIL_LEFT_INSET = 16;
+const SPOTLIGHT_RAIL_GAP = 12;
 
 const BRAND_LOGO_IMAGE = require("../../assets/brand/0nya-trans-400.png");
 
@@ -67,11 +82,27 @@ function hasValidPoster(poster?: string) {
   return typeof poster === "string" && poster.trim().length > 0;
 }
 
+// Active-spotlight index for a settled rail offset: the nearest member of the
+// snap-offset array. Card k rests at content x = leftInset + k*stride, so the
+// offset k*stride puts it exactly on the rail's left inset; the constant
+// paddingLeft shifts every card equally and cancels from the math. Deriving
+// the index from the same array used for snapToOffsets guarantees the settled
+// offset is always an exact snap target (no interval re-derivation drift).
+function getNearestSpotlightIndex(offsetX: number, snapOffsets: number[]) {
+  let nearestIndex = 0;
+  for (let index = 1; index < snapOffsets.length; index += 1) {
+    if (
+      Math.abs(snapOffsets[index] - offsetX) <
+      Math.abs(snapOffsets[nearestIndex] - offsetX)
+    ) {
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex;
+}
+
 function isQualifyingProgress(item: WatchProgressItem) {
-  return (
-    !item.completed &&
-    item.positionSeconds >= CONTINUE_WATCHING_MIN_SECONDS
-  );
+  return isContinueWatchingProgress(item);
 }
 
 function summarizeContinueWatchingCandidate(
@@ -96,7 +127,7 @@ function summarizeContinueWatchingCandidate(
     catalogMatch,
     durationSeconds: item.durationSeconds,
     episodeNumber: item.episodeNumber,
-    exclusionReason: item.completed
+    exclusionReason: isPlaybackCompleted(item)
       ? "completed"
       : item.positionSeconds < CONTINUE_WATCHING_MIN_SECONDS
         ? "below_threshold"
@@ -147,6 +178,12 @@ function getContinueWatchingKey(entry: ContinueWatchingEntry) {
   return entry.contentType === "short_film"
     ? `short-${entry.shortFilmSlug}-${resumeToken}-${updatedAtToken}`
     : `series-${entry.seriesSlug}-${entry.episodeNumber}-${resumeToken}-${updatedAtToken}`;
+}
+
+function getHomeRowRecommendationReason(row: { role: string; title: string }) {
+  if (row.title === "New Releases") return "NEW_RELEASE" as const;
+  if (row.role === "category") return "FORMAT_FILTER" as const;
+  return "EDITORIAL" as const;
 }
 
 type ContinueWatchingMediaCacheEntry =
@@ -451,22 +488,23 @@ export function HomeScreen({ navigation }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const accessToken = session?.access_token;
   const showWalletAffordance = Boolean(session?.user?.id);
-  const [catalog, setCatalog] = useState<ApiSeries[]>([]);
-  const [homeState, setHomeState] = useState<HomeState | null>(null);
-  const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
-  const [progress, setProgress] = useState<WatchProgressItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<RecoveryCopy | null>(null);
+  const resource = useDiscoveryCatalog(session, true);
+  const { catalog, shortFilms } = resource;
+  const progress = resource.progress;
+  const { isLoading, error, hasHydrated, reload: reloadHome } = resource;
+  const homeState = resource.data?.home ?? null;
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   // Tracks whether the first catalog/home fetch has conclusively resolved
   // (success or failure). Virgin structural headings must never render from
   // the transient unhydrated [] default state — only once this is true AND
   // the resolved catalog is genuinely empty.
-  const [hasHydrated, setHasHydrated] = useState(false);
   const usableWidth = Math.max(0, windowWidth - 32);
   const spotlightWidth = Math.round(Math.min(260, Math.max(220, usableWidth * 0.67)));
   const spotlightHeight = Math.round(spotlightWidth / (9 / 16));
   const [activeSpotlightIndex, setActiveSpotlightIndex] = useState(0);
+  const [viewportSignal, setViewportSignal] = useState(0);
+  const servedCollectionsRef = useRef(new Set<string>());
+  const submittedDecisionIdsRef = useRef(new Set<string>());
   const discoveryPosterWidth = Math.round(
     Math.min(HOME_POSTER_MAX_WIDTH, Math.max(HOME_POSTER_MIN_WIDTH, (usableWidth - 12) / 2.5)),
   );
@@ -475,12 +513,15 @@ export function HomeScreen({ navigation }: Props) {
     Math.min(HOME_RESUME_MAX_WIDTH, Math.max(HOME_RESUME_MIN_WIDTH, usableWidth / 1.85)),
   );
   const resumeCardHeight = Math.round(resumeCardWidth / (9 / 16));
-  const continueWatchingMediaCacheRef = useRef<
-    Map<string, ContinueWatchingMediaCacheEntry>
-  >(new Map());
-  const continueWatchingMediaInFlightRef = useRef<
-    Map<string, Promise<ContinueWatchingMediaCacheEntry | null>>
-  >(new Map());
+  const mediaScope = useMemo(() => ({
+    owner: createScreenRequestOwner({ accessToken, userId: session?.user.id }),
+    cache: new Map<string, ContinueWatchingMediaCacheEntry>(),
+    inFlight: new Map<string, Promise<ContinueWatchingMediaCacheEntry | null>>(),
+  }), [accessToken, session?.user.id]);
+  useFocusEffect(useCallback(() => () => {
+    mediaScope.owner.invalidate();
+    mediaScope.inFlight.clear();
+  }, [mediaScope]));
   // Content that the playback authorization endpoint has proven is no longer
   // consumer-visible (e.g. an episode reverted to draft after a stale history
   // record was created). These keys are pulled from the rendered shelf below
@@ -507,8 +548,8 @@ export function HomeScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    continueWatchingMediaCacheRef.current.clear();
-    continueWatchingMediaInFlightRef.current.clear();
+    mediaScope.cache.clear();
+    mediaScope.inFlight.clear();
     const timeoutId = setTimeout(() => {
       setUnresolvableContinueWatchingKeys(new Set());
     }, 0);
@@ -516,24 +557,24 @@ export function HomeScreen({ navigation }: Props) {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [session?.user?.id]);
+  }, [mediaScope]);
 
   const readContinueWatchingMedia = useCallback(
     (mediaKey: string) => {
-      const cached = continueWatchingMediaCacheRef.current.get(mediaKey);
+      const cached = mediaScope.cache.get(mediaKey);
 
       if (!cached) {
         return null;
       }
 
       if (cached.status === "ok" && Date.parse(cached.expiresAt) <= Date.now()) {
-        continueWatchingMediaCacheRef.current.delete(mediaKey);
+        mediaScope.cache.delete(mediaKey);
         return null;
       }
 
       return cached;
     },
-    [],
+    [mediaScope],
   );
 
   const resolveContinueWatchingMedia = useCallback(
@@ -545,12 +586,13 @@ export function HomeScreen({ navigation }: Props) {
         return cached;
       }
 
-      const inFlight = continueWatchingMediaInFlightRef.current.get(mediaKey);
+      const inFlight = mediaScope.inFlight.get(mediaKey);
 
       if (inFlight) {
         return inFlight;
       }
 
+      const isCurrent = mediaScope.owner.capture();
       const request = (async () => {
         const auth = await getPlaybackAuthorizationCredentials(session);
         const response = await authorizePlayback(session?.access_token ?? null, {
@@ -560,6 +602,8 @@ export function HomeScreen({ navigation }: Props) {
           stillAtSeconds: entry.positionSeconds,
         });
 
+        if (!isCurrent()) return null;
+
         if (response.status === "ok") {
           const record: ContinueWatchingMediaCacheEntry = {
             expiresAt: response.expiresAt,
@@ -567,7 +611,7 @@ export function HomeScreen({ navigation }: Props) {
             status: "ok",
           };
 
-          continueWatchingMediaCacheRef.current.set(mediaKey, record);
+          mediaScope.cache.set(mediaKey, record);
           return record;
         }
 
@@ -584,9 +628,10 @@ export function HomeScreen({ navigation }: Props) {
           status: response.status,
         };
 
-        continueWatchingMediaCacheRef.current.set(mediaKey, record);
+        mediaScope.cache.set(mediaKey, record);
         return record;
       })().catch((error) => {
+        if (!isCurrent()) return null;
         const isExpectedContentNotFound =
           error instanceof ApiError && error.status === 404 && error.code === "not_found";
 
@@ -609,7 +654,7 @@ export function HomeScreen({ navigation }: Props) {
             status: "not_found",
           };
 
-          continueWatchingMediaCacheRef.current.set(mediaKey, record);
+          mediaScope.cache.set(mediaKey, record);
           return record;
         }
 
@@ -625,139 +670,17 @@ export function HomeScreen({ navigation }: Props) {
           status: "playback_unavailable",
         };
 
-        continueWatchingMediaCacheRef.current.set(mediaKey, record);
+        mediaScope.cache.set(mediaKey, record);
         return record;
       });
 
-      continueWatchingMediaInFlightRef.current.set(mediaKey, request);
+      mediaScope.inFlight.set(mediaKey, request);
 
       return request.finally(() => {
-        continueWatchingMediaInFlightRef.current.delete(mediaKey);
+        if (mediaScope.inFlight.get(mediaKey) === request) mediaScope.inFlight.delete(mediaKey);
       });
     },
-    [markContinueWatchingUnresolvable, readContinueWatchingMedia, session],
-  );
-
-  const loadHome = useCallback(async () => {
-    const startedAt = perfNow();
-    perfMark("HOME_REQUEST_START");
-    if (__DEV__) {
-      console.info("[0nya catalog HOME fetch start]");
-    }
-
-    const [catalogData, progressData] = await Promise.all([
-      getCatalog(accessToken),
-      loadWatchHistory(session),
-    ]);
-
-    console.log("[0nya HOME LOADED]", JSON.stringify({
-      hasHome: Boolean(catalogData.home),
-      hasSpotlight: Boolean(catalogData.home?.spotlight),
-      rows: catalogData.home?.rows?.map((r) => ({ title: r.title, count: r.items?.length })),
-      catalogCount: catalogData.catalog?.length,
-      shortFilmsCount: catalogData.shortFilms?.length,
-    }));
-
-    if (__DEV__) {
-      console.info("[0nya catalog HOME fetch received]", {
-        catalogLength: catalogData.catalog.length,
-        shortFilmsLength: catalogData.shortFilms.length,
-      });
-    }
-
-    const nextCatalog = catalogData.catalog;
-    const nextHomeState = catalogData.home ?? null;
-    const nextShortFilms = catalogData.shortFilms;
-    const nextProgress = progressData;
-
-    if (__DEV__) {
-      console.info("[0nya catalog HOME mapping complete]", {
-        catalogLength: nextCatalog.length,
-        homeRowsLength: nextHomeState?.rows.length ?? 0,
-        shortFilmsLength: nextShortFilms.length,
-        progressLength: nextProgress.length,
-      });
-    }
-
-    setCatalog(nextCatalog);
-    setHomeState(nextHomeState);
-    setShortFilms(nextShortFilms);
-    setProgress(nextProgress);
-    setError(null);
-
-    perfMark("HOME_DATA_READY", {
-      duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
-    });
-
-    return {
-      catalog: nextCatalog,
-      homeState: nextHomeState,
-      shortFilms: nextShortFilms,
-      progress: nextProgress,
-    };
-  }, [accessToken, session]);
-
-  const reloadHome = useCallback(async () => {
-    setIsLoading(true);
-
-    try {
-      const data = await loadHome();
-      setCatalog(data.catalog);
-      setHomeState(data.homeState);
-      setShortFilms(data.shortFilms);
-      setProgress(data.progress);
-      setError(null);
-    } catch (err) {
-      setError(
-        getRequestRecoveryCopy(err, {
-          body: "Please try again.",
-          title: "We couldn't load this right now.",
-        }),
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [loadHome]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let isMounted = true;
-
-      const runLoad = async () => {
-        try {
-          const data = await loadHome();
-          if (!isMounted) {
-            return;
-          }
-          setCatalog(data.catalog);
-          setHomeState(data.homeState);
-          setShortFilms(data.shortFilms);
-          setProgress(data.progress);
-          setError(null);
-        } catch (err) {
-          if (!isMounted) {
-            return;
-          }
-          setError(
-            getRequestRecoveryCopy(err, {
-              body: "Please try again.",
-              title: "We couldn't load this right now.",
-            }),
-          );
-        } finally {
-          if (isMounted) {
-            setHasHydrated(true);
-            setIsLoading(false);
-          }
-        }
-      };
-
-      void runLoad();
-
-      return () => {
-        isMounted = false;
-      };
-    }, [loadHome]),
+    [markContinueWatchingUnresolvable, mediaScope, readContinueWatchingMedia, session],
   );
 
   // Collapse multiple qualifying episode rows into one resume target per series,
@@ -830,11 +753,74 @@ export function HomeScreen({ navigation }: Props) {
 
   // Active spotlight (derived from activeSpotlightIndex, clamped to array bounds)
   const activeSpotlight = spotlights[Math.min(activeSpotlightIndex, Math.max(0, spotlights.length - 1))] ?? null;
+  const spotlightRowId = homeState?.spotlightRowId ?? null;
+  const visibleHomeRows = useMemo(
+    () => homeState?.rows.filter((row) => row.enabled && row.items.length > 0 && row.role !== "spotlight") ?? [],
+    [homeState],
+  );
+  const homeCollectionContext = useMemo(
+    () => `home:${homeState?.spotlightRankingDecisionId ?? "none"}:${spotlights.map((item) => item.id).join(",")}:${visibleContinueWatching.map(getContinueWatchingKey).join(",")}:${visibleHomeRows.map((row) => `${row.id}:${row.rankingDecisionId}:${row.items.map((item) => item.id).join(",")}`).join("|")}`,
+    [homeState?.spotlightRankingDecisionId, spotlights, visibleContinueWatching, visibleHomeRows],
+  );
+  const continueWatchingDecision = useMemo(
+    () => createContinueWatchingRankingDecision(
+      visibleContinueWatching.map((item) => ({
+        contentId: getContinueWatchingKey(item),
+        contentType: item.contentType === "series_episode" ? "SERIES_EPISODE" as const : "SHORT_FILM" as const,
+      })),
+    ),
+    [visibleContinueWatching],
+  );
+
+  useEffect(() => {
+    if (isLoading || error || submittedDecisionIdsRef.current.has(continueWatchingDecision.rankingDecisionId)) return;
+    submittedDecisionIdsRef.current.add(continueWatchingDecision.rankingDecisionId);
+    runRankingDecisionEvidenceFailOpen(recordRankingDecision(accessToken, continueWatchingDecision));
+  }, [accessToken, continueWatchingDecision, error, isLoading]);
+
+  useEffect(() => {
+    if (isLoading || error) return;
+    if (!markCollectionServed(servedCollectionsRef.current, homeCollectionContext)) return;
+    spotlights.forEach((item, index) => emitBehaviorEvidence(accessToken, {
+      eventType: "content_served", contentId: item.id,
+      contentType: item.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM",
+      sourceSurface: "home", rowId: spotlightRowId, position: index + 1,
+      rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null,
+      recommendationReason: "EDITORIAL",
+    }));
+    visibleHomeRows.forEach((row) => row.items.forEach((item, index) => emitBehaviorEvidence(accessToken, {
+      eventType: "content_served", contentId: item.id,
+      contentType: item.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM",
+      sourceSurface: "home", rowId: row.id, position: index + 1,
+      rankingDecisionId: row.rankingDecisionId,
+      recommendationReason: getHomeRowRecommendationReason(row),
+    })));
+    visibleContinueWatching.forEach((item, index) => emitBehaviorEvidence(accessToken, {
+      eventType: "content_served", contentId: getContinueWatchingKey(item),
+      contentType: item.contentType === "series_episode" ? "SERIES_EPISODE" : "SHORT_FILM",
+      sourceSurface: "continue_watching", rowId: null, position: index + 1,
+      rankingDecisionId: continueWatchingDecision.rankingDecisionId,
+      recommendationReason: "CONTINUE_WATCHING",
+    }));
+  }, [accessToken, continueWatchingDecision.rankingDecisionId, error, homeCollectionContext, homeState?.spotlightRankingDecisionId, isLoading, spotlightRowId, spotlights, visibleContinueWatching, visibleHomeRows]);
 
   // Trailing inset for the horizontal poster rail so the last real card
   // can snap to the same left anchor as card 1. The content inset is the
-  // remaining viewport width after one card + left pad + gap.
-  const spotlightTrailingInset = Math.max(0, windowWidth - 16 - spotlightWidth);
+  // remaining viewport width after one card + the left rail inset.
+  const spotlightTrailingInset = Math.max(
+    0,
+    windowWidth - SPOTLIGHT_RAIL_LEFT_INSET - spotlightWidth,
+  );
+  // One rail step: poster width + gap. snapToOffsets and the active-index
+  // helper both consume this array, so snap targets and index math are the
+  // same coordinate system by construction. No looping: the array ends at the
+  // last poster, and the trailing inset above makes that final offset the
+  // natural end-of-rail stop (the rail simply stops after the last poster).
+  const spotlightItemStride = spotlightWidth + SPOTLIGHT_RAIL_GAP;
+  const spotlightSnapOffsets = useMemo(
+    () => spotlights.map((_, index) => index * spotlightItemStride),
+    [spotlights, spotlightItemStride],
+  );
 
   const hasEverWatched = progress.length > 0;
   const isVirginCatalog =
@@ -864,19 +850,23 @@ export function HomeScreen({ navigation }: Props) {
       source: "HOME_SPOTLIGHT",
     });
     setResolvingKey(key);
+    const position = spotlights.findIndex((item) => item.id === target.id) + 1;
+    const searchContext: DiscoveryContext = { contentId: target.id, contentSlug: target.slug, contentType: target.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", position, rowId: spotlightRowId, sourceSurface: "home", rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" };
+    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: target.id, contentType: searchContext.contentType, sourceSurface: "home", rowId: spotlightRowId, position, rankingDecisionId: searchContext.rankingDecisionId, recommendationReason: searchContext.recommendationReason });
 
     if (target.contentType === "short_film") {
       const match = progress.find(
         (item) => item.contentType === "short_film" && item.shortFilmSlug === target.slug,
       );
       const resumePositionSeconds =
-        match && !match.completed && match.positionSeconds >= CONTINUE_WATCHING_MIN_SECONDS
+        match && isContinueWatchingProgress(match)
           ? match.positionSeconds
           : 0;
 
       navigation.navigate("ShortFilmPlayback", {
         resumeAtSeconds: resumePositionSeconds,
         slug: target.slug,
+        searchContext,
       });
       setResolvingKey(null);
       return;
@@ -885,9 +875,9 @@ export function HomeScreen({ navigation }: Props) {
     const series = catalog.find((candidate) => candidate.slug === target.slug);
 
     if (series) {
-      void openSeriesPlayback(series);
+      void openSeriesPlayback(series, searchContext);
     } else {
-      navigation.navigate("Series", { slug: target.slug });
+      navigation.navigate("Series", { searchContext, slug: target.slug });
     }
     setResolvingKey(null);
   }
@@ -902,10 +892,13 @@ export function HomeScreen({ navigation }: Props) {
       source: "HOME_SPOTLIGHT_INFO",
     });
 
+    const position = spotlights.findIndex((item) => item.id === target.id) + 1;
+    const searchContext: DiscoveryContext = { contentId: target.id, contentSlug: target.slug, contentType: target.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", position, rowId: spotlightRowId, sourceSurface: "home", rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" };
+    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: target.id, contentType: searchContext.contentType, sourceSurface: "home", rowId: spotlightRowId, position, rankingDecisionId: searchContext.rankingDecisionId, recommendationReason: searchContext.recommendationReason });
     if (target.contentType === "short_film") {
-      navigation.navigate("ShortFilm", { slug: target.slug });
+      navigation.navigate("ShortFilm", { searchContext, slug: target.slug });
     } else {
-      navigation.navigate("Series", { slug: target.slug });
+      navigation.navigate("Series", { searchContext, slug: target.slug });
     }
   }
 
@@ -926,11 +919,22 @@ export function HomeScreen({ navigation }: Props) {
       source: "HOME_CONTINUE_WATCHING",
     });
     setResolvingKey(key);
+    const position = visibleContinueWatching.findIndex((item) => getContinueWatchingKey(item) === getContinueWatchingKey(entry)) + 1;
+    const searchContext: DiscoveryContext = {
+      contentId: getContinueWatchingKey(entry),
+      contentSlug: entry.contentType === "short_film" ? entry.shortFilmSlug ?? "" : entry.seriesSlug ?? "",
+      contentType: entry.contentType === "short_film" ? "SHORT_FILM" : "MICRO_DRAMA",
+      position, rowId: null, sourceSurface: "continue_watching",
+      rankingDecisionId: continueWatchingDecision.rankingDecisionId,
+      recommendationReason: "CONTINUE_WATCHING",
+    };
+    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: getContinueWatchingKey(entry), contentType: entry.contentType === "short_film" ? "SHORT_FILM" : "SERIES_EPISODE", sourceSurface: "continue_watching", position, rankingDecisionId: continueWatchingDecision.rankingDecisionId, recommendationReason: "CONTINUE_WATCHING" });
 
     if (entry.contentType === "short_film") {
       navigation.navigate("ShortFilmPlayback", {
         resumeAtSeconds: entry.positionSeconds,
         slug: entry.shortFilmSlug ?? "",
+        searchContext,
       });
       setResolvingKey(null);
       return;
@@ -941,16 +945,17 @@ export function HomeScreen({ navigation }: Props) {
       return;
     }
 
-    void getSeries(entry.seriesSlug, session?.access_token);
+    void getSeries(entry.seriesSlug, session?.access_token).catch(() => undefined);
     navigation.navigate("Watch", {
       episodeNumber: entry.episodeNumber,
       resumeAtSeconds: entry.positionSeconds,
       seriesSlug: entry.seriesSlug,
+      searchContext,
     });
     setResolvingKey(null);
   }
 
-  async function openSeriesPlayback(series: ApiSeries) {
+  async function openSeriesPlayback(series: ApiSeries, searchContext?: DiscoveryContext) {
     const key = `series-${series.slug}`;
 
     if (resolvingKey) {
@@ -970,24 +975,25 @@ export function HomeScreen({ navigation }: Props) {
         (first, second) =>
           new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
       );
-    const resumeProgress = seriesProgress.find((item) => !item.completed && item.positionSeconds >= CONTINUE_WATCHING_MIN_SECONDS);
+    const resumeProgress = seriesProgress.find(isContinueWatchingProgress);
     const resumeEpisode = resumeProgress
       ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
       : undefined;
     const targetEpisode = resumeEpisode ?? findStartEpisode(series.episodes);
 
     if (targetEpisode) {
-      void getSeries(series.slug, session?.access_token);
+      void getSeries(series.slug, session?.access_token).catch(() => undefined);
       navigation.navigate("Watch", {
         episodeNumber: targetEpisode.number,
         resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
         seriesSlug: series.slug,
+        searchContext,
       });
       setResolvingKey(null);
       return;
     }
 
-    navigation.navigate("Series", { slug: series.slug });
+    navigation.navigate("Series", { searchContext, slug: series.slug });
     setResolvingKey(null);
   }
 
@@ -1021,7 +1027,7 @@ export function HomeScreen({ navigation }: Props) {
   }
 
   return (
-    <Screen>
+    <Screen onScroll={() => setViewportSignal((value) => value + 1)}>
       {/* 1. 0nya Header */}
       <View style={styles.headerRow}>
         <Image
@@ -1050,6 +1056,13 @@ export function HomeScreen({ navigation }: Props) {
         ) : null}
       </View>
 
+      {resource.historyStatus === "error" ? (
+        <View style={styles.cardInfo}>
+          <Text style={styles.metaText}>{"Watch history couldn't refresh."}</Text>
+          <Button accessibilityLabel="Retry watch history" onPress={() => void reloadHome()} variant="secondary">Retry history</Button>
+        </View>
+      ) : null}
+
       {/* 2. Multi-Spotlight Poster Rail */}
       {spotlights.length > 0 ? (
         <View style={styles.spotlightSection}>
@@ -1061,27 +1074,34 @@ export function HomeScreen({ navigation }: Props) {
             horizontal
             showsHorizontalScrollIndicator={false}
             decelerationRate="fast"
-            snapToInterval={spotlightWidth + 12}
-            snapToAlignment="start"
+            snapToOffsets={spotlightSnapOffsets}
             contentContainerStyle={[
               styles.spotlightRail,
               { paddingRight: spotlightTrailingInset },
             ]}
             style={styles.spotlightRailScroll}
             onMomentumScrollEnd={(event) => {
+              setViewportSignal((value) => value + 1);
               const offsetX = event.nativeEvent.contentOffset.x;
-              const newIndex = Math.round(offsetX / (spotlightWidth + 12));
-              setActiveSpotlightIndex(Math.max(0, Math.min(newIndex, spotlights.length - 1)));
+              const nearestIndex = getNearestSpotlightIndex(
+                offsetX,
+                spotlightSnapOffsets,
+              );
+              setActiveSpotlightIndex(
+                Math.max(0, Math.min(nearestIndex, spotlights.length - 1)),
+              );
             }}
           >
-            {spotlights.map((item) => (
-              <SpotlightPosterItem
+            {spotlights.map((item, index) => (
+              <BehaviorImpression
                 key={item.id}
-                spotlight={item}
-                spotlightWidth={spotlightWidth}
-                spotlightHeight={spotlightHeight}
-                onTap={() => openSpotlightInfo(item)}
-              />
+                accessToken={accessToken}
+                collectionContext={homeCollectionContext}
+                evidence={{ contentId: item.id, contentType: item.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", sourceSurface: "home", rowId: spotlightRowId, position: index + 1, rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" }}
+                scrollSignal={viewportSignal}
+              >
+                <SpotlightPosterItem spotlight={item} spotlightWidth={spotlightWidth} spotlightHeight={spotlightHeight} onTap={() => openSpotlightInfo(item)} />
+              </BehaviorImpression>
             ))}
           </ScrollView>
 
@@ -1093,26 +1113,22 @@ export function HomeScreen({ navigation }: Props) {
                   {activeSpotlight.title}
                 </Text>
               ) : null}
-              <Pressable
+              <Button
                 accessibilityLabel={`Watch ${activeSpotlight.title}`}
-                accessibilityRole="button"
                 disabled={resolvingKey === `spotlight-${activeSpotlight.contentType}-${activeSpotlight.slug}`}
                 onPress={() => void openSpotlight(activeSpotlight)}
-                style={({ pressed }) => [
-                  styles.spotlightCta,
-                  pressed && styles.spotlightCtaPressed,
-                  resolvingKey === `spotlight-${activeSpotlight.contentType}-${activeSpotlight.slug}` && styles.cardPressableBusy,
-                ]}
+                style={styles.spotlightCta}
+                variant="primary"
               >
-                <Text style={styles.spotlightCtaText}>{t("home.watch", "Watch")}</Text>
-              </Pressable>
+                {t("home.watch", "Watch")}
+              </Button>
             </View>
           ) : null}
         </View>
       ) : null}
 
       {/* 3. Continue Watching / History State */}
-      {!hasEverWatched ? (
+      {!hasEverWatched && resource.historyStatus === "resolved" ? (
         <View style={styles.noHistoryState}>
           <Text style={styles.noHistoryText}>{t("home.no_history", "Start watching to continue here.")}</Text>
         </View>
@@ -1123,7 +1139,15 @@ export function HomeScreen({ navigation }: Props) {
             data={visibleContinueWatching}
             horizontal
             keyExtractor={getContinueWatchingKey}
-            renderItem={({ item }) => (
+            onScroll={() => setViewportSignal((value) => value + 1)}
+            scrollEventThrottle={100}
+            renderItem={({ item, index }) => (
+              <BehaviorImpression
+                accessToken={accessToken}
+                collectionContext={homeCollectionContext}
+                evidence={{ contentId: getContinueWatchingKey(item), contentType: item.contentType === "series_episode" ? "SERIES_EPISODE" : "SHORT_FILM", sourceSurface: "continue_watching", rowId: null, position: index + 1, rankingDecisionId: continueWatchingDecision.rankingDecisionId, recommendationReason: "CONTINUE_WATCHING" }}
+                scrollSignal={viewportSignal}
+              >
               <ContinueWatchingCard
                 entry={item}
                 height={resumeCardHeight}
@@ -1132,6 +1156,7 @@ export function HomeScreen({ navigation }: Props) {
                 resolveMedia={resolveContinueWatchingMedia}
                 width={resumeCardWidth}
               />
+              </BehaviorImpression>
             )}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.horizontalList}
@@ -1150,17 +1175,18 @@ export function HomeScreen({ navigation }: Props) {
           ))}
         </View>
       ) : (
-        homeState?.rows
-          ?.filter((row) => row.enabled && row.items.length > 0 && row.role !== "spotlight")
+        visibleHomeRows
           .map((row) => (
             <View key={row.id} style={styles.section}>
               <Text style={styles.sectionTitle}>{row.title}</Text>
               <ScrollView
                 horizontal
+                onScroll={() => setViewportSignal((value) => value + 1)}
+                scrollEventThrottle={100}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.horizontalList}
               >
-                {row.items.map((item) => {
+                {row.items.map((item, index) => {
                   const isSeries = item.contentType === "series";
                   const isBusy = resolvingKey === `${item.contentType}-${item.slug}`;
                   const posterSource = hasValidPoster(item.poster ?? undefined)
@@ -1169,18 +1195,27 @@ export function HomeScreen({ navigation }: Props) {
 
                   if (isSeries) {
                     return (
-                      <CinematicPressable
+                      <BehaviorImpression
                         key={`${row.id}-${item.slug}`}
+                        accessToken={accessToken}
+                        collectionContext={homeCollectionContext}
+                        evidence={{ contentId: item.id, contentType: "MICRO_DRAMA", sourceSurface: "home", rowId: row.id, position: index + 1, rankingDecisionId: row.rankingDecisionId, recommendationReason: getHomeRowRecommendationReason(row) }}
+                        scrollSignal={viewportSignal}
+                      >
+                      <CinematicPressable
                         accessibilityLabel={`Open details for ${item.title}`}
                         accessibilityRole="button"
                         disabled={isBusy}
                         onPress={() => {
+                          const recommendationReason = getHomeRowRecommendationReason(row);
+                          const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "MICRO_DRAMA", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                          emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: item.id, contentType: "MICRO_DRAMA", sourceSurface: "home", rowId: row.id, position: index + 1, rankingDecisionId: row.rankingDecisionId, recommendationReason });
                           perfMark("CONTENT_TAP", {
                             content_type: "series",
                             series_slug: item.slug,
                             source: "HOME",
                           });
-                          navigation.navigate("Series", { slug: item.slug });
+                          navigation.navigate("Series", { searchContext, slug: item.slug });
                         }}
                         style={[
                           styles.posterCard,
@@ -1221,24 +1256,34 @@ export function HomeScreen({ navigation }: Props) {
                           </View>
                         ) : null}
                       </CinematicPressable>
+                      </BehaviorImpression>
                     );
                   }
 
                   const shortFilm = shortFilms.find((candidate) => candidate.slug === item.slug);
 
                   return (
-                    <CinematicPressable
+                    <BehaviorImpression
                       key={`${row.id}-${item.slug}`}
+                      accessToken={accessToken}
+                      collectionContext={homeCollectionContext}
+                      evidence={{ contentId: item.id, contentType: "SHORT_FILM", sourceSurface: "home", rowId: row.id, position: index + 1, rankingDecisionId: row.rankingDecisionId, recommendationReason: getHomeRowRecommendationReason(row) }}
+                      scrollSignal={viewportSignal}
+                    >
+                    <CinematicPressable
                       accessibilityLabel={`Open details for ${item.title}`}
                       accessibilityRole="button"
                       disabled={isBusy}
                       onPress={() => {
+                        const recommendationReason = getHomeRowRecommendationReason(row);
+                        const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "SHORT_FILM", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                        emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: item.id, contentType: "SHORT_FILM", sourceSurface: "home", rowId: row.id, position: index + 1, rankingDecisionId: row.rankingDecisionId, recommendationReason });
                         perfMark("CONTENT_TAP", {
                           content_type: "short_film",
                           short_film_slug: item.slug,
                           source: "HOME",
                         });
-                        navigation.navigate("ShortFilm", { slug: item.slug });
+                        navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
                       }}
                       style={[
                         styles.posterCard,
@@ -1279,6 +1324,7 @@ export function HomeScreen({ navigation }: Props) {
                         </View>
                       ) : null}
                     </CinematicPressable>
+                    </BehaviorImpression>
                   );
                 })}
               </ScrollView>
@@ -1359,7 +1405,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   noHistoryText: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
     ...typography.body,
     fontSize: 13,
     lineHeight: 18,
@@ -1391,13 +1437,13 @@ const styles = StyleSheet.create({
   },
   coverWrap: {
     position: "relative",
-    backgroundColor: colors.surface,
-    borderRadius: 10,
+    backgroundColor: surfaces.s1,
+    borderRadius: radii.poster,
     overflow: "hidden",
   },
   previewFallback: {
     flex: 1,
-    backgroundColor: colors.backgroundSoft,
+    backgroundColor: surfaces.s1,
   },
   previewLayer: {
     ...StyleSheet.absoluteFill,
@@ -1419,7 +1465,7 @@ const styles = StyleSheet.create({
   },
   coverFallback: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: surfaces.s1,
     alignItems: "center",
     justifyContent: "center",
     padding: 10,
@@ -1441,14 +1487,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   metaText: {
-    color: colors.muted,
+    color: colors.textSecondary,
     ...typography.micro,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
   progressTrack: {
     height: 3,
-    backgroundColor: "rgba(232, 228, 218, 0.14)",
+    backgroundColor: colors.borderSubtle,
     borderRadius: 2,
     overflow: "hidden",
   },
@@ -1457,13 +1503,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   brandSkeleton: {
-    backgroundColor: "rgba(232, 228, 218, 0.08)",
+    backgroundColor: colors.surfacePressed,
     height: 24,
     width: 76,
   },
   loadingCard: {
-    backgroundColor: "rgba(232, 228, 218, 0.08)",
-    borderRadius: 10,
+    backgroundColor: colors.surfacePressed,
+    borderRadius: radii.poster,
   },
   spotlightSection: {
     width: "100%",
@@ -1471,7 +1517,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   spotlightSectionLabel: {
-    color: colors.textMuted,
+    color: colors.textSecondary,
     ...typography.h3,
     letterSpacing: 0.3,
   },
@@ -1487,9 +1533,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   spotlightPosterCard: {
-    borderRadius: 10,
+    borderRadius: radii.poster,
     overflow: "hidden",
-    backgroundColor: colors.surface,
+    backgroundColor: surfaces.s1,
   },
   spotlightPosterPressed: {
     opacity: 0.88,
@@ -1510,38 +1556,23 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   spotlightCta: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    minHeight: 48,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    justifyContent: "center",
-    alignItems: "center",
     alignSelf: "flex-start",
-  },
-  spotlightCtaPressed: {
-    opacity: 0.85,
-  },
-  spotlightCtaText: {
-    color: colors.accentOnPrimary,
-    fontSize: 15,
-    fontWeight: "600",
-    letterSpacing: 0.2,
+    paddingHorizontal: 24,
   },
   spotlightSkeleton: {
-    backgroundColor: "rgba(232, 228, 218, 0.08)",
-    borderRadius: 10,
+    backgroundColor: colors.surfacePressed,
+    borderRadius: radii.poster,
   },
   spotlightSectionLabelSkeleton: {
-    backgroundColor: "rgba(232, 228, 218, 0.08)",
+    backgroundColor: colors.surfacePressed,
     height: 16,
     width: 72,
-    borderRadius: 4,
+    borderRadius: radii.xs,
   },
   spotlightCtaSkeleton: {
-    backgroundColor: "rgba(232, 228, 218, 0.08)",
+    backgroundColor: colors.surfacePressed,
     height: 48,
-    borderRadius: 6,
+    borderRadius: radii.cta,
     alignSelf: "stretch",
   },
   walletAffordance: {

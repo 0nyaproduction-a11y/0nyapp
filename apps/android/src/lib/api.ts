@@ -1,4 +1,5 @@
 import { getMobileEnv } from "../config/env";
+import type { RankingDecisionEvidence } from "./rankingDecisionEvidence";
 import type {
   PlayTogetherCreateRoomResponse,
   PlayTogetherFeatureConfig,
@@ -33,8 +34,9 @@ import type {
   WatchProgressWriteRequest,
   WatchProgressWriteResponse,
 } from "../types/api";
-import { publishConfirmedSeriesAccess } from "./confirmedSeriesAccess";
-import { perfEnd, perfMark, perfStart } from "./perf";
+import { captureAccessRequest, captureRequestIdentity, invalidateConfirmedSeriesAccess, isCurrentAccessIdentity, publishConfirmedSeriesAccess, registerRefreshedAccessToken, setConfirmedAccessIdentity } from "./confirmedSeriesAccess";
+import { createResponseCache } from "./responseCache";
+import { perfEnd, perfStart } from "./perf";
 import { supabase } from "./supabase";
 
 type ApiRequestOptions = {
@@ -42,25 +44,28 @@ type ApiRequestOptions = {
   body?: unknown;
   method?: "GET" | "POST" | "PUT" | "PATCH";
   _isRetry?: boolean;
+  signal?: AbortSignal;
 };
 
 const CATALOG_CACHE_TTL_MS = 15000;
 const SERIES_CACHE_TTL_MS = 15000;
 
-type CatalogCacheEntry = {
-  expiresAt: number;
-  value: CatalogResponse;
-};
+const catalogCache = createResponseCache<CatalogResponse>(CATALOG_CACHE_TTL_MS);
+const seriesCache = createResponseCache<SeriesResponse>(SERIES_CACHE_TTL_MS);
 
-type SeriesCacheEntry = {
-  expiresAt: number;
-  value: SeriesResponse;
-};
+export function setAccessIdentity(userId: string | null, accessToken?: string | null) {
+  setConfirmedAccessIdentity(userId, accessToken, () => {
+    catalogCache.clear();
+    seriesCache.clear();
+  });
+}
 
-const catalogCache = new Map<string, CatalogCacheEntry>();
-const seriesCache = new Map<string, SeriesCacheEntry>();
-const catalogInFlight = new Map<string, Promise<CatalogResponse>>();
-const seriesInFlight = new Map<string, Promise<SeriesResponse>>();
+export function invalidateAccessCache() {
+  catalogCache.clear();
+  seriesCache.clear();
+  invalidateConfirmedSeriesAccess();
+}
+
 const loggedApiBaseUrls = new Set<string>();
 
 function getAuthScopedCacheKey(accessToken?: string | null) {
@@ -132,19 +137,95 @@ function normalizeCatalogResponse(payload: unknown): CatalogResponse {
       ? (candidate.data as Partial<CatalogResponse>)
       : candidate;
 
+  let shortFilms = Array.isArray(envelope.shortFilms) ? (envelope.shortFilms as ApiShortFilm[]) : [];
+
+  if (
+    shortFilms.length === 0 &&
+    envelope.home &&
+    typeof envelope.home === "object"
+  ) {
+    const seen = new Set<string>();
+    const synthesized: ApiShortFilm[] = [];
+
+    const addShortFilm = (item?: {
+      contentType?: string;
+      slug?: string;
+      id?: string;
+      title?: string;
+      poster?: string | null;
+    } | null) => {
+      if (item && item.contentType === "short_film" && item.slug && !seen.has(item.slug)) {
+        seen.add(item.slug);
+        synthesized.push({
+          id: item.id || item.slug,
+          slug: item.slug,
+          title: item.title || item.slug,
+          contentType: "SHORT_FILM",
+          synopsis: "",
+          genre: null,
+          primaryGenre: null,
+          secondaryGenres: [],
+          poster: item.poster || "",
+          heroImage: null,
+          creatorReference: null,
+          durationSeconds: 0,
+          durationLabel: "",
+          language: null,
+          contentRating: null,
+          contentDescriptors: [],
+          parentalLockRequired: false,
+          ageVerificationRequired: false,
+          status: "published",
+          publishAt: null,
+          midrollEnabled: false,
+          midrollTimecodes: [],
+          postrollEnabled: false,
+          chaiEnabled: false,
+          playbackReady: true,
+          sharePath: `/short-films/${item.slug}`,
+        });
+      }
+    };
+
+    if (Array.isArray(envelope.home.spotlights)) {
+      envelope.home.spotlights.forEach(addShortFilm);
+    }
+    if (envelope.home.spotlight) {
+      addShortFilm(envelope.home.spotlight);
+    }
+    if (Array.isArray(envelope.home.rows)) {
+      for (const row of envelope.home.rows) {
+        if (Array.isArray(row.items)) {
+          row.items.forEach(addShortFilm);
+        }
+      }
+    }
+
+    if (synthesized.length > 0) {
+      shortFilms = synthesized;
+    }
+  }
+
   const normalized = {
     catalog: Array.isArray(envelope.catalog) ? (envelope.catalog as ApiSeries[]) : [],
     home:
       envelope.home && typeof envelope.home === "object"
         ? envelope.home
         : null,
-    shortFilms: Array.isArray(envelope.shortFilms) ? (envelope.shortFilms as ApiShortFilm[]) : [],
+    shortFilms,
   };
 
   return normalized;
 }
 
 async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
+  const scope = options.accessToken ? captureAccessRequest(options.accessToken) : captureRequestIdentity();
+  const assertCurrent = () => {
+    if (options.signal?.aborted || !isCurrentAccessIdentity(scope)) {
+      throw new ApiError("obsolete_request", "This request is no longer current.", 0);
+    }
+  };
+  assertCurrent();
   const { apiBaseUrl } = getMobileEnv();
   const method = options.method ?? "GET";
   const safePath = getSafeApiPath(path);
@@ -181,6 +262,7 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       headers,
       method,
+      signal: options.signal,
     });
   } catch (error) {
     perfEnd(requestMeasure, {
@@ -189,6 +271,9 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
       source: "NETWORK",
       status: 0,
     });
+    if (options.signal?.aborted || !isCurrentAccessIdentity(scope)) {
+      throw new ApiError("obsolete_request", "This request is no longer current.", 0);
+    }
     console.error(
       "[0nya catalog requestApi fetch]",
       error instanceof Error ? error.message : String(error),
@@ -197,10 +282,16 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
     throw new ApiError("network_error", "Could not reach 0nya.", 0);
   }
 
+  assertCurrent();
+
   if (response.status === 401 && options.accessToken && !options._isRetry) {
     try {
       const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      assertCurrent();
       if (!refreshError && refreshData.session) {
+        if (!registerRefreshedAccessToken(scope, refreshData.session.user.id, refreshData.session.access_token)) {
+          throw new ApiError("obsolete_request", "The account changed during refresh.", 0);
+        }
         const newAccessToken = refreshData.session.access_token;
         return await requestApi<T>(path, {
           ...options,
@@ -246,11 +337,17 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
     );
   }
 
+  assertCurrent();
+
   if (body && typeof body === "object" && "error" in body) {
     if (body.error.code === "not_authenticated" && options.accessToken && !options._isRetry) {
       try {
         const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        assertCurrent();
         if (!refreshError && refreshData.session) {
+          if (!registerRefreshedAccessToken(scope, refreshData.session.user.id, refreshData.session.access_token)) {
+            throw new ApiError("obsolete_request", "The account changed during refresh.", 0);
+          }
           const newAccessToken = refreshData.session.access_token;
           return await requestApi<T>(path, {
             ...options,
@@ -297,98 +394,21 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
 }
 
 export function getCatalog(accessToken?: string | null) {
-  const cacheKey = getAuthScopedCacheKey(accessToken);
-  const cached = catalogCache.get(cacheKey);
-  const now = Date.now();
-
-  if (cached && cached.expiresAt > now) {
-    perfMark("API_REQUEST_END", {
-      duration_ms: 0,
-      method: "GET",
-      path: "/api/v1/catalog",
-      source: "CACHE",
-      status: 200,
-    });
-    return Promise.resolve(cached.value);
-  }
-
-  const inFlight = catalogInFlight.get(cacheKey);
-
-  if (inFlight) {
-    perfMark("API_REQUEST_END", {
-      duration_ms: 0,
-      method: "GET",
-      path: "/api/v1/catalog",
-      source: "DEDUPED",
-      status: 0,
-    });
-    return inFlight;
-  }
-
-  const request = requestApi<CatalogResponse>("/api/v1/catalog", { accessToken })
-    .then((payload) => {
-      const normalized = normalizeCatalogResponse(payload);
-      catalogCache.set(cacheKey, {
-        expiresAt: Date.now() + CATALOG_CACHE_TTL_MS,
-        value: normalized,
-      });
-      return normalized;
-    })
-    .finally(() => {
-      catalogInFlight.delete(cacheKey);
-    });
-
-  catalogInFlight.set(cacheKey, request);
-  return request;
+  if (!captureAccessRequest(accessToken)) return Promise.reject(new ApiError("obsolete_request", "The account changed.", 0));
+  return catalogCache.get(getAuthScopedCacheKey(accessToken), async () =>
+    normalizeCatalogResponse(await requestApi<CatalogResponse>("/api/v1/catalog", { accessToken })),
+  );
 }
 
 export function getSeries(slug: string, accessToken?: string | null) {
   const normalizedSlug = slug.trim();
+  const scope = captureAccessRequest(accessToken);
+  if (!scope) return Promise.reject(new ApiError("obsolete_request", "The account changed.", 0));
   const requestKey = `${getAuthScopedCacheKey(accessToken)}:${normalizedSlug}`;
-  const cached = seriesCache.get(requestKey);
-  const now = Date.now();
-
-  if (cached && cached.expiresAt > now) {
-    perfMark("API_REQUEST_END", {
-      duration_ms: 0,
-      method: "GET",
-      path: "/api/v1/series/:slug",
-      source: "CACHE",
-      status: 200,
-    });
-    return Promise.resolve(cached.value);
-  }
-
-  const inFlight = seriesInFlight.get(requestKey);
-
-  if (inFlight) {
-    perfMark("API_REQUEST_END", {
-      duration_ms: 0,
-      method: "GET",
-      path: "/api/v1/series/:slug",
-      source: "DEDUPED",
-      status: 0,
-    });
-    return inFlight;
-  }
-
-  const request = requestApi<SeriesResponse>(`/api/v1/series/${encodeURIComponent(normalizedSlug)}`, {
-    accessToken,
-  })
-    .then((seriesResponse) => {
-      seriesCache.set(requestKey, {
-        expiresAt: Date.now() + SERIES_CACHE_TTL_MS,
-        value: seriesResponse,
-      });
-      publishConfirmedSeriesAccess(seriesResponse);
-      return seriesResponse;
-    })
-    .finally(() => {
-      seriesInFlight.delete(requestKey);
-    });
-
-  seriesInFlight.set(requestKey, request);
-  return request;
+  return seriesCache.get(requestKey, () =>
+    requestApi<SeriesResponse>(`/api/v1/series/${encodeURIComponent(normalizedSlug)}`, { accessToken }),
+    (response) => { publishConfirmedSeriesAccess(response, scope); },
+  );
 }
 
 export function isShortFilmPublished(shortFilm: Partial<ApiShortFilm> | null | undefined) {
@@ -481,42 +501,43 @@ export function putWatchProgress(
   });
 }
 
-export function purchaseEpisodeWithCoins(accessToken: string, episodeId: string) {
-  return requestApi<EpisodePurchaseResponse>(
+export async function purchaseEpisodeWithCoins(accessToken: string, episodeId: string) {
+  const result = await requestApi<EpisodePurchaseResponse>(
     `/api/v1/episodes/${encodeURIComponent(episodeId)}/purchase`,
-    {
-      accessToken,
-      method: "POST",
-    },
+    { accessToken, method: "POST" },
   );
+  if (result.success || ["already_owned", "active_subscription", "already_accessible"].includes(result.status)) {
+    invalidateAccessCache();
+  }
+  return result;
 }
 
-export function createRewardedAdAttempt(accessToken: string, episodeId: string) {
-  return requestApi<RewardedAdAttemptResponse>(
+function refreshAfterVerifiedReward(result: RewardedAdAttemptResponse) {
+  if (result.status === "granted" || result.status === "already_accessible") invalidateAccessCache();
+  return result;
+}
+
+export async function createRewardedAdAttempt(accessToken: string, episodeId: string) {
+  return refreshAfterVerifiedReward(await requestApi<RewardedAdAttemptResponse>(
     `/api/v1/episodes/${encodeURIComponent(episodeId)}/rewarded`,
-    {
-      accessToken,
-      method: "POST",
-    },
-  );
+    { accessToken, method: "POST" },
+  ));
 }
 
-export function getRewardedAdAttemptStatus(accessToken: string, customData: string) {
-  return requestApi<RewardedAdAttemptResponse>(
+export async function getRewardedAdAttemptStatus(accessToken: string, customData: string, signal?: AbortSignal) {
+  return refreshAfterVerifiedReward(await requestApi<RewardedAdAttemptResponse>(
     `/api/v1/rewarded-ad-attempts/${encodeURIComponent(customData)}`,
-    {
-      accessToken,
-    },
-  );
+    { accessToken, signal },
+  ));
 }
 
-export function getRewardedProgress(accessToken: string, episodeId: string) {
-  return requestApi<RewardedProgressResponse>(
+export async function getRewardedProgress(accessToken: string, episodeId: string, signal?: AbortSignal) {
+  const result = await requestApi<RewardedProgressResponse>(
     `/api/v1/episodes/${encodeURIComponent(episodeId)}/rewarded/progress`,
-    {
-      accessToken,
-    },
+    { accessToken, signal },
   );
+  if (result.state === "complete" || result.state === "partial") invalidateAccessCache();
+  return result;
 }
 
 export type RecordRewardedEventArgs = {
@@ -545,6 +566,37 @@ export function recordRewardedEvent(accessToken: string, args: RecordRewardedEve
     },
     method: "POST",
   });
+}
+
+export type RecordBehaviorEventArgs = {
+  eventId: string; eventType: string; occurredAt: string; sessionId?: string | null;
+  contentId: string; contentType: string; sourceSurface: string; rowId?: string | null;
+  position?: number | null; searchQueryContext?: string | null; searchResultPosition?: number | null;
+  rankingDecisionId?: string | null; recommendationReason?: string | null;
+  attributionSource?: string | null; attributionPolicy?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export function recordBehaviorEvent(accessToken: string | null | undefined, args: RecordBehaviorEventArgs) {
+  return requestApi<{ recorded: boolean; deduplicated: boolean }>("/api/v1/ranking/events", {
+    accessToken: accessToken ?? undefined,
+    body: args,
+    method: "POST",
+  });
+}
+
+export function recordRankingDecision(
+  accessToken: string | null | undefined,
+  decision: RankingDecisionEvidence,
+) {
+  return requestApi<{ rankingDecisionId: string; candidateSetId: string; deduplicated: boolean }>(
+    "/api/v1/ranking/decisions",
+    {
+      accessToken: accessToken ?? undefined,
+      body: decision,
+      method: "POST",
+    },
+  );
 }
 
 export function deleteAccount(accessToken: string) {

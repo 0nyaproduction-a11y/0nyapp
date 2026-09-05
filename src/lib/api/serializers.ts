@@ -4,7 +4,7 @@ import type { EpisodeAccessState } from "@/lib/entitlements";
 
 export function serializeEpisode(episode: Episode) {
   return {
-    id: episode.id,
+    id: episode.id ?? null,
     number: episode.number,
     title: episode.title,
     description: episode.description,
@@ -28,9 +28,15 @@ export function serializeEpisode(episode: Episode) {
 
 export function serializeSeries(series: ContentItem) {
   return {
+    id: series.id,
     title: series.title,
     slug: series.slug,
+    contentType: series.contentType ?? "MICRO_DRAMA",
+    publishedAt: series.publishedAt ?? null,
+    language: series.language ?? null,
     genre: series.genre,
+    primaryGenre: series.primaryGenre ?? null,
+    secondaryGenres: series.secondaryGenres ?? [],
     format: series.format,
     episodeCount: series.episodeCount,
     episodeDuration: series.episodeDuration,
@@ -49,7 +55,11 @@ export function serializeShortFilm(shortFilm: ShortFilm) {
     id: shortFilm.id,
     slug: shortFilm.slug,
     title: shortFilm.title,
+    contentType: shortFilm.contentType,
     synopsis: shortFilm.synopsis,
+    genre: shortFilm.genre,
+    primaryGenre: shortFilm.primaryGenre,
+    secondaryGenres: shortFilm.secondaryGenres,
     poster: shortFilm.poster,
     heroImage: shortFilm.heroImage,
     creatorReference: shortFilm.creatorReference,
@@ -75,13 +85,15 @@ export function serializeEpisodeAccess(
   accessByEpisodeNumber: Map<number, EpisodeAccessState>,
 ) {
   return Object.fromEntries(
-    Array.from(accessByEpisodeNumber.entries()).map(([episodeNumber, access]) => [
-      episodeNumber,
-      {
-        canWatch: access.canWatch,
-        kind: access.kind,
-        label: access.label,
-      },
-    ]),
+    Array.from(accessByEpisodeNumber.entries()).map(
+      ([episodeNumber, access]) => [
+        episodeNumber,
+        {
+          canWatch: access.canWatch,
+          kind: access.kind,
+          label: access.label,
+        },
+      ],
+    ),
   );
 }

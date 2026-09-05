@@ -30,9 +30,20 @@ function formatEpisodeCount(count: number) {
   return `${count} ${count === 1 ? "Episode" : "Episodes"}`;
 }
 
-export function SeriesScreen({ navigation, route }: Props) {
+function getDisplayValue(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function SeriesScreen(props: Props) {
+  const { session } = useAuth();
+  return <SeriesScreenContent key={`${session?.user.id ?? "guest"}:${props.route.params.slug}`} {...props} />;
+}
+
+function SeriesScreenContent({ navigation, route }: Props) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const [accessRevision, setAccessRevision] = useState(0);
   const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
   const hasValidSlug = normalizedSlug.length > 0;
   const confirmedInitialSeriesAccess = hasValidSlug ? getConfirmedSeriesAccess(normalizedSlug) : null;
@@ -84,7 +95,7 @@ export function SeriesScreen({ navigation, route }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [hasValidSlug, normalizedSlug, accessToken]);
+  }, [hasValidSlug, normalizedSlug, accessToken, accessRevision]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -93,6 +104,12 @@ export function SeriesScreen({ navigation, route }: Props) {
     }
 
     return subscribeConfirmedSeriesAccess((seriesResponse) => {
+      if (!seriesResponse) {
+        setAccessRevision((value) => value + 1);
+        setData(null);
+        setIsLoading(true);
+        return;
+      }
       if (seriesResponse.series.slug !== normalizedSlug) {
         return;
       }
@@ -227,25 +244,13 @@ export function SeriesScreen({ navigation, route }: Props) {
 
       setIsEpisodeTrayOpen(false);
 
-      if (access.canWatch) {
-        navigation.navigate("Watch", {
-          access,
-          episode,
-          episodeAccess: data.episodeAccess,
-          series: data.series,
-        });
-        return;
-      }
-
-      navigation.navigate("EpisodeAccessOptions", {
-        access,
-        episode,
-        episodeAccess: data.episodeAccess,
+      navigation.navigate("Watch", {
         seriesSlug: data.series.slug,
-        seriesTitle: data.series.title,
+        episodeNumber: episode.number,
+        searchContext: route.params.searchContext,
       });
     },
-    [data, navigation],
+    [data, navigation, route.params.searchContext],
   );
 
   if (isLoading) {
@@ -303,7 +308,9 @@ export function SeriesScreen({ navigation, route }: Props) {
     );
   }
 
-  const metaLine = data.series.genre ? `Micro Drama • ${data.series.genre}` : "Micro Drama";
+  const formatLabel = getDisplayValue(data.series.format);
+  const genreLabel = getDisplayValue(data.series.genre);
+  const languageLabel = getDisplayValue(data.series.language);
   const episodeCountLabel = formatEpisodeCount(
     data.series.episodeCount > 0 ? data.series.episodeCount : data.series.episodes.length,
   );
@@ -331,13 +338,17 @@ export function SeriesScreen({ navigation, route }: Props) {
 
           <View style={styles.detailsBlock}>
             <Title numberOfLines={2} style={styles.titleText}>{data.series.title}</Title>
-            <Label style={styles.metaLabel}>{metaLine}</Label>
+            {formatLabel ? <Label style={styles.metaLabel}>{formatLabel}</Label> : null}
+            {genreLabel ? <Body numberOfLines={2} style={styles.genreText}>{genreLabel}</Body> : null}
             {data.series.contentRating ? (
               <Body style={styles.classificationText}>
                 {formatClassification(data.series.contentRating, data.series.contentDescriptors)}
               </Body>
             ) : null}
-            <Body style={styles.episodeCountText}>{episodeCountLabel}</Body>
+            <View style={styles.supportingMeta}>
+              {languageLabel ? <Body style={styles.supportingMetaText}>{languageLabel}</Body> : null}
+              <Body style={styles.supportingMetaText}>{episodeCountLabel}</Body>
+            </View>
           </View>
         </View>
 
@@ -357,22 +368,10 @@ export function SeriesScreen({ navigation, route }: Props) {
                 source: "SERIES_DETAIL",
               });
 
-              if (ctaAccess.canWatch) {
-                navigation.navigate("Watch", {
-                  access: ctaAccess,
-                  episode: ctaEpisode,
-                  episodeAccess: data.episodeAccess,
-                  series: data.series,
-                });
-                return;
-              }
-
-              navigation.navigate("EpisodeAccessOptions", {
-                access: ctaAccess,
-                episode: ctaEpisode,
-                episodeAccess: data.episodeAccess,
+              navigation.navigate("Watch", {
                 seriesSlug: data.series.slug,
-                seriesTitle: data.series.title,
+                episodeNumber: ctaEpisode.number,
+                searchContext: route.params.searchContext,
               });
             }}
           >
@@ -382,7 +381,15 @@ export function SeriesScreen({ navigation, route }: Props) {
           <Pressable
             accessibilityLabel="Browse episodes"
             accessibilityRole="button"
-            onPress={() => setIsEpisodeTrayOpen(true)}
+            onPress={() => {
+              perfMark("CONTENT_TAP", {
+                content_type: "series_episode",
+                source: "SERIES_EPISODES_CTA",
+                series_slug: data.series.slug,
+              });
+
+              setIsEpisodeTrayOpen(true);
+            }}
             style={styles.episodesAction}
           >
             <Body style={styles.episodesActionText}>Episodes</Body>
@@ -419,25 +426,35 @@ const styles = StyleSheet.create({
   },
   detailsBlock: {
     flex: 1,
-    gap: 6,
+    gap: 8,
     justifyContent: "flex-end",
     paddingBottom: 4,
   },
   titleText: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
   },
   metaLabel: {
     fontSize: 11,
     letterSpacing: 0.5,
   },
+  genreText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   classificationText: {
     fontSize: 13,
   },
-  episodeCountText: {
+  supportingMeta: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  supportingMetaText: {
+    color: colors.textSecondary,
     fontSize: 13,
-    color: colors.text,
-    fontWeight: "600",
+    lineHeight: 18,
   },
   posterWrap: {
     aspectRatio: 9 / 16,
@@ -459,8 +476,8 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   actionBlock: {
-    gap: 16,
-    marginVertical: 8,
+    gap: 12,
+    marginTop: 4,
   },
   episodesAction: {
     alignItems: "center",
@@ -479,11 +496,11 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   synopsisBlock: {
-    marginTop: 8,
+    marginTop: 4,
   },
   synopsisText: {
     fontSize: 14,
     lineHeight: 20,
-    color: colors.muted,
+    color: colors.textSecondary,
   },
 });

@@ -309,6 +309,125 @@ export type Database = {
           },
         ];
       };
+      ranking_decisions: {
+        Row: {
+          ranking_decision_id: string;
+          decision_schema_version: string;
+          created_at: string;
+          received_at: string;
+          actor_id: string | null;
+          session_id: string | null;
+          ranking_policy: string;
+          ranking_policy_version: string;
+          config_version: string;
+          config_hash: string | null;
+          ranking_engine_version: string | null;
+          candidate_set_id: string;
+          candidate_set_version: string;
+          candidate_count: number;
+          eligibility_snapshot_ref: string;
+          source_surface: string;
+          row_id: string | null;
+          deterministic: boolean;
+          experiment_id: string | null;
+          experiment_variant: string | null;
+          propensity_type: string;
+          selection_probability: number | null;
+          request_context: Json;
+          candidate_snapshot: Json;
+          ordered_results: Json;
+        };
+        Insert: {
+          ranking_decision_id: string;
+          decision_schema_version: string;
+          created_at: string;
+          received_at?: string;
+          actor_id?: string | null;
+          session_id?: string | null;
+          ranking_policy: string;
+          ranking_policy_version: string;
+          config_version: string;
+          config_hash?: string | null;
+          ranking_engine_version?: string | null;
+          candidate_set_id: string;
+          candidate_set_version: string;
+          candidate_count: number;
+          eligibility_snapshot_ref: string;
+          source_surface: string;
+          row_id?: string | null;
+          deterministic: boolean;
+          experiment_id?: string | null;
+          experiment_variant?: string | null;
+          propensity_type?: string;
+          selection_probability?: number | null;
+          request_context?: Json;
+          candidate_snapshot: Json;
+          ordered_results: Json;
+        };
+        Update: {
+          ranking_decision_id?: string;
+          decision_schema_version?: string;
+          created_at?: string;
+          received_at?: string;
+          actor_id?: string | null;
+          session_id?: string | null;
+          ranking_policy?: string;
+          ranking_policy_version?: string;
+          config_version?: string;
+          config_hash?: string | null;
+          ranking_engine_version?: string | null;
+          candidate_set_id?: string;
+          candidate_set_version?: string;
+          candidate_count?: number;
+          eligibility_snapshot_ref?: string;
+          source_surface?: string;
+          row_id?: string | null;
+          deterministic?: boolean;
+          experiment_id?: string | null;
+          experiment_variant?: string | null;
+          propensity_type?: string;
+          selection_probability?: number | null;
+          request_context?: Json;
+          candidate_snapshot?: Json;
+          ordered_results?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ranking_decisions_actor_id_fkey";
+            columns: ["actor_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      ranking_behavior_events: {
+        Row: {
+          event_id: string; event_schema_version: string; event_type: string; occurred_at: string;
+          actor_id: string | null; session_id: string | null; content_id: string; content_type: string;
+          source_surface: string; row_id: string | null; position: number | null;
+          search_query_context: string | null; search_result_position: number | null;
+          metadata: Json; ranking_decision_id: string | null; recommendation_reason: string | null;
+          attribution_source: string | null; attribution_policy: string | null; received_at: string;
+        };
+        Insert: {
+          event_id: string; event_schema_version: string; event_type: string; occurred_at: string;
+          actor_id?: string | null; session_id?: string | null; content_id: string; content_type: string;
+          source_surface: string; row_id?: string | null; position?: number | null;
+          search_query_context?: string | null; search_result_position?: number | null;
+          metadata?: Json; ranking_decision_id?: string | null; recommendation_reason?: string | null;
+          attribution_source?: string | null; attribution_policy?: string | null; received_at?: string;
+        };
+        Update: {
+          event_id?: string; event_schema_version?: string; event_type?: string; occurred_at?: string;
+          actor_id?: string | null; session_id?: string | null; content_id?: string; content_type?: string;
+          source_surface?: string; row_id?: string | null; position?: number | null;
+          search_query_context?: string | null; search_result_position?: number | null;
+          metadata?: Json; ranking_decision_id?: string | null; recommendation_reason?: string | null;
+          attribution_source?: string | null; attribution_policy?: string | null; received_at?: string;
+        };
+        Relationships: [];
+      };
       coin_transactions: {
         Row: {
           id: string;
@@ -579,6 +698,7 @@ export type Database = {
           content_rating: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
           content_descriptors: string[];
           status: "draft" | "published" | "archived";
+          published_at: string | null;
           featured: boolean;
           sort_order: number;
           created_at: string;
@@ -599,6 +719,7 @@ export type Database = {
           content_rating?: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
           content_descriptors?: string[];
           status?: "draft" | "published" | "archived";
+          published_at?: string | null;
           featured?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -619,6 +740,7 @@ export type Database = {
           content_rating?: "U" | "U/A 7+" | "U/A 13+" | "U/A 16+" | "A" | null;
           content_descriptors?: string[];
           status?: "draft" | "published" | "archived";
+          published_at?: string | null;
           featured?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -657,7 +779,7 @@ export type Database = {
         Row: {
           id: string;
           title: string;
-          row_role: "start_here" | "editorial" | "spotlight";
+          row_role: "start_here" | "editorial" | "spotlight" | "category";
           enabled: boolean;
           sort_order: number;
           created_at: string;
@@ -666,7 +788,7 @@ export type Database = {
         Insert: {
           id?: string;
           title: string;
-          row_role: "start_here" | "editorial" | "spotlight";
+          row_role: "start_here" | "editorial" | "spotlight" | "category";
           enabled?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -675,7 +797,7 @@ export type Database = {
         Update: {
           id?: string;
           title?: string;
-          row_role?: "start_here" | "editorial" | "spotlight";
+          row_role?: "start_here" | "editorial" | "spotlight" | "category";
           enabled?: boolean;
           sort_order?: number;
           created_at?: string;
@@ -740,6 +862,108 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      home_editorial_change_events: {
+        Row: {
+          id: string;
+          changed_at: string;
+          actor_id: string | null;
+          actor_source: "cms_admin" | "system";
+          change_type:
+            | "ROW_CREATE"
+            | "ROW_UPDATE"
+            | "ROW_DELETE"
+            | "ROW_REORDER"
+            | "ITEM_ADD"
+            | "ITEM_UPDATE"
+            | "ITEM_REMOVE"
+            | "ITEM_REORDER"
+            | "SPOTLIGHT_TOGGLE"
+            | "HOME_SETTING_UPDATE";
+          intervention_type:
+            | "EDITORIAL_PIN"
+            | "EDITORIAL_BOOST"
+            | "EDITORIAL_REMOVE"
+            | "EDITORIAL_ORDER";
+          ranking_policy: "editorial";
+          ranking_policy_version: "home_editorial_v1";
+          config_version: string;
+          config_hash: string | null;
+          home_row_id: string | null;
+          home_row_item_id: string | null;
+          affected_content_type: "series" | "short_film" | null;
+          series_id: string | null;
+          short_film_id: string | null;
+          previous_state: Json | null;
+          new_state: Json | null;
+        };
+        Insert: {
+          id?: string;
+          changed_at?: string;
+          actor_id?: string | null;
+          actor_source?: "cms_admin" | "system";
+          change_type:
+            | "ROW_CREATE"
+            | "ROW_UPDATE"
+            | "ROW_DELETE"
+            | "ROW_REORDER"
+            | "ITEM_ADD"
+            | "ITEM_UPDATE"
+            | "ITEM_REMOVE"
+            | "ITEM_REORDER"
+            | "SPOTLIGHT_TOGGLE"
+            | "HOME_SETTING_UPDATE";
+          intervention_type:
+            | "EDITORIAL_PIN"
+            | "EDITORIAL_BOOST"
+            | "EDITORIAL_REMOVE"
+            | "EDITORIAL_ORDER";
+          ranking_policy?: "editorial";
+          ranking_policy_version?: "home_editorial_v1";
+          config_version?: string;
+          config_hash?: string | null;
+          home_row_id?: string | null;
+          home_row_item_id?: string | null;
+          affected_content_type?: "series" | "short_film" | null;
+          series_id?: string | null;
+          short_film_id?: string | null;
+          previous_state?: Json | null;
+          new_state?: Json | null;
+        };
+        Update: {
+          id?: string;
+          changed_at?: string;
+          actor_id?: string | null;
+          actor_source?: "cms_admin" | "system";
+          change_type?:
+            | "ROW_CREATE"
+            | "ROW_UPDATE"
+            | "ROW_DELETE"
+            | "ROW_REORDER"
+            | "ITEM_ADD"
+            | "ITEM_UPDATE"
+            | "ITEM_REMOVE"
+            | "ITEM_REORDER"
+            | "SPOTLIGHT_TOGGLE"
+            | "HOME_SETTING_UPDATE";
+          intervention_type?:
+            | "EDITORIAL_PIN"
+            | "EDITORIAL_BOOST"
+            | "EDITORIAL_REMOVE"
+            | "EDITORIAL_ORDER";
+          ranking_policy?: "editorial";
+          ranking_policy_version?: "home_editorial_v1";
+          config_version?: string;
+          config_hash?: string | null;
+          home_row_id?: string | null;
+          home_row_item_id?: string | null;
+          affected_content_type?: "series" | "short_film" | null;
+          series_id?: string | null;
+          short_film_id?: string | null;
+          previous_state?: Json | null;
+          new_state?: Json | null;
+        };
+        Relationships: [];
       };
       short_films: {
         Row: {

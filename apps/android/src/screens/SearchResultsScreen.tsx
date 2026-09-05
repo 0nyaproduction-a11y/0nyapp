@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Keyboard,
@@ -12,18 +11,35 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Screen } from "../components/Screen";
+import { BehaviorImpression } from "../components/BehaviorImpression";
 import { LoadingState, RecoveryState } from "../components/ui";
-import { getCatalog } from "../lib/api";
+import { useDiscoveryCatalog } from "../lib/useDiscoveryCatalog";
 import { resolveMediaUrl } from "../lib/media";
-import { loadWatchHistory } from "../lib/playbackHistory";
-import { perfMark, perfNow } from "../lib/perf";
+import { perfMark } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
-import { findStartEpisode } from "../lib/seriesPlayback";
-import type { RootStackScreenProps, ExploreFormat } from "../navigation/types";
-import type { ApiSeries, ApiShortFilm, WatchProgressItem } from "../types/api";
-import { borders, colors, typography } from "../theme/tokens";
+import { recordRankingDecision } from "../lib/api";
+import { emitBehaviorEvidence } from "../lib/behavioralEvents";
+import { markCollectionServed } from "../lib/behaviorImpressionModel";
+import {
+  ALL_GENRES_FILTER,
+  filterDiscoverableItems,
+  getAvailableGenreOptions,
+  toDiscoverableItems,
+  type DiscoverableItem,
+} from "../lib/discovery";
+import {
+  createSearchResultContext,
+  normalizeSearchQuery,
+  searchDiscoverableItems,
+} from "../lib/search";
+import {
+  createSearchRankingDecision,
+  recommendationReasonForResult,
+  runRankingDecisionEvidenceFailOpen,
+} from "../lib/rankingDecisionEvidence";
+import type { RootStackScreenProps, ExploreFormat, SearchResultContext } from "../navigation/types";
+import { borders, colors, radii, typography } from "../theme/tokens";
 
-const ALL_GENRES_FILTER = "All";
 const GRID_HORIZONTAL_PADDING = 20;
 const GRID_GAP = 12;
 const NARROW_WIDTH_BREAKPOINT = 360;
@@ -37,33 +53,24 @@ function hasValidPoster(poster?: string) {
   return typeof poster === "string" && poster.trim().length > 0;
 }
 
-function matchesMicroDramaQuery(series: ApiSeries, normalizedQuery: string) {
-  return (
-    series.title.toLowerCase().includes(normalizedQuery) ||
-    (series.genre ?? "").toLowerCase().includes(normalizedQuery)
-  );
-}
-
-function matchesShortFilmQuery(item: ApiShortFilm, normalizedQuery: string) {
-  return item.title.toLowerCase().includes(normalizedQuery);
-}
-
 export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<"SearchResults">) {
   const { query: initialQuery, format: initialFormat = "all", genre } = route.params;
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const { width } = useWindowDimensions();
-  const [catalog, setCatalog] = useState<ApiSeries[]>([]);
-  const [shortFilms, setShortFilms] = useState<ApiShortFilm[]>([]);
-  const [progress, setProgress] = useState<WatchProgressItem[]>([]);
+  const resource = useDiscoveryCatalog(session, false);
+  const { catalog, shortFilms } = resource;
+  const { isLoading, reload: reloadCatalog } = resource;
+  const error = resource.error?.title ?? null;
   const [query, setQuery] = useState(initialQuery);
   const [selectedFormat, setSelectedFormat] = useState<ExploreFormat>(initialFormat);
   const [selectedGenre, setSelectedGenre] = useState(
     genre && genre !== ALL_GENRES_FILTER ? genre : ALL_GENRES_FILTER,
   );
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
+  const [viewportSignal, setViewportSignal] = useState(0);
+  const servedCollectionsRef = useRef(new Set<string>());
+  const submittedDecisionIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     perfMark("SEARCH_RESULTS_MOUNT", {
@@ -72,184 +79,114 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
     });
   }, [initialFormat, initialQuery]);
 
-  const reloadCatalog = useCallback(async () => {
-    setIsLoading(true);
-
-    try {
-      const startedAt = perfNow();
-      const [data, progressData] = await Promise.all([
-        getCatalog(accessToken),
-        loadWatchHistory(session),
-      ]);
-      setCatalog(data.catalog);
-      setShortFilms(data.shortFilms);
-      setProgress(progressData);
-      setError(null);
-      perfMark("SEARCH_RESULTS_DATA_READY", {
-        catalog_count: data.catalog.length,
-        duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
-        progress_count: progressData.length,
-        short_film_count: data.shortFilms.length,
-      });
-    } catch {
-      setError("We couldn't load this right now.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [accessToken, session]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let isActive = true;
-
-      const runLoad = async () => {
-        setIsLoading(true);
-
-        try {
-          const startedAt = perfNow();
-          const [data, progressData] = await Promise.all([
-            getCatalog(accessToken),
-            loadWatchHistory(session),
-          ]);
-
-          if (!isActive) {
-            return;
-          }
-
-          setCatalog(data.catalog);
-          setShortFilms(data.shortFilms);
-          setProgress(progressData);
-          setError(null);
-          perfMark("SEARCH_RESULTS_DATA_READY", {
-            catalog_count: data.catalog.length,
-            duration_ms: Math.max(0, perfNow() - startedAt).toFixed(1),
-            progress_count: progressData.length,
-            short_film_count: data.shortFilms.length,
-          });
-        } catch {
-          if (!isActive) {
-            return;
-          }
-
-          setError("We couldn't load this right now.");
-        } finally {
-          if (isActive) {
-            setIsLoading(false);
-          }
-        }
-      };
-
-      void runLoad();
-
-      return () => {
-        isActive = false;
-      };
-    }, [accessToken, session]),
+  const discoverableItems = useMemo(
+    () => toDiscoverableItems(catalog, shortFilms),
+    [catalog, shortFilms],
   );
 
-  const effectiveGenre = selectedFormat === "micro-dramas" ? selectedGenre : ALL_GENRES_FILTER;
-
   const availableGenres = useMemo(() => {
-    const genres = new Set<string>();
+    return getAvailableGenreOptions(discoverableItems, selectedFormat);
+  }, [discoverableItems, selectedFormat]);
 
-    catalog.forEach((series) => {
-      if (series.genre) {
-        genres.add(series.genre);
-      }
-    });
-
-    return [ALL_GENRES_FILTER, ...Array.from(genres).sort((a, b) => a.localeCompare(b))];
-  }, [catalog]);
-
-  const normalizedQuery = query.trim().toLowerCase();
   const columns = width < NARROW_WIDTH_BREAKPOINT ? 2 : 3;
   const cardWidth =
     (width - GRID_HORIZONTAL_PADDING * 2 - GRID_GAP * (columns - 1)) / columns;
+  const normalizedQuery = normalizeSearchQuery(query);
 
-  const seriesResults = useMemo(() => {
-    const scope = selectedFormat === "short-films" ? [] : catalog;
-
-    return scope.filter((series) => {
-      const matchesGenre =
-        selectedFormat !== "micro-dramas" ||
-        effectiveGenre === ALL_GENRES_FILTER ||
-        series.genre === effectiveGenre;
-      const matchesSearch = !normalizedQuery || matchesMicroDramaQuery(series, normalizedQuery);
-
-      return matchesGenre && matchesSearch;
-    });
-  }, [catalog, effectiveGenre, normalizedQuery, selectedFormat]);
-
-  const shortFilmResults = useMemo(() => {
-    const scope = selectedFormat === "micro-dramas" ? [] : shortFilms;
-
-    return scope.filter((item) => !normalizedQuery || matchesShortFilmQuery(item, normalizedQuery));
-  }, [normalizedQuery, selectedFormat, shortFilms]);
+  const searchResults = useMemo(
+    () =>
+      searchDiscoverableItems(
+        discoverableItems,
+        normalizedQuery,
+        selectedFormat,
+        selectedGenre,
+      ),
+    [discoverableItems, normalizedQuery, selectedFormat, selectedGenre],
+  );
 
   const suggestions = useMemo(() => {
-    const current = selectedFormat === "micro-dramas" ? catalog : selectedFormat === "short-films" ? shortFilms : [...catalog, ...shortFilms];
+    return filterDiscoverableItems(
+      discoverableItems,
+      selectedFormat,
+      selectedGenre,
+    ).slice(0, 3);
+  }, [discoverableItems, selectedFormat, selectedGenre]);
+  const suggestionCards = suggestions;
+  const displayedResults = searchResults.length > 0 ? searchResults : suggestionCards;
+  const collectionContext = useMemo(
+    () => `search:${normalizedQuery}:${selectedFormat}:${selectedGenre}:${displayedResults.map((entry) => `${entry.contentType}:${entry.item.id ?? entry.item.slug}`).join(",")}`,
+    [displayedResults, normalizedQuery, selectedFormat, selectedGenre],
+  );
+  const rankingDecision = useMemo(
+    () => createSearchRankingDecision({
+      candidates: discoverableItems,
+      displayedResults,
+      matchedResults: searchResults,
+      normalizedQuery,
+      selectedFormat,
+      selectedGenre,
+    }),
+    [discoverableItems, displayedResults, normalizedQuery, searchResults, selectedFormat, selectedGenre],
+  );
 
-    return current.slice(0, 6);
-  }, [catalog, selectedFormat, shortFilms]);
-  const suggestionCards = suggestions.slice(0, 3);
+  useEffect(() => {
+    if (isLoading || error || submittedDecisionIdsRef.current.has(rankingDecision.rankingDecisionId)) return;
+    submittedDecisionIdsRef.current.add(rankingDecision.rankingDecisionId);
+    runRankingDecisionEvidenceFailOpen(recordRankingDecision(accessToken, rankingDecision));
+  }, [accessToken, error, isLoading, rankingDecision]);
 
-  const shouldShowGenreFilter = selectedFormat === "micro-dramas" && availableGenres.length > 1;
-
-  async function openSeriesPlayback(series: ApiSeries) {
-    const key = `series-${series.slug}`;
-
-    if (resolvingKey) {
-      return;
+  useEffect(() => {
+    if (isLoading || error) return;
+    if (!markCollectionServed(servedCollectionsRef.current, collectionContext)) return;
+    for (const [index, entry] of displayedResults.entries()) {
+      const recommendationReason = recommendationReasonForResult(rankingDecision, entry) as SearchResultContext["recommendationReason"];
+      const context = createSearchResultContext(entry, query, index, rankingDecision.rankingDecisionId, recommendationReason);
+      emitBehaviorEvidence(accessToken, {
+        eventType: "content_served",
+        contentId: context.contentId,
+        contentType: context.contentType,
+        sourceSurface: "search",
+        position: context.searchResultPosition,
+        searchQueryContext: context.searchQueryContext,
+        searchResultPosition: context.searchResultPosition,
+        rankingDecisionId: context.rankingDecisionId,
+        recommendationReason: context.recommendationReason,
+      });
     }
+  }, [accessToken, collectionContext, displayedResults, error, isLoading, query, rankingDecision]);
 
-    perfMark("CONTENT_TAP", {
-      content_type: "series_episode",
-      series_slug: series.slug,
-      source: "SEARCH_RESULTS",
-    });
-    setResolvingKey(key);
+  const shouldShowGenreFilter = availableGenres.length > 0;
 
-    try {
-      const seriesProgress = progress.filter(
-        (item) => item.contentType === "series_episode" && item.seriesSlug === series.slug,
-      );
-      const resumeProgress = seriesProgress
-        .sort(
-          (first, second) =>
-            new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
-        )
-        .find((item) => !item.completed && item.positionSeconds >= 5);
-      const resumeEpisode = resumeProgress
-        ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
-        : undefined;
-      const startEpisode = findStartEpisode(series.episodes);
-      const targetEpisode = resumeEpisode ?? startEpisode;
-
-      if (targetEpisode) {
-        navigation.navigate("Watch", {
-          episodeNumber: targetEpisode.number,
-          resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
-          seriesSlug: series.slug,
-        });
-        return;
-      }
-    } catch {
-      // Fall through to details.
-    } finally {
-      setResolvingKey(null);
-    }
-
-    navigation.navigate("Series", { slug: series.slug });
-  }
-
-  function renderResultCard(item: ApiSeries | ApiShortFilm, index: number) {
-    const isSeries = "genre" in item;
+  function renderResultCard(
+    entry: DiscoverableItem,
+    index: number,
+  ) {
+    const item = entry.item;
+    const isSeries = entry.contentType === "MICRO_DRAMA";
     const title = item.title;
     const key = isSeries ? `series-${item.slug}` : `short-${item.slug}`;
     const isBusy = resolvingKey === key;
+    const recommendationReason = recommendationReasonForResult(rankingDecision, entry) as SearchResultContext["recommendationReason"];
+    const attribution = createSearchResultContext(entry, query, index, rankingDecision.rankingDecisionId, recommendationReason);
 
     return (
-      <View key={`${key}-${index}`} style={{ width: cardWidth }}>
+      <BehaviorImpression
+        key={`${key}-${index}`}
+        accessToken={accessToken}
+        collectionContext={collectionContext}
+        evidence={{
+          contentId: attribution.contentId,
+          contentType: entry.contentType,
+          sourceSurface: "search",
+          position: index + 1,
+          searchQueryContext: query,
+          searchResultPosition: index + 1,
+          rankingDecisionId: attribution.rankingDecisionId,
+          recommendationReason: attribution.recommendationReason,
+        }}
+        scrollSignal={viewportSignal}
+        style={{ width: cardWidth }}
+      >
         <Pressable
           accessibilityLabel={
             isSeries ? `Open ${title}` : `Open details for ${title}`
@@ -257,13 +194,26 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
           accessibilityRole="button"
           disabled={isBusy}
           onPress={() => {
+            const searchContext = createSearchResultContext(entry, query, index, rankingDecision.rankingDecisionId, recommendationReason);
+            emitBehaviorEvidence(accessToken, {
+              eventType: "content_open",
+              contentId: searchContext.contentId,
+              contentType: searchContext.contentType,
+              sourceSurface: "search",
+              position: searchContext.searchResultPosition,
+              searchQueryContext: searchContext.searchQueryContext,
+              searchResultPosition: searchContext.searchResultPosition,
+              rankingDecisionId: searchContext.rankingDecisionId,
+              recommendationReason: searchContext.recommendationReason,
+            });
+
             if (isSeries) {
               perfMark("CONTENT_TAP", {
                 content_type: "series",
                 series_slug: item.slug,
                 source: "SEARCH_RESULTS",
               });
-              navigation.navigate("Series", { slug: item.slug });
+              navigation.navigate("Series", { searchContext, slug: item.slug });
               return;
             }
 
@@ -272,7 +222,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
               short_film_slug: item.slug,
               source: "SEARCH_RESULTS",
             });
-            navigation.navigate("ShortFilm", { slug: item.slug });
+            navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
           }}
           style={({ pressed }) => [styles.card, { width: cardWidth }, pressed && styles.cardPressed]}
         >
@@ -294,14 +244,16 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
               </View>
             )}
           </View>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {title}
-          </Text>
-          <Text style={styles.cardMeta} numberOfLines={1}>
-            {isSeries ? "Micro Drama" : "Short Film"}
-          </Text>
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {title}
+            </Text>
+            <Text style={styles.cardMeta} numberOfLines={1}>
+              {isSeries ? "MICRO DRAMA" : "SHORT FILM"}
+            </Text>
+          </View>
         </Pressable>
-      </View>
+      </BehaviorImpression>
     );
   }
 
@@ -327,7 +279,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
   }
 
   return (
-    <Screen>
+    <Screen onScroll={() => setViewportSignal((value) => value + 1)}>
       <View style={styles.chromeStack}>
         <Pressable
           accessibilityLabel="Go back"
@@ -340,6 +292,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
         </Pressable>
 
         <View style={styles.searchRow}>
+          <Text style={styles.searchIcon}>{"\u26B2"}</Text>
           <TextInput
             accessibilityLabel="Search results"
             autoCapitalize="none"
@@ -347,7 +300,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
             onChangeText={setQuery}
             onSubmitEditing={() => Keyboard.dismiss()}
             placeholder="Search 0nya"
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
             style={styles.searchInput}
             value={query}
@@ -360,7 +313,9 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
               onPress={() => setQuery("")}
               style={styles.clearButton}
             >
-              <Text style={styles.clearButtonText}>{"\u00D7"}</Text>
+              <View style={styles.clearCircle}>
+                <Text style={styles.clearButtonText}>{"\u00D7"}</Text>
+              </View>
             </Pressable>
           ) : null}
         </View>
@@ -380,9 +335,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
                 accessibilityRole="button"
                 onPress={() => {
                   setSelectedFormat(option.value);
-                  if (option.value !== "micro-dramas") {
-                    setSelectedGenre(ALL_GENRES_FILTER);
-                  }
+                  setSelectedGenre(ALL_GENRES_FILTER);
                 }}
                 style={[styles.filterChip, isSelected && styles.filterChipSelected]}
               >
@@ -400,19 +353,37 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
             horizontal
             showsHorizontalScrollIndicator={false}
           >
+            <Pressable
+              accessibilityLabel="Filter by All Genres"
+              accessibilityRole="button"
+              onPress={() => setSelectedGenre(ALL_GENRES_FILTER)}
+              style={[
+                styles.filterChip,
+                selectedGenre === ALL_GENRES_FILTER && styles.filterChipSelected,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedGenre === ALL_GENRES_FILTER && styles.filterChipTextSelected,
+                ]}
+              >
+                All Genres
+              </Text>
+            </Pressable>
             {availableGenres.map((genreOption) => {
-              const isSelected = genreOption === selectedGenre;
+              const isSelected = genreOption.id === selectedGenre;
 
               return (
                 <Pressable
-                  key={genreOption}
-                  accessibilityLabel={`Filter by ${genreOption}`}
+                  key={genreOption.id}
+                  accessibilityLabel={`Filter by ${genreOption.displayName}`}
                   accessibilityRole="button"
-                  onPress={() => setSelectedGenre(genreOption)}
+                  onPress={() => setSelectedGenre(genreOption.id)}
                   style={[styles.filterChip, isSelected && styles.filterChipSelected]}
                 >
                   <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
-                    {genreOption}
+                    {genreOption.displayName}
                   </Text>
                 </Pressable>
               );
@@ -421,12 +392,11 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
         ) : null}
       </View>
 
-      {seriesResults.length > 0 || shortFilmResults.length > 0 ? (
+      {searchResults.length > 0 ? (
       <>
         <Text style={styles.sectionTitle}>{`Results for "${query.trim() || initialQuery}"`}</Text>
         <View style={styles.grid}>
-          {seriesResults.map((series, index) => renderResultCard(series, index))}
-          {shortFilmResults.map((shortFilm, index) => renderResultCard(shortFilm, index))}
+          {searchResults.map((entry, index) => renderResultCard(entry, index))}
         </View>
       </>
       ) : (
@@ -463,15 +433,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerRow: {
+    alignItems: "center",
     alignSelf: "flex-start",
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    gap: 6,
+    paddingVertical: 4,
   },
   headerArrow: {
     color: colors.text,
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "600",
     lineHeight: 22,
   },
   headerTitle: {
@@ -481,75 +452,99 @@ const styles = StyleSheet.create({
   },
   searchRow: {
     alignItems: "center",
-    borderColor: borders.color,
-    borderWidth: borders.width,
+    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderWidth: 1,
+    borderRadius: radii.sm,
     flexDirection: "row",
-    minHeight: 48,
-    paddingHorizontal: 14,
+    height: 42,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    marginRight: 8,
+    transform: [{ rotate: "45deg" }],
   },
   searchInput: {
     color: colors.text,
     flex: 1,
-    fontSize: 15,
-    paddingVertical: 12,
+    fontSize: 14,
+    height: 42,
+    paddingVertical: 0,
   },
   clearButton: {
     alignItems: "center",
-    height: 48,
+    height: 38,
     justifyContent: "center",
-    width: 32,
+    width: 28,
+  },
+  clearCircle: {
+    alignItems: "center",
+    backgroundColor: "rgba(232, 228, 218, 0.15)",
+    borderRadius: radii.pill,
+    height: 18,
+    justifyContent: "center",
+    width: 18,
   },
   clearButtonText: {
-    color: colors.muted,
-    fontSize: 20,
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: -1,
   },
   filterRow: {
     gap: 8,
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
   filterChip: {
-    borderColor: borders.color,
-    borderWidth: borders.width,
-    borderRadius: 8,
-    minHeight: 48,
+    backgroundColor: "rgba(232, 228, 218, 0.04)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderWidth: 1,
+    borderRadius: radii.sm,
     justifyContent: "center",
-    paddingHorizontal: 14,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   filterChipSelected: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    backgroundColor: colors.surfaceSelected,
     borderColor: colors.accent,
   },
   filterChipText: {
-    color: colors.text,
-    ...typography.homeCardMeta,
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   filterChipTextSelected: {
     color: colors.accent,
+    fontWeight: "600",
   },
   sectionTitle: {
-    color: colors.muted,
+    color: colors.textSecondary,
     ...typography.caption,
     fontWeight: "500",
   },
   sectionLabel: {
-    color: colors.text,
+    color: colors.textSecondary,
     ...typography.caption,
     fontWeight: "500",
+    marginTop: 4,
   },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: GRID_GAP,
   },
   card: {
-    gap: 8,
+    gap: 4,
   },
   cardPressed: {
     opacity: 0.85,
   },
   posterWrap: {
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    borderRadius: radii.poster,
     overflow: "hidden",
   },
   posterImage: {
@@ -569,18 +564,29 @@ const styles = StyleSheet.create({
     ...typography.h3,
     textAlign: "center",
   },
+  cardInfo: {
+    gap: 2,
+    marginTop: 2,
+  },
   cardTitle: {
     color: colors.text,
-    ...typography.label,
-    fontWeight: "600",
+    ...typography.homeCardTitle,
+    marginTop: 2,
+    fontSize: 13,
+    lineHeight: 18,
+    minHeight: 36,
   },
   cardMeta: {
-    color: colors.muted,
-    ...typography.caption,
+    color: colors.textSecondary,
+    ...typography.micro,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   emptyState: {
-    gap: 12,
-    paddingTop: 12,
+    gap: 8,
+    paddingTop: 8,
   },
   emptyTitle: {
     color: colors.text,
@@ -588,11 +594,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   emptyBody: {
-    color: colors.muted,
+    color: colors.textSecondary,
     ...typography.label,
   },
   clearSearchLink: {
     alignSelf: "flex-start",
+    marginTop: 2,
   },
   linkPressed: {
     opacity: 0.8,

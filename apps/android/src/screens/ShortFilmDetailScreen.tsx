@@ -223,7 +223,11 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
         mode: "unlock",
         target: {
           screen: "ShortFilmPlayback",
-          params: { resumeAtSeconds: resumeAtSeconds ?? undefined, slug: shortFilm.slug },
+          params: {
+            resumeAtSeconds: resumeAtSeconds ?? undefined,
+            searchContext: route.params.searchContext,
+            slug: shortFilm.slug,
+          },
         },
       });
       return;
@@ -240,9 +244,10 @@ export function ShortFilmDetailScreen({ navigation, route }: Props) {
     });
     navigation.navigate("ShortFilmPlayback", {
       resumeAtSeconds: resumeAtSeconds ?? undefined,
+      searchContext: route.params.searchContext,
       slug: shortFilm.slug,
     });
-  }, [canPlayFilm, isSessionUnlocked, navigation, resumeAtSeconds, shouldGateForParentalRestrictions, shortFilm]);
+  }, [canPlayFilm, isSessionUnlocked, navigation, resumeAtSeconds, route.params.searchContext, shouldGateForParentalRestrictions, shortFilm]);
 
   if (!hasValidSlug) {
     return (
@@ -447,7 +452,7 @@ posterImage: {
   },
   metaLine: {
     ...typography.caption,
-    color: colors.muted,
+    color: colors.textSecondary,
     fontWeight: "600",
   },
   ratingLine: {
@@ -457,11 +462,11 @@ posterImage: {
   },
   creditLine: {
     ...typography.label,
-    color: colors.muted,
+    color: colors.textSecondary,
   },
   synopsis: {
     ...typography.body,
-    color: colors.muted,
+    color: colors.textSecondary,
   },
   shareButton: {
     alignSelf: "flex-start",

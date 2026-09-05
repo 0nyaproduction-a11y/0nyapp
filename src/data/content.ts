@@ -1,4 +1,5 @@
 import type { ContentDescriptor, ContentRating } from "@/lib/classification";
+import type { CanonicalGenre, ContentFormatId } from "@/lib/taxonomy";
 
 export type ContentFormat = "Series" | "Mini" | "Short";
 
@@ -30,7 +31,12 @@ export type ContentItem = {
   id: string;
   title: string;
   slug: string;
-  genre: string;
+  contentType?: ContentFormatId;
+  publishedAt?: string | null;
+  language?: string | null;
+  genre: string | null;
+  primaryGenre?: CanonicalGenre | null;
+  secondaryGenres?: CanonicalGenre[];
   format: ContentFormat;
   episodeCount: number;
   episodeDuration: string;
