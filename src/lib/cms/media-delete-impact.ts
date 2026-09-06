@@ -91,7 +91,6 @@ function failClosedReport(
     replacements: [],
     details: {
       episodeRefs: { total: null, published: null, items: [] },
-      previewRefs: { total: null, published: null, items: [] },
       shortFilmRefs: { total: null, published: null, items: [] },
       derivedChildren: { total: null, published: null, items: [] },
       subtitleTracks: {
@@ -258,7 +257,7 @@ async function scanHomeImpact(
 ): Promise<DeleteImpactReportDetails["homeImpact"]> {
   const seriesIds = [
     ...new Set(
-      [...truth.refs.episodes, ...truth.refs.previews]
+      truth.refs.episodes
         .map((ref) => ref.seriesId)
         .filter((id) => Boolean(id)),
     ),
@@ -510,11 +509,6 @@ export async function scanMediaAssetForDeletion(assetId: string): Promise<Delete
     label: `episode #${ref.episodeNumber} (series ${ref.seriesId}) — ${ref.status}`,
     published: isPublishedEpisode(ref),
   }));
-  const previewItems: DeleteImpactRefItem[] = truth.refs.previews.map((ref) => ({
-    id: ref.id,
-    label: `preview of episode #${ref.episodeNumber} (series ${ref.seriesId}) — ${ref.status}`,
-    published: isPublishedEpisode(ref),
-  }));
   const shortFilmItems: DeleteImpactRefItem[] = truth.refs.shortFilms.map((ref) => ({
     id: ref.id,
     label: `short film — ${ref.status}`,
@@ -549,12 +543,9 @@ export async function scanMediaAssetForDeletion(assetId: string): Promise<Delete
   const input: DeleteClassificationInput = {
     assetExists: true,
     supabaseState: truth.stored.status,
-    hasPublishedEpisodeRefs:
-      episodeItems.some((item) => item.published === true) ||
-      previewItems.some((item) => item.published === true),
+    hasPublishedEpisodeRefs: episodeItems.some((item) => item.published === true),
     hasPublishedShortFilmRefs: shortFilmItems.some((item) => item.published === true),
     hasAnyEpisodeRefs: episodeItems.length > 0,
-    hasAnyPreviewRefs: previewItems.length > 0,
     hasAnyShortFilmRefs: shortFilmItems.length > 0,
     hasDerivedChildren: derivedItems.length > 0,
     hasSubtitleTracks: truth.subtitles.total > 0,
@@ -574,7 +565,6 @@ export async function scanMediaAssetForDeletion(assetId: string): Promise<Delete
 
   const details: DeleteImpactReportDetails = {
     episodeRefs: refSummary(episodeItems),
-    previewRefs: refSummary(previewItems),
     shortFilmRefs: refSummary(shortFilmItems),
     derivedChildren: refSummary(derivedItems),
     subtitleTracks: {

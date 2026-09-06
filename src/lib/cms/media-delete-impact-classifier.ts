@@ -32,7 +32,6 @@ export type DeleteClassificationInput = {
   hasPublishedEpisodeRefs: boolean;
   hasPublishedShortFilmRefs: boolean;
   hasAnyEpisodeRefs: boolean;
-  hasAnyPreviewRefs: boolean;
   hasAnyShortFilmRefs: boolean;
   hasDerivedChildren: boolean;
   hasSubtitleTracks: boolean;
@@ -71,7 +70,6 @@ export type DeleteImpactRefSummary = {
 
 export type DeleteImpactReportDetails = {
   episodeRefs: DeleteImpactRefSummary;
-  previewRefs: DeleteImpactRefSummary;
   shortFilmRefs: DeleteImpactRefSummary;
   derivedChildren: DeleteImpactRefSummary;
   subtitleTracks: {
@@ -216,7 +214,6 @@ export function classifyDeleteImpact(
   // Draft/editable references: reassign or remove them before any deletion.
   const refParts: string[] = [];
   if (input.hasAnyEpisodeRefs) refParts.push("episode media references");
-  if (input.hasAnyPreviewRefs) refParts.push("episode preview references");
   if (input.hasAnyShortFilmRefs) refParts.push("short-film references");
   if (input.hasDerivedChildren) refParts.push("derived child assets");
   if (input.hasSubtitleTracks) refParts.push("related subtitle tracks");

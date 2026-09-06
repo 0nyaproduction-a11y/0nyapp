@@ -27,7 +27,6 @@ function input(overrides: Partial<DeleteClassificationInput> = {}): DeleteClassi
     hasPublishedEpisodeRefs: false,
     hasPublishedShortFilmRefs: false,
     hasAnyEpisodeRefs: false,
-    hasAnyPreviewRefs: false,
     hasAnyShortFilmRefs: false,
     hasDerivedChildren: false,
     hasSubtitleTracks: false,
@@ -157,11 +156,6 @@ describe("M6A delete impact classifier — REPLACE_FIRST", () => {
     assert.ok(verdict.replacements[0].includes("episode media references"));
   });
 
-  test("episode preview ref => REPLACE_FIRST", () => {
-    const verdict = classifyDeleteImpact(input({ hasAnyPreviewRefs: true }));
-    assert.equal(verdict.primary, "REPLACE_FIRST");
-    assert.ok(verdict.replacements[0].includes("episode preview references"));
-  });
 
   test("draft short-film ref => REPLACE_FIRST", () => {
     const verdict = classifyDeleteImpact(input({ hasAnyShortFilmRefs: true }));
@@ -185,7 +179,6 @@ describe("M6A delete impact classifier — REPLACE_FIRST", () => {
     const verdict = classifyDeleteImpact(
       input({
         hasAnyEpisodeRefs: true,
-        hasAnyPreviewRefs: true,
         hasAnyShortFilmRefs: true,
         hasDerivedChildren: true,
         hasSubtitleTracks: true,
@@ -193,7 +186,6 @@ describe("M6A delete impact classifier — REPLACE_FIRST", () => {
     );
     assert.equal(verdict.primary, "REPLACE_FIRST");
     assert.ok(verdict.replacements[0].includes("episode media references"));
-    assert.ok(verdict.replacements[0].includes("episode preview references"));
     assert.ok(verdict.replacements[0].includes("short-film references"));
     assert.ok(verdict.replacements[0].includes("derived child assets"));
     assert.ok(verdict.replacements[0].includes("subtitle tracks"));

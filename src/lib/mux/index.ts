@@ -251,7 +251,7 @@ export async function deleteMuxAsset(assetId: string): Promise<MuxAssetDeleteRes
   return { assetId: normalizedAssetId, alreadyMissing: false };
 }
 
-async function fetchMuxCollection<T>(path: string) {
+export async function fetchMuxCollection<T>(path: string) {
   const response = await fetch(`https://api.mux.com${path}`, {
     headers: {
       Authorization: buildBasicAuthHeader(),
@@ -592,26 +592,29 @@ export type MuxMediaAssetReconciliationResult =
       status: "not_found";
     };
 
-export async function reconcileMuxMediaAssetState(
-  mediaAssetId: string,
-  supabaseClient?: SupabaseClient<Database>,
-): Promise<MuxMediaAssetReconciliationResult> {
-  const supabase = await getSupabase(supabaseClient);
-  const normalizedMediaAssetId = mediaAssetId.trim();
 
-  const { data: mediaAsset, error: mediaAssetError } = await supabase
-    .from("media_assets")
-    .select("*")
-    .eq("id", normalizedMediaAssetId)
-    .maybeSingle();
+type MuxInspectionCore = {
+  providerUploadReference: string | null;
+  providerAssetReference: string | null;
+  providerPlaybackReference: string | null;
+  muxUploadStatus: string | null;
+  muxAssetStatus: string | null;
+  muxAssetExists: boolean;
+  muxUploadExists: boolean;
+  mediaStatus: Database["public"]["Tables"]["media_assets"]["Row"]["status"];
+  failureCode: string | null;
+  failureMessage: string | null;
+  signedPlaybackId: string | null;
+  maxResolutionTier: string | null;
+  resolutionTier: string | null;
+};
 
-  if (mediaAssetError || !mediaAsset) {
-    return {
-      mediaAssetId: normalizedMediaAssetId,
-      status: "not_found",
-    };
-  }
-
+// Read-only shared core used by both reconcileMuxMediaAssetState (which writes
+// the result back to Supabase) and inspectMuxMediaAssetState (which never
+// touches the database). Keeps the Mux GET + status-mapping logic in one place.
+async function readMuxMediaAssetState(
+  mediaAsset: Database["public"]["Tables"]["media_assets"]["Row"],
+): Promise<MuxInspectionCore> {
   const providerUploadReference = mediaAsset.provider_upload_reference?.trim() || null;
   let providerAssetReference = mediaAsset.provider_asset_reference?.trim() || null;
   let providerPlaybackReference = mediaAsset.provider_playback_reference?.trim() || null;
@@ -620,15 +623,19 @@ export async function reconcileMuxMediaAssetState(
   let mediaStatus: Database["public"]["Tables"]["media_assets"]["Row"]["status"] = mediaAsset.status;
   let failureCode = mediaAsset.failure_code;
   let failureMessage = mediaAsset.failure_message;
-
-  const updatePayload: Database["public"]["Tables"]["media_assets"]["Update"] = {
-    provider_name: "mux",
-  };
+  let muxAssetExists = false;
+  let muxUploadExists = false;
+  let signedPlaybackId: string | null = null;
+  let maxResolutionTier: string | null = null;
+  let resolutionTier: string | null = null;
 
   if (providerUploadReference) {
-    const upload = await fetchMuxResource<MuxUploadRecord>(`/video/v1/uploads/${providerUploadReference}`);
+    const upload = await fetchMuxResource<MuxUploadRecord>(
+      `/video/v1/uploads/${providerUploadReference}`,
+    );
 
     if (upload) {
+      muxUploadExists = true;
       muxUploadStatus = upload.status ?? null;
 
       if (!providerAssetReference && upload.asset_id?.trim()) {
@@ -640,22 +647,32 @@ export async function reconcileMuxMediaAssetState(
   let muxAsset: MuxAssetRecord | null = null;
 
   if (providerAssetReference) {
-    muxAsset = await fetchMuxResource<MuxAssetRecord>(`/video/v1/assets/${providerAssetReference}`);
+    muxAsset = await fetchMuxResource<MuxAssetRecord>(
+      `/video/v1/assets/${providerAssetReference}`,
+    );
 
     if (muxAsset) {
+      muxAssetExists = true;
       muxAssetStatus = muxAsset.status ?? null;
+      maxResolutionTier = muxAsset.max_resolution_tier ?? null;
+      resolutionTier = muxAsset.resolution_tier ?? null;
     }
   }
 
   if (muxAsset && muxAsset.status) {
     const mappedAssetStatus = mapMuxAssetStatus(muxAsset.status);
 
-    mediaStatus = mappedAssetStatus === "ready" ? "ready" : mappedAssetStatus === "failed" ? "failed" : "processing";
+    mediaStatus =
+      mappedAssetStatus === "ready"
+        ? "ready"
+        : mappedAssetStatus === "failed"
+          ? "failed"
+          : "processing";
 
     if (mappedAssetStatus === "ready") {
-      const signedPlaybackId = getSignedPlaybackId(muxAsset.playback_ids ?? null);
+      const signedId = getSignedPlaybackId(muxAsset.playback_ids ?? null);
 
-      if (!signedPlaybackId) {
+      if (!signedId) {
         mediaStatus = "failed";
         const failureDetails = getMuxErrorDetails([
           {
@@ -666,8 +683,10 @@ export async function reconcileMuxMediaAssetState(
         failureCode = failureDetails.failureCode;
         failureMessage = failureDetails.failureMessage;
         providerPlaybackReference = null;
+        signedPlaybackId = null;
       } else {
-        providerPlaybackReference = signedPlaybackId;
+        signedPlaybackId = signedId;
+        providerPlaybackReference = signedId;
         failureCode = null;
         failureMessage = null;
       }
@@ -693,12 +712,132 @@ export async function reconcileMuxMediaAssetState(
     mediaStatus = mediaAsset.status;
   }
 
-  updatePayload.status = mediaStatus;
-  updatePayload.provider_upload_reference = providerUploadReference;
-  updatePayload.provider_asset_reference = providerAssetReference;
-  updatePayload.provider_playback_reference = providerPlaybackReference;
-  updatePayload.failure_code = failureCode;
-  updatePayload.failure_message = failureMessage;
+  return {
+    providerUploadReference,
+    providerAssetReference,
+    providerPlaybackReference,
+    muxUploadStatus,
+    muxAssetStatus,
+    muxAssetExists,
+    muxUploadExists,
+    mediaStatus,
+    failureCode,
+    failureMessage,
+    signedPlaybackId,
+    maxResolutionTier,
+    resolutionTier,
+  };
+}
+
+
+// Read-only provider inspection result. Returned by inspectMuxMediaAssetState;
+// carries the live Mux truth for a single media asset without any Supabase
+// mutation. The local mapped status is exposed alongside the raw Mux statuses
+// and the live signed playback reference so callers can detect drift between
+// what Supabase stores and what Mux actually reports.
+export type MuxMediaAssetInspectionResult =
+  | {
+      mediaAssetId: string;
+      status: "not_found";
+    }
+  | {
+      mediaAssetId: string;
+      status: "inspected";
+      providerAssetReference: string | null;
+      providerPlaybackReference: string | null;
+      providerUploadReference: string | null;
+      muxAssetStatus: string | null;
+      muxUploadStatus: string | null;
+      mediaStatus: Database["public"]["Tables"]["media_assets"]["Row"]["status"];
+      muxAssetExists: boolean;
+      muxUploadExists: boolean;
+      signedPlaybackId: string | null;
+      failureCode: string | null;
+      failureMessage: string | null;
+      maxResolutionTier: string | null;
+      resolutionTier: string | null;
+    };
+
+// Read-only counterpart of reconcileMuxMediaAssetState. Inspects the live Mux
+// state for the media asset but NEVER writes to Supabase. Use this for CMS
+// diagnostics, inventory, and truth-model building. A Mux 404 on a referenced
+// asset surfaces as muxAssetExists: false (and muxUploadExists on the upload),
+// which the truth model maps to the MISSING classification — without mutating
+// the stored row.
+export async function inspectMuxMediaAssetState(
+  mediaAssetId: string,
+  supabaseClient?: SupabaseClient<Database>,
+): Promise<MuxMediaAssetInspectionResult> {
+  const supabase = await getSupabase(supabaseClient);
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  const { data: mediaAsset, error: mediaAssetError } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("id", normalizedMediaAssetId)
+    .maybeSingle();
+
+  if (mediaAssetError || !mediaAsset) {
+    return {
+      mediaAssetId: normalizedMediaAssetId,
+      status: "not_found",
+    };
+  }
+
+  const core = await readMuxMediaAssetState(mediaAsset);
+
+  return {
+    mediaAssetId: normalizedMediaAssetId,
+    status: "inspected",
+    providerAssetReference: core.providerAssetReference,
+    providerPlaybackReference: core.providerPlaybackReference,
+    providerUploadReference: core.providerUploadReference,
+    muxAssetStatus: core.muxAssetStatus,
+    muxUploadStatus: core.muxUploadStatus,
+    mediaStatus: core.mediaStatus,
+    muxAssetExists: core.muxAssetExists,
+    muxUploadExists: core.muxUploadExists,
+    signedPlaybackId: core.signedPlaybackId,
+    failureCode: core.failureCode,
+    failureMessage: core.failureMessage,
+    maxResolutionTier: core.maxResolutionTier,
+    resolutionTier: core.resolutionTier,
+  };
+}
+
+export async function reconcileMuxMediaAssetState(
+  mediaAssetId: string,
+  supabaseClient?: SupabaseClient<Database>,
+): Promise<MuxMediaAssetReconciliationResult> {
+  const supabase = await getSupabase(supabaseClient);
+  const normalizedMediaAssetId = mediaAssetId.trim();
+
+  const { data: mediaAsset, error: mediaAssetError } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("id", normalizedMediaAssetId)
+    .maybeSingle();
+
+  if (mediaAssetError || !mediaAsset) {
+    return {
+      mediaAssetId: normalizedMediaAssetId,
+      status: "not_found",
+    };
+  }
+
+  // Reuse the read-only shared core so inspection and reconciliation stay in
+  // sync. This function is the only one that writes the result back.
+  const core = await readMuxMediaAssetState(mediaAsset);
+
+  const updatePayload: Database["public"]["Tables"]["media_assets"]["Update"] = {
+    provider_name: "mux",
+    status: core.mediaStatus,
+    provider_upload_reference: core.providerUploadReference,
+    provider_asset_reference: core.providerAssetReference,
+    provider_playback_reference: core.providerPlaybackReference,
+    failure_code: core.failureCode,
+    failure_message: core.failureMessage,
+  };
 
   const { error: updateError } = await supabase
     .from("media_assets")
@@ -711,15 +850,15 @@ export async function reconcileMuxMediaAssetState(
 
   return {
     mediaAssetId: normalizedMediaAssetId,
-    maxResolutionTier: muxAsset?.max_resolution_tier ?? null,
-    muxAssetStatus,
-    muxUploadStatus,
-    providerAssetReference,
-    providerPlaybackReference,
-    providerUploadReference,
-    resolutionTier: muxAsset?.resolution_tier ?? null,
+    maxResolutionTier: core.maxResolutionTier,
+    muxAssetStatus: core.muxAssetStatus,
+    muxUploadStatus: core.muxUploadStatus,
+    providerAssetReference: core.providerAssetReference,
+    providerPlaybackReference: core.providerPlaybackReference,
+    providerUploadReference: core.providerUploadReference,
+    resolutionTier: core.resolutionTier,
     status: "updated",
-    mediaStatus,
+    mediaStatus: core.mediaStatus,
   };
 }
 
