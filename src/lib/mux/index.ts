@@ -70,22 +70,6 @@ export type MuxAssetDeleteResult = {
   alreadyMissing: boolean;
 };
 
-export type MuxPreviewClipInput = {
-  endTime: number;
-  sourceAssetId: string;
-  passthrough: string;
-  startTime?: number;
-};
-
-export type MuxPreviewClipResult = {
-  assetId: string;
-  playbackId: string | null;
-  status: "preparing" | "ready" | "errored" | "deleted" | "waiting";
-  sourceAssetId: string;
-  endTime: number;
-  startTime: number;
-};
-
 export type MuxSubtitleTextTrackInput = {
   assetId: string;
   closedCaptions?: boolean;
@@ -169,6 +153,10 @@ export type DevMediaRehydrationResult = {
 };
 
 const MUX_PLAYBACK_BUFFER_SECONDS = 30 * 60;
+// Preview credentials need enough time for player startup, HLS playlist/segment
+// loading, the configured preview, and a bounded network retry. This expiry is
+// defense-in-depth; asset_end_time is the content-window restriction.
+export const MUX_PREVIEW_TOKEN_TTL_SECONDS = 2 * 60;
 
 async function getSupabase(supabaseClient?: SupabaseClient<Database>) {
   return supabaseClient ?? createAdminClient();
@@ -1266,6 +1254,48 @@ export function createMuxSignedPlaybackUrl(
   };
 }
 
+export function createMuxSignedPreviewPlaybackUrl(
+  playbackId: string,
+  previewSeconds: number,
+  maxResolution: MuxMaxResolution,
+  now = Date.now(),
+): MuxSignedPlaybackResult {
+  const normalizedPlaybackId = playbackId.trim();
+  const safePreviewSeconds = Math.floor(previewSeconds);
+
+  if (!normalizedPlaybackId) {
+    throw new Error("Playback ID is required.");
+  }
+
+  if (!Number.isFinite(previewSeconds) || safePreviewSeconds <= 0) {
+    throw new Error("Preview duration must be a positive number of seconds.");
+  }
+
+  const { keyId } = getMuxPlaybackSigningCredentials();
+  const expiresAt = new Date(now + MUX_PREVIEW_TOKEN_TTL_SECONDS * 1000).toISOString();
+  const exp = Math.floor(Date.parse(expiresAt) / 1000);
+  const token = signJwt(
+    {
+      alg: "RS256",
+      kid: keyId,
+      typ: "JWT",
+    },
+    {
+      asset_end_time: safePreviewSeconds,
+      asset_start_time: 0,
+      aud: "v",
+      exp,
+      max_resolution: maxResolution,
+      sub: normalizedPlaybackId,
+    },
+  );
+
+  return {
+    playbackUrl: `https://stream.mux.com/${normalizedPlaybackId}.m3u8?token=${token}`,
+    expiresAt,
+  };
+}
+
 export function createMuxSignedThumbnailUrl(
   playbackId: string,
   options: {
@@ -1307,75 +1337,6 @@ export function createMuxSignedThumbnailUrl(
   return {
     expiresAt,
     thumbnailUrl: `https://image.mux.com/${normalizedPlaybackId}/thumbnail.jpg?token=${token}`,
-  };
-}
-
-export async function createMuxPreviewClip(
-  input: MuxPreviewClipInput,
-): Promise<MuxPreviewClipResult> {
-  const sourceAssetId = input.sourceAssetId.trim();
-  const passthrough = input.passthrough.trim();
-  const startTime = Math.max(0, Math.floor(input.startTime ?? 0));
-  const endTime = Math.max(0, Math.floor(input.endTime));
-
-  if (!sourceAssetId) {
-    throw new Error("Source asset ID is required.");
-  }
-
-  if (!passthrough) {
-    throw new Error("Preview passthrough is required.");
-  }
-
-  if (endTime <= startTime) {
-    throw new Error("Preview end time must be greater than the start time.");
-  }
-
-  const response = await fetch("https://api.mux.com/video/v1/assets", {
-    method: "POST",
-    headers: {
-      Authorization: buildBasicAuthHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      input: [
-        {
-          end_time: endTime,
-          start_time: startTime,
-          url: `mux://assets/${sourceAssetId}`,
-        },
-      ],
-      passthrough,
-      playback_policy: ["signed"],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Mux preview clip creation failed with status ${response.status}.`);
-  }
-
-  const payload = (await response.json()) as {
-    data?: {
-      id?: string;
-      playback_ids?: MuxPlaybackId[] | null;
-      status?: MuxPreviewClipResult["status"];
-    };
-  };
-
-  const assetId = payload.data?.id?.trim();
-  const status = payload.data?.status;
-  const playbackId = getSignedPlaybackId(payload.data?.playback_ids ?? null);
-
-  if (!assetId || !status) {
-    throw new Error("Mux preview clip response was missing asset details.");
-  }
-
-  return {
-    assetId,
-    playbackId,
-    status,
-    sourceAssetId,
-    endTime,
-    startTime,
   };
 }
 
