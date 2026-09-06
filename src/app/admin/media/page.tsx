@@ -1,24 +1,46 @@
-import { revalidatePath } from "next/cache";
 import Link from "next/link";
-import { MediaDirectUploadField } from "@/components/cms/MediaDirectUploadField";
-import { MediaAssetRefreshForm } from "@/components/cms/MediaAssetRefreshForm";
+import { revalidatePath } from "next/cache";
+import { MediaAdminClient } from "@/components/cms/MediaAdminClient";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   createMediaUploadIntent,
-  listMediaAssetsForAdmin,
   refreshMediaAssetStatus,
   type MediaAssetFormState,
 } from "@/lib/cms/media";
-import { mediaListPath, adminPath } from "@/lib/routes";
+import {
+  getAssetDetailMedia,
+  getMediaViewRows,
+} from "@/lib/cms/media-truth-views";
+import type { MediaViewRow, MediaViewTab } from "@/lib/cms/media-truth-model";
+import { adminPath, mediaListPath } from "@/lib/routes";
+import {
+  scanMediaAssetForDeletion,
+  type DeleteImpactReport,
+} from "@/lib/cms/media-delete-impact";
+import {
+  confirmAndDeleteMediaAsset,
+  getQuarantineStatus,
+  quarantineMediaAsset,
+  releaseMediaAssetFromQuarantine,
+  type ConfirmDeleteResult,
+  type QuarantineStatus,
+} from "@/lib/cms/media-delete-executor";
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+type AdminMediaPageProps = {
+  searchParams?: Promise<{ tab?: string }>;
+};
+
+const MEDIA_VIEW_TABS: MediaViewTab[] = ["all", "processing", "problems", "unassigned"];
+
+function parseTab(value: string | undefined): MediaViewTab {
+  if (value && (MEDIA_VIEW_TABS as string[]).includes(value)) {
+    return value as MediaViewTab;
+  }
+  return "all";
 }
 
-export default async function AdminMediaPage() {
+export default async function AdminMediaPage({ searchParams }: AdminMediaPageProps) {
+  const params = await (searchParams ?? Promise.resolve<{ tab?: string }>({}));
   const context = await requireCmsAdmin(mediaListPath);
 
   if (context.status === "forbidden") {
@@ -32,7 +54,10 @@ export default async function AdminMediaPage() {
     );
   }
 
-  const mediaAssets = await listMediaAssetsForAdmin();
+  // Server-side data loading stays in server code. The client component only
+  // receives serializable MediaViewRow[] data (never server-only modules or
+  // provider secrets), plus explicit server-action references.
+  const rows = await getMediaViewRows({}, "all");
 
   async function requestMediaUploadAction(mimeType: string, corsOriginOverride?: string | null) {
     "use server";
@@ -92,6 +117,110 @@ export default async function AdminMediaPage() {
     }
   }
 
+  async function loadAssetDetailAction(assetId: string): Promise<MediaViewRow | null> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return null;
+    }
+
+    return getAssetDetailMedia(assetId);
+  }
+
+  async function loadAssetDetailAndImpactAction(assetId: string): Promise<{ detail: MediaViewRow | null, impact: DeleteImpactReport | null }> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return { detail: null, impact: null };
+    }
+
+    const detail = await getAssetDetailMedia(assetId);
+    const impact = detail ? await scanMediaAssetForDeletion(assetId) : null;
+
+    return { detail, impact };
+  }
+
+  async function loadQuarantineStatusAction(assetId: string): Promise<QuarantineStatus> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return "not_quarantined";
+    }
+
+    return getQuarantineStatus(assetId);
+  }
+
+  async function quarantineMediaAssetAction(
+    assetId: string,
+    reason?: string,
+  ): Promise<{ error?: string; status?: QuarantineStatus }> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return { error: "Not authorized." };
+    }
+
+    const result = await quarantineMediaAsset(assetId, guard.user.id, reason);
+    revalidatePath(mediaListPath);
+
+    if (!result.ok) {
+      return { error: result.error };
+    }
+
+    return { status: result.status };
+  }
+
+  async function releaseQuarantineAction(
+    assetId: string,
+  ): Promise<{ error?: string; status?: QuarantineStatus }> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return { error: "Not authorized." };
+    }
+
+    const result = await releaseMediaAssetFromQuarantine(assetId, guard.user.id);
+    revalidatePath(mediaListPath);
+
+    if (!result.ok) {
+      return { error: result.error };
+    }
+
+    return { status: result.status };
+  }
+
+  async function confirmDeleteMediaAssetAction(
+    assetId: string,
+    confirmationToken: string,
+  ): Promise<ConfirmDeleteResult> {
+    "use server";
+
+    const guard = await requireCmsAdmin(mediaListPath);
+
+    if (guard.status !== "authorized") {
+      return {
+        ok: false,
+        error: "Not authorized.",
+        report: null,
+        ledgerId: null,
+      };
+    }
+
+    const result = await confirmAndDeleteMediaAsset(assetId, guard.user.id, confirmationToken);
+    revalidatePath(mediaListPath);
+    return result;
+  }
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -105,72 +234,19 @@ export default async function AdminMediaPage() {
           </Link>
         </div>
 
-        <MediaDirectUploadField requestUploadAction={requestMediaUploadAction} />
-
-        <section>
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-              Media assets
-            </h2>
-            <p className="text-xs text-bone/40">{mediaAssets.length} assets</p>
-          </div>
-
-          <div className="mt-3 overflow-hidden border border-bone/10">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-bone/[0.03] text-xs uppercase tracking-[0.14em] text-bone/50">
-                <tr>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3">Provider</th>
-                  <th className="px-4 py-3">Upload ID</th>
-                  <th className="px-4 py-3">Asset ID</th>
-                  <th className="px-4 py-3">Playback ID</th>
-                  <th className="px-4 py-3">Failure</th>
-                  <th className="px-4 py-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mediaAssets.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-6 text-bone/60" colSpan={8}>
-                      No media assets yet.
-                    </td>
-                  </tr>
-                ) : (
-                  mediaAssets.map((mediaAsset) => (
-                    <tr key={mediaAsset.id} className="border-t border-bone/10 align-top">
-                      <td className="px-4 py-4 font-mono text-[0.68rem] uppercase tracking-[0.14em] text-bone/70">
-                        {mediaAsset.status}
-                      </td>
-                      <td className="px-4 py-4 text-bone/60">
-                        {formatDate(mediaAsset.created_at)}
-                      </td>
-                      <td className="px-4 py-4 text-bone/70">{mediaAsset.provider_name ?? "mux"}</td>
-                      <td className="px-4 py-4 font-mono text-[0.68rem] text-bone/60">
-                        {mediaAsset.provider_upload_reference ?? "—"}
-                      </td>
-                      <td className="px-4 py-4 font-mono text-[0.68rem] text-bone/60">
-                        {mediaAsset.provider_asset_reference ?? "—"}
-                      </td>
-                      <td className="px-4 py-4 font-mono text-[0.68rem] text-bone/60">
-                        {mediaAsset.provider_playback_reference ?? "—"}
-                      </td>
-                      <td className="px-4 py-4 text-xs text-bone/50">
-                        <div>{mediaAsset.failure_code ?? "—"}</div>
-                        {mediaAsset.failure_message && (
-                          <div className="mt-1 max-w-xs text-bone/40">{mediaAsset.failure_message}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <MediaAssetRefreshForm action={refreshMediaAssetAction} mediaAssetId={mediaAsset.id} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <MediaAdminClient
+          key={parseTab(params.tab)}
+          initialRows={rows}
+          initialTab={parseTab(params.tab)}
+          requestUploadAction={requestMediaUploadAction}
+          refreshAction={refreshMediaAssetAction}
+          loadAssetDetailAction={loadAssetDetailAction}
+          loadAssetDetailAndImpactAction={loadAssetDetailAndImpactAction}
+          loadQuarantineStatusAction={loadQuarantineStatusAction}
+          quarantineMediaAssetAction={quarantineMediaAssetAction}
+          releaseQuarantineAction={releaseQuarantineAction}
+          confirmDeleteMediaAssetAction={confirmDeleteMediaAssetAction}
+        />
       </div>
     </main>
   );

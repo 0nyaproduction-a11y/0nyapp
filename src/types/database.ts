@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -1170,6 +1170,183 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      media_quarantine: {
+        Row: {
+          id: string;
+          media_asset_id: string;
+          status: "quarantined" | "released";
+          reason: string | null;
+          requested_by: string | null;
+          requested_at: string;
+          released_by: string | null;
+          released_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          media_asset_id: string;
+          status?: "quarantined" | "released";
+          reason?: string | null;
+          requested_by?: string | null;
+          requested_at?: string;
+          released_by?: string | null;
+          released_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          media_asset_id?: string;
+          status?: "quarantined" | "released";
+          reason?: string | null;
+          requested_by?: string | null;
+          requested_at?: string;
+          released_by?: string | null;
+          released_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "media_quarantine_media_asset_id_fkey";
+            columns: ["media_asset_id"];
+            isOneToOne: true;
+            referencedRelation: "media_assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      media_quarantine_log: {
+        Row: {
+          id: string;
+          media_asset_id: string;
+          action: "quarantined" | "released";
+          actor_id: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          media_asset_id: string;
+          action: "quarantined" | "released";
+          actor_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          media_asset_id?: string;
+          action?: "quarantined" | "released";
+          actor_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "media_quarantine_log_media_asset_id_fkey";
+            columns: ["media_asset_id"];
+            isOneToOne: false;
+            referencedRelation: "media_assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      media_retention_log: {
+        Row: {
+          id: string;
+          media_asset_id: string;
+          reason: string;
+          actor_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          media_asset_id: string;
+          reason: string;
+          actor_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          media_asset_id?: string;
+          reason?: string;
+          actor_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "media_retention_log_media_asset_id_fkey";
+            columns: ["media_asset_id"];
+            isOneToOne: false;
+            referencedRelation: "media_assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      media_deletion_ledger: {
+        Row: {
+          id: string;
+          media_asset_id: string;
+          actor_id: string | null;
+          classification_at_execution:
+            | "SAFE"
+            | "REPLACE_FIRST"
+            | "BLOCKED"
+            | "SHARED"
+            | "RETENTION_PROTECTED"
+            | "UNKNOWN";
+          result: "attempted" | "succeeded" | "failed" | "blocked";
+          supabase_deleted: boolean;
+          mux_deleted: boolean;
+          mux_asset_reference: string | null;
+          error_message: string | null;
+          verified_at: string | null;
+          verification_result: "verified" | "discrepancy" | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          media_asset_id: string;
+          actor_id?: string | null;
+          classification_at_execution:
+            | "SAFE"
+            | "REPLACE_FIRST"
+            | "BLOCKED"
+            | "SHARED"
+            | "RETENTION_PROTECTED"
+            | "UNKNOWN";
+          result?: "attempted" | "succeeded" | "failed" | "blocked";
+          supabase_deleted?: boolean;
+          mux_deleted?: boolean;
+          mux_asset_reference?: string | null;
+          error_message?: string | null;
+          verified_at?: string | null;
+          verification_result?: "verified" | "discrepancy" | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          media_asset_id?: string;
+          actor_id?: string | null;
+          classification_at_execution?:
+            | "SAFE"
+            | "REPLACE_FIRST"
+            | "BLOCKED"
+            | "SHARED"
+            | "RETENTION_PROTECTED"
+            | "UNKNOWN";
+          result?: "attempted" | "succeeded" | "failed" | "blocked";
+          supabase_deleted?: boolean;
+          mux_deleted?: boolean;
+          mux_asset_reference?: string | null;
+          error_message?: string | null;
+          verified_at?: string | null;
+          verification_result?: "verified" | "discrepancy" | null;
+          created_at?: string;
+        };
+        Relationships: [];
       };
       guest_parental_controls: {
         Row: {
