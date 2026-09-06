@@ -19,7 +19,7 @@ export type ApiEpisode = {
   coinPrice: number;
   coinUnlockEnabled: boolean;
   rewardedUnlockEnabled: boolean;
-  rewardedAccessMode: "permanent" | "session";
+  rewardedAccessMode: "permanent";
   requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
@@ -127,6 +127,10 @@ export type EpisodeAccess = {
 };
 
 export type EpisodePurchaseResponse = {
+  evidence: {
+    occurredAt: string;
+    transactionId: string;
+  } | null;
   success: boolean;
   status:
     | "not_authenticated"
@@ -285,7 +289,6 @@ export type RewardedAdAttemptStatus =
   | "granted"
   | "expired"
   | "failed"
-  | "unsupported_pending_policy"
   | "already_accessible"
   | "rewarded_disabled"
   | "not_found";
@@ -301,7 +304,13 @@ export type RewardedAdAttemptResponse = {
 export type RewardedProgressResponse = {
   verifiedProgress: number;
   requiredCompletions: number;
-  state: "none" | "partial" | "complete" | "disabled" | "not_found" | "not_authenticated";
+  state:
+    | "none"
+    | "partial"
+    | "complete"
+    | "disabled"
+    | "not_found"
+    | "not_authenticated";
 };
 
 export type MeResponse = {
@@ -341,7 +350,9 @@ export type WalletResponse = {
 };
 
 export type GooglePlayBillingBoundaryResponse = {
-  backendStatus: "DEVELOPMENT_TEST_BOUNDARY" | "EXTERNALLY_BLOCKED_NOT_CONFIGURED";
+  backendStatus:
+    "DEVELOPMENT_TEST_BOUNDARY" | "EXTERNALLY_BLOCKED_NOT_CONFIGURED";
+  billingPlan: "weekly" | "monthly" | "yearly" | null;
   entitlementChanged: boolean;
   googleProductConfigured: boolean;
   kind: "coin_pack" | "subscription" | null;

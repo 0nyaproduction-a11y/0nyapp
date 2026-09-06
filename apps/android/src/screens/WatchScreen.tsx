@@ -19,6 +19,7 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import { getWatchEpisodeTransitionParams, getWatchRouteParams } from "../navigation/routeSerialization";
 import { PlayerScreen } from "../player/PlayerScreen";
+import { WalletAccessPaywall } from "../components/WalletAccessPaywall";
 import { getPlaybackResumeOwner, loadTargetPlaybackHistory, type TargetHistoryState } from "../player/targetResume";
 import { usePlaybackSource } from "../player/usePlaybackSource";
 import type { PlaybackContext } from "../player/types";
@@ -77,6 +78,10 @@ function WatchTargetScreen({ navigation, route }: Props) {
   const [historyRetryNonce, setHistoryRetryNonce] = useState(0);
   const [parentalControlState, setParentalControlState] = useState<ParentalControlState | null>(null);
   const [resumeSeconds, setResumeSeconds] = useState<number | null>(null);
+  // Replaces Wallet navigation for locked episodes with no preview seconds:
+  // when the episode is locked and lockedPreviewSeconds=0 we show the paywall
+  // inline inside the Watch screen instead of navigating away to Wallet.
+  const [showInlinePaywall, setShowInlinePaywall] = useState(false);
 
   useEffect(() => {
     perfMark("WATCH_MOUNT", {
@@ -87,6 +92,10 @@ function WatchTargetScreen({ navigation, route }: Props) {
   }, [route.params]);
 
   const currentTargetKey = targetSeries && targetEpisode ? `${targetSeries.slug}:${targetEpisode.number}` : null;
+  // Reset inline paywall whenever the target episode changes.
+  useEffect(() => {
+    setShowInlinePaywall(false);
+  }, [currentTargetKey]);
   const hasValidWatchRoute = getWatchRouteParams(route.params) !== null;
   const classification = useMemo(
     () =>
@@ -151,20 +160,25 @@ function WatchTargetScreen({ navigation, route }: Props) {
     navigation.setParams(getWatchEpisodeTransitionParams(route.params.seriesSlug, episodeNumber));
   }, [navigation, route.params.seriesSlug]);
 
+  // C01 Wallet is the central Micro Drama access hub.
+  // All locked Micro Drama lock events (preview end, locked selection, auto-next)
+  // navigate to Wallet with the exact microDramaAccess context.
   const openEpisodeAccessOptionsFor = useCallback(
     (episode: ApiEpisode, access: EpisodeAccess, resumeAtSeconds?: number | null) => {
       if (!targetSeries) {
         return;
       }
 
-      navigation.navigate("EpisodeAccessOptions", {
-        access,
-        episode,
-        episodeAccess: targetEpisodeAccess,
-        episodeNumber: episode.number,
-        resumeAtSeconds,
-        seriesSlug: targetSeries.slug,
-        seriesTitle: targetSeries.title,
+      navigation.navigate("Wallet", {
+        microDramaAccess: {
+          access,
+          episode,
+          episodeAccess: targetEpisodeAccess,
+          episodeNumber: episode.number,
+          resumeAtSeconds,
+          seriesSlug: targetSeries.slug,
+          seriesTitle: targetSeries.title,
+        },
       });
     },
     [navigation, targetEpisodeAccess, targetSeries],
@@ -218,21 +232,25 @@ function WatchTargetScreen({ navigation, route }: Props) {
             mode: "unlock",
             target: {
               params: {
-                access,
-                episode,
-                episodeNumber: episode.number,
-                episodeAccess: targetEpisodeAccess,
-                resumeAtSeconds: undefined,
-                seriesSlug: targetSeries.slug,
-                seriesTitle: targetSeries.title,
+                microDramaAccess: {
+                  access,
+                  episode,
+                  episodeAccess: targetEpisodeAccess,
+                  episodeNumber: episode.number,
+                  resumeAtSeconds: undefined,
+                  seriesSlug: targetSeries.slug,
+                  seriesTitle: targetSeries.title,
+                },
               },
-              screen: "EpisodeAccessOptions",
+              screen: "Wallet",
             },
           });
           return;
         }
 
-        openEpisodeAccessOptionsFor(episode, access, undefined);
+        // Navigate to the Watch screen for this episode and let WatchScreen
+        // render the inline WalletAccessPaywall instead of going to Wallet.
+        navigateToEpisode(episodeNumber);
         return;
       }
 
@@ -259,16 +277,12 @@ function WatchTargetScreen({ navigation, route }: Props) {
       return;
     }
 
-    navigation.navigate("EpisodeAccessOptions", {
-      access: targetAccess,
-      episode: targetEpisode,
-      episodeNumber: targetEpisode.number,
-      episodeAccess: targetEpisodeAccess,
-      resumeAtSeconds: targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
-      seriesSlug: targetSeries.slug,
-      seriesTitle: targetSeries.title,
-    });
-  }, [navigation, targetAccess, targetEpisode, targetEpisodeAccess, targetSeries]);
+    openEpisodeAccessOptionsFor(
+      targetEpisode,
+      targetAccess,
+      targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
+    );
+  }, [openEpisodeAccessOptionsFor, targetAccess, targetEpisode, targetSeries]);
 
   useEffect(() => {
     if (!targetSeries) {
@@ -452,15 +466,18 @@ function WatchTargetScreen({ navigation, route }: Props) {
       return;
     }
 
-    if (playback.status === "access_required") {
-      openEpisodeAccessOptions();
+    // When shouldUsePreview is true the in-player WalletAccessPaywall owns the
+    // access_required state. Navigating to Wallet here would bypass the
+    // preview+paywall flow entirely. When there is no preview, show the inline paywall.
+    if (playback.status === "access_required" && !shouldUsePreview) {
+      setShowInlinePaywall(true);
     }
   }, [
-    openEpisodeAccessOptions,
     navigation,
     parentalControlState?.hasPin,
     playback.status,
     route.params.resumeAtSeconds,
+    shouldUsePreview,
     targetAccess,
     targetEpisode,
     targetEpisodeAccess,
@@ -480,11 +497,12 @@ function WatchTargetScreen({ navigation, route }: Props) {
       return;
     }
 
-    openEpisodeAccessOptions();
+    // Instead of navigating to Wallet, show the paywall inline so the user
+    // stays within the Watch/Player stack (PAYWALL_OVER_VIDEO=YES).
+    setShowInlinePaywall(true);
   }, [
     requiresComplianceGate,
     loadState,
-    openEpisodeAccessOptions,
     shouldUsePreview,
     targetAccess,
     targetEpisode,
@@ -508,7 +526,7 @@ function WatchTargetScreen({ navigation, route }: Props) {
     ) {
       if (!isParentalSessionUnlocked(parentalScope)) {
         const unlockTargetScreen =
-          targetAccess.canWatch || shouldUsePreview ? "Watch" : "EpisodeAccessOptions";
+          targetAccess.canWatch || shouldUsePreview ? "Watch" : "Wallet";
         navigation.navigate("ParentalControls", {
           mode: "unlock",
           target:
@@ -527,16 +545,18 @@ function WatchTargetScreen({ navigation, route }: Props) {
                 }
               : {
                   params: {
-                    access: targetAccess,
-                    episode: targetEpisode,
-                    episodeNumber: targetEpisode.number,
-                    episodeAccess: targetEpisodeAccess,
-                    resumeAtSeconds:
-                      targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
-                    seriesSlug: targetSeries.slug,
-                    seriesTitle: targetSeries.title,
+                    microDramaAccess: {
+                      access: targetAccess,
+                      episode: targetEpisode,
+                      episodeAccess: targetEpisodeAccess,
+                      episodeNumber: targetEpisode.number,
+                      resumeAtSeconds:
+                        targetEpisode.lockedPreviewSeconds > 0 ? targetEpisode.lockedPreviewSeconds : undefined,
+                      seriesSlug: targetSeries.slug,
+                      seriesTitle: targetSeries.title,
+                    },
                   },
-                  screen: "EpisodeAccessOptions",
+                  screen: "Wallet",
                 },
         });
         return;
@@ -547,13 +567,13 @@ function WatchTargetScreen({ navigation, route }: Props) {
       setBlockedReason(null);
 
       if (!targetAccess.canWatch && !shouldUsePreview) {
-        openEpisodeAccessOptions();
+        setShowInlinePaywall(true);
       }
       return;
     }
 
     if (!targetAccess.canWatch && !shouldUsePreview) {
-      openEpisodeAccessOptions();
+      setShowInlinePaywall(true);
       return;
     }
 
@@ -572,7 +592,6 @@ function WatchTargetScreen({ navigation, route }: Props) {
     parentalScope,
     route.params.resumeAtSeconds,
     shouldUsePreview,
-    openEpisodeAccessOptions,
   ]);
 
   if (loadState === "error") {
@@ -634,6 +653,32 @@ function WatchTargetScreen({ navigation, route }: Props) {
     );
   }
 
+  // Inline paywall for locked episodes with no preview seconds (or when paywall is explicitly invoked).
+  // Shown instead of navigating to Wallet, keeping the user in the Watch stack.
+  if (showInlinePaywall && targetEpisode && targetAccess && targetSeries && !targetAccess.canWatch) {
+    return (
+      <Screen scroll={false}>
+        <WalletAccessPaywall
+          microDramaAccess={{
+            access: targetAccess,
+            episode: targetEpisode,
+            episodeAccess: targetEpisodeAccess,
+            episodeNumber: targetEpisode.number,
+            resumeAtSeconds: undefined,
+            seriesSlug: targetSeries.slug,
+            seriesTitle: targetSeries.title,
+          }}
+          onDismiss={backToPrevious}
+          onSuccess={() => {
+            setShowInlinePaywall(false);
+            setRetryNonce((v) => v + 1);
+          }}
+          variant="card"
+        />
+      </Screen>
+    );
+  }
+
   if (loadState === "loading" || !context) {
     return (
       <Screen>
@@ -646,7 +691,15 @@ function WatchTargetScreen({ navigation, route }: Props) {
     return <PlaybackTransitionScreen />;
   }
 
-  if (playback.status === "parental_required" || playback.status === "access_required") {
+  if (playback.status === "parental_required") {
+    return <PlaybackTransitionScreen />;
+  }
+
+  // When shouldUsePreview is true and access_required is returned (preview
+  // endpoint blocked), fall through to render PlayerScreen. The in-player
+  // WalletAccessPaywall will show over the frozen frame. Only block here if
+  // there is no preview path and Wallet navigation is needed.
+  if (playback.status === "access_required" && !shouldUsePreview) {
     return <PlaybackTransitionScreen />;
   }
 
@@ -679,7 +732,7 @@ function WatchTargetScreen({ navigation, route }: Props) {
           }
           onPrimaryAction={() => {
             if (hasUnlockMethod) {
-              openEpisodeAccessOptions();
+              setShowInlinePaywall(true);
               return;
             }
 
@@ -721,6 +774,42 @@ function WatchTargetScreen({ navigation, route }: Props) {
     );
   }
 
+  // No preview source available but episode is locked and has a preview
+  // seconds value → show the paywall immediately (no video to play).
+  if (shouldUsePreview && playback.status === "access_required" && !playback.source) {
+    const paywallAccess =
+      targetEpisode && targetAccess && targetSeries
+        ? {
+            access: targetAccess,
+            episode: targetEpisode,
+            episodeAccess: targetEpisodeAccess,
+            episodeNumber: targetEpisode.number,
+            resumeAtSeconds:
+              targetEpisode.lockedPreviewSeconds > 0
+                ? targetEpisode.lockedPreviewSeconds
+                : undefined,
+            seriesSlug: targetSeries.slug,
+            seriesTitle: targetSeries.title,
+          }
+        : null;
+
+    if (paywallAccess) {
+      return (
+        <Screen scroll={false}>
+          <WalletAccessPaywall
+            microDramaAccess={paywallAccess}
+            onDismiss={backToPrevious}
+            onSuccess={() => {
+              setResumeSeconds(0);
+              playback.refresh();
+            }}
+            variant="card"
+          />
+        </Screen>
+      );
+    }
+  }
+
   if (!playback.source) {
     return <PlaybackTransitionScreen />;
   }
@@ -740,6 +829,22 @@ function WatchTargetScreen({ navigation, route }: Props) {
       episodeAccess={targetEpisodeAccess}
       episodes={targetSeries!.episodes}
       isProgressResolved={isProgressResolved}
+      microDramaAccess={
+        targetEpisode && targetAccess && targetSeries
+          ? {
+              access: targetAccess,
+              episode: targetEpisode,
+              episodeAccess: targetEpisodeAccess,
+              episodeNumber: targetEpisode.number,
+              resumeAtSeconds:
+                targetEpisode.lockedPreviewSeconds > 0
+                  ? targetEpisode.lockedPreviewSeconds
+                  : undefined,
+              seriesSlug: targetSeries.slug,
+              seriesTitle: targetSeries.title,
+            }
+          : undefined
+      }
       onSeeOptions={openEpisodeAccessOptions}
       onRefreshSource={(currentTime) => {
         setResumeSeconds(currentTime);

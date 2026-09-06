@@ -42,7 +42,7 @@ import { supabase } from "./supabase";
 type ApiRequestOptions = {
   accessToken?: string | null;
   body?: unknown;
-  method?: "GET" | "POST" | "PUT" | "PATCH";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   _isRetry?: boolean;
   signal?: AbortSignal;
 };
@@ -469,6 +469,7 @@ export function getWallet(accessToken: string) {
 export function submitGooglePlayBillingBoundary(
   accessToken: string,
   body: {
+    billingPlan?: "weekly" | "monthly" | "yearly" | null;
     googleProductId?: string | null;
     kind?: "coin_pack" | "subscription";
     mode: "purchase" | "restore";
@@ -749,4 +750,46 @@ export function sendPlayTogetherRoomCommand(
 // supplies/overrides `enabled`; it consumes the server value only.
 export function getPlayTogetherConfig() {
   return requestApi<PlayTogetherFeatureConfig>("/api/v1/play-together/config");
+}
+
+export type RegisterPushDeviceApiPayload = {
+  active?: boolean;
+  deviceId: string;
+  expoPushToken?: string | null;
+  nativePushToken?: string | null;
+  platform: "android" | "ios" | "web";
+};
+
+export function registerPushDeviceApi(payload: RegisterPushDeviceApiPayload, accessToken?: string | null) {
+  return requestApi<{ device: unknown }>("/api/v1/push/devices", {
+    accessToken,
+    body: payload,
+    method: "POST",
+  });
+}
+
+export function deactivatePushDeviceApi(deviceId: string, accessToken?: string | null) {
+  return requestApi<{ success: boolean }>("/api/v1/push/devices", {
+    accessToken,
+    body: { deviceId },
+    method: "DELETE",
+  });
+}
+
+export function getNotificationPreferencesApi(accessToken: string) {
+  return requestApi<{ preferences: unknown }>("/api/v1/push/preferences", {
+    accessToken,
+    method: "GET",
+  });
+}
+
+export function updateNotificationPreferencesApi(
+  preferences: { promotions?: boolean; new_releases?: boolean; account_security?: boolean },
+  accessToken: string
+) {
+  return requestApi<{ preferences: unknown }>("/api/v1/push/preferences", {
+    accessToken,
+    body: preferences,
+    method: "PUT",
+  });
 }

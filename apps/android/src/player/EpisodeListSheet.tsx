@@ -7,7 +7,7 @@ import {
   getEpisodesInRange,
   getInitialEpisodeRangeStart,
 } from "../lib/episodeRanges";
-import { borders, colors } from "../theme/tokens";
+import { borders, colors, radii } from "../theme/tokens";
 import type { ApiEpisode, EpisodeAccess } from "../types/api";
 
 type EpisodeListSheetProps = {
@@ -228,9 +228,11 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: colors.background,
-    borderColor: borders.color,
+    backgroundColor: colors.surfaceElevated,
+    borderTopColor: borders.color,
     borderTopWidth: borders.width,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     maxHeight: "46%",
     paddingBottom: 20,
     paddingHorizontal: SHEET_HORIZONTAL_PADDING,
@@ -275,14 +277,14 @@ const styles = StyleSheet.create({
   rangeChip: {
     alignItems: "center",
     borderColor: borders.color,
-    borderRadius: 6,
+    borderRadius: radii.pill,
     borderWidth: borders.width,
     justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: 12,
   },
   rangeChipSelected: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    backgroundColor: colors.surfaceSelected,
     borderColor: colors.accent,
   },
   rangeText: {
@@ -299,14 +301,14 @@ const styles = StyleSheet.create({
   cell: {
     alignItems: "center",
     borderColor: borders.color,
-    borderRadius: 6,
+    borderRadius: radii.sm,
     borderWidth: borders.width,
     justifyContent: "center",
     marginBottom: GRID_GAP,
     paddingHorizontal: 3,
   },
   cellPlaying: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
+    backgroundColor: colors.surfaceSelected,
     borderColor: colors.accent,
   },
   cellNumber: {

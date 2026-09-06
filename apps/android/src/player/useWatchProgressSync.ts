@@ -2,8 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObjec
 import { AppState, type AppStateStatus } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 import { saveWatchHistory } from "../lib/playbackHistory";
+import { captureRequestIdentity, isCurrentAccessIdentity } from "../lib/confirmedSeriesAccess";
 import { perfEnd, perfMark, perfStart } from "../lib/perf";
 import type { PlaybackContext } from "./types";
+import { createProgressSaveQueue, waitForProgressFlush, type ProgressSyncMode } from "./progressSaveQueue";
 
 type WatchProgressSyncOptions = {
   context: PlaybackContext;
@@ -15,220 +17,103 @@ type WatchProgressSyncOptions = {
   session: Session | null;
 };
 
-type LatestProgressState = {
-  context: PlaybackContext;
-  currentTime: number;
-  duration: number;
-};
-
-const PERIODIC_WRITE_SECONDS = 5;
-const MIN_WRITE_DELTA_SECONDS = 5;
-const WRITE_TIMEOUT_MS = 4000;
-type ProgressSyncMode = "final" | "lifecycle" | "periodic" | "user";
-
 export function useWatchProgressSync({
-  context,
-  currentTime,
-  duration,
-  enabled = true,
-  isPlaying,
-  isSyncArmedRef,
-  session,
+  context, currentTime, duration, enabled = true, isPlaying, isSyncArmedRef, session,
 }: WatchProgressSyncOptions) {
-  const latestRef = useRef<LatestProgressState>({
-    context,
-    currentTime,
-    duration,
-  });
-  const queueRef = useRef<Promise<void>>(Promise.resolve());
-  const lastQueuedPositionRef = useRef<number | null>(null);
-  const pendingSaveCountRef = useRef(0);
-  const contextKey = getProgressContextKey(context);
+  const identity = session?.user.id ?? "guest";
+  const identityRef = useRef(identity);
+  const sessionRef = useRef(session);
+  const contextType = context.type;
+  const seriesSlug = context.type === "SERIES_EPISODE" ? context.seriesSlug : "";
+  const episodeNumber = context.type === "SERIES_EPISODE" ? context.episodeNumber : 0;
+  const filmSlug = context.type === "SHORT_FILM" ? context.filmSlug : "";
+  useLayoutEffect(() => { identityRef.current = identity; sessionRef.current = session; }, [identity, session]);
+
+  const ownerRef = useRef<{
+    latest: { positionSeconds: number; durationSeconds: number };
+    observed: { positionSeconds: number; durationSeconds: number };
+    armed: boolean;
+    enabled: boolean;
+    queue: ReturnType<typeof createProgressSaveQueue>;
+  } | null>(null);
+
+  // A target owns its samples; cleanup never reads the newly rendered target.
+  useLayoutEffect(() => {
+    const identityScope = captureRequestIdentity();
+    const isCurrentIdentity = () => identityRef.current === identity && isCurrentAccessIdentity(identityScope);
+    const scope = `${identity}:${contextType}:${seriesSlug}:${episodeNumber}:${filmSlug}`;
+    const owner = {
+      latest: { positionSeconds: 0, durationSeconds: 0 },
+      observed: { positionSeconds: 0, durationSeconds: 0 },
+      armed: false,
+      enabled: false,
+      queue: createProgressSaveQueue({
+        scope,
+        isCurrentIdentity,
+        async save(sample, mode) {
+          const request = contextType === "SERIES_EPISODE" ? {
+            contentType: "series_episode" as const, seriesSlug,
+            episodeNumber, positionSeconds: sample.positionSeconds,
+          } : {
+            contentType: "short_film" as const, shortFilmSlug: filmSlug,
+            positionSeconds: sample.positionSeconds,
+          };
+          const measure = perfStart("PROGRESS_SYNC", { content_type: request.contentType, mode });
+          try {
+            await saveWatchHistory(sessionRef.current, request, sample.durationSeconds, isCurrentIdentity);
+            perfEnd(measure, { content_type: request.contentType, mode, position_seconds: sample.positionSeconds, result: "ok" });
+          } catch (error) {
+            perfEnd(measure, { content_type: request.contentType, mode, position_seconds: sample.positionSeconds, result: "error" });
+            throw error;
+          }
+        },
+      }),
+    };
+    ownerRef.current = owner;
+    return () => {
+      if (owner.enabled && owner.armed) void owner.queue.enqueue(owner.latest, "lifecycle");
+    };
+  }, [contextType, episodeNumber, filmSlug, identity, seriesSlug]);
 
   useLayoutEffect(() => {
-    latestRef.current = {
-      context,
-      currentTime,
-      duration,
-    };
-  }, [context, currentTime, duration]);
-
-  useEffect(() => {
-    queueRef.current = Promise.resolve();
-    lastQueuedPositionRef.current = null;
-  }, [contextKey]);
+    const owner = ownerRef.current;
+    if (!owner) return;
+    owner.enabled = enabled;
+    owner.observed = { positionSeconds: currentTime, durationSeconds: duration };
+    if (enabled && isSyncArmedRef.current) {
+      owner.armed = true;
+      owner.latest = { positionSeconds: currentTime, durationSeconds: duration };
+    }
+  }, [contextType, currentTime, duration, enabled, episodeNumber, filmSlug, identity, isSyncArmedRef, seriesSlug]);
 
   const enqueueSave = useCallback((mode: ProgressSyncMode = "user") => {
-    if (!enabled) {
-      return Promise.resolve();
-    }
-
-    const latest = latestRef.current;
-
-    if (mode !== "final" && !isSyncArmedRef.current) {
-      return Promise.resolve();
-    }
-
-    if (latest.context.type !== "SERIES_EPISODE" && latest.context.type !== "SHORT_FILM") {
-      return Promise.resolve();
-    }
-
-    const rawPosition =
-      mode === "final"
-        ? Math.max(latest.currentTime, latest.duration)
-        : latest.currentTime;
-    const positionSeconds = normalizePosition(rawPosition, latest.duration);
-
-    if (positionSeconds === null) {
-      return Promise.resolve();
-    }
-
-    const previousPosition = lastQueuedPositionRef.current;
-    const minDelta =
-      mode === "periodic" ? PERIODIC_WRITE_SECONDS : MIN_WRITE_DELTA_SECONDS;
-
-    if (
-      mode === "periodic" &&
-      previousPosition === null &&
-      positionSeconds < PERIODIC_WRITE_SECONDS
-    ) {
-      return Promise.resolve();
-    }
-
-    if (
-      mode !== "final" &&
-      previousPosition !== null &&
-      Math.abs(positionSeconds - previousPosition) < minDelta
-    ) {
-      return queueRef.current.catch(() => undefined);
-    }
-
-    lastQueuedPositionRef.current = positionSeconds;
-
-    const request =
-      latest.context.type === "SERIES_EPISODE"
-        ? {
-            contentType: "series_episode" as const,
-            episodeNumber: latest.context.episodeNumber,
-            positionSeconds,
-            seriesSlug: latest.context.seriesSlug,
-          }
-        : {
-            contentType: "short_film" as const,
-            positionSeconds,
-            shortFilmSlug: latest.context.filmSlug,
-          };
-
-    const hadOverlap = pendingSaveCountRef.current > 0;
-    queueRef.current = queueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const measure = perfStart("PROGRESS_SYNC", {
-          content_type: request.contentType,
-          mode,
-          overlap: hadOverlap,
-        });
-        pendingSaveCountRef.current += 1;
-        try {
-          await withTimeout(saveWatchHistory(session, request, latest.duration));
-          perfEnd(measure, {
-            content_type: request.contentType,
-            mode,
-            position_seconds: positionSeconds,
-            result: "ok",
-          });
-        } catch {
-          // Progress sync should never interrupt playback.
-          perfEnd(measure, {
-            content_type: request.contentType,
-            mode,
-            position_seconds: positionSeconds,
-            result: "error",
-          });
-        } finally {
-          pendingSaveCountRef.current = Math.max(0, pendingSaveCountRef.current - 1);
-        }
-      });
-
-    return queueRef.current.catch(() => undefined);
-  }, [enabled, isSyncArmedRef, session]);
+    const owner = ownerRef.current;
+    if (!owner || !enabled || (mode !== "final" && !isSyncArmedRef.current)) return Promise.resolve();
+    owner.armed = true;
+    const sample = mode === "final" ? {
+      positionSeconds: Math.max(owner.observed.positionSeconds, owner.observed.durationSeconds),
+      durationSeconds: owner.observed.durationSeconds,
+    } : owner.observed;
+    owner.latest = sample;
+    return waitForProgressFlush(owner.queue.enqueue(sample, mode));
+  }, [enabled, isSyncArmedRef]);
 
   useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
-
-    if (
-      !isSyncArmedRef.current ||
-      !isPlaying ||
-      (context.type !== "SERIES_EPISODE" && context.type !== "SHORT_FILM")
-    ) {
-      return;
-    }
-
-    void enqueueSave("periodic");
-  }, [context.type, currentTime, enabled, enqueueSave, isPlaying, isSyncArmedRef]);
+    if (enabled && isPlaying && isSyncArmedRef.current) void enqueueSave("periodic");
+  }, [currentTime, enabled, enqueueSave, isPlaying, isSyncArmedRef]);
 
   useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
-
-    const handleAppStateChange = (state: AppStateStatus) => {
+    if (!enabled) return;
+    const subscription = AppState.addEventListener("change", (state: AppStateStatus) => {
       if (state !== "active") {
         perfMark("PROGRESS_SYNC_LIFECYCLE_SAVE", { app_state: state });
         void enqueueSave("lifecycle");
       }
-    };
-
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
-
-    return () => {
-      subscription.remove();
-    };
+    });
+    return () => subscription.remove();
   }, [enabled, enqueueSave]);
 
   const saveFinal = useCallback(() => enqueueSave("final"), [enqueueSave]);
   const saveNow = useCallback(() => enqueueSave("user"), [enqueueSave]);
-
-  return useMemo(
-    () => ({
-      saveFinal,
-      saveNow,
-    }),
-    [saveFinal, saveNow],
-  );
-}
-
-function getProgressContextKey(context: PlaybackContext) {
-  if (context.type === "SERIES_EPISODE") {
-    return `${context.seriesSlug}:${context.episodeNumber}`;
-  }
-
-  return `film:${context.filmSlug}`;
-}
-
-function normalizePosition(position: number, duration: number) {
-  if (!Number.isFinite(position) || position < 0) {
-    return null;
-  }
-
-  const flooredPosition = Math.floor(position);
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return flooredPosition;
-  }
-
-  return Math.min(flooredPosition, Math.floor(duration));
-}
-
-function withTimeout<T>(promise: Promise<T>) {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error("Progress sync timed out."));
-      }, WRITE_TIMEOUT_MS);
-    }),
-  ]);
+  return useMemo(() => ({ saveFinal, saveNow }), [saveFinal, saveNow]);
 }

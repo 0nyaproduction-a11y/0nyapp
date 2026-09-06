@@ -9,7 +9,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FacetedLoader } from "../components/FacetedLoader";
 import { TransientFeedback } from "../components/ui";
 import { borders, colors, radii, spacing, surfaces, typography } from "../theme/tokens";
-import { getPlayTogetherConfig, getWallet } from "../lib/api";
+import { getPlayTogetherConfig, getSeries, getWallet } from "../lib/api";
+import { captureAccessRequest, publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { createChaiIdempotencyKey, sendShortFilmChaiTip } from "../lib/chai";
 import { perfMark, perfSetAutoNextPlaybackPending } from "../lib/perf";
 import { navigateToSignIn } from "../lib/authReturnIntentStorage";
@@ -20,6 +21,7 @@ import { EpisodeListSheet } from "./EpisodeListSheet";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerMoreSheet } from "./PlayerMoreSheet";
 import { SubtitleTrackSheet } from "./SubtitleTrackSheet";
+import { WalletAccessPaywall } from "../components/WalletAccessPaywall";
 import { buildEpisodeShareMessage, buildShortFilmShareMessage } from "../lib/content-links";
 import {
   formatPlaybackSpeed,
@@ -42,7 +44,7 @@ import { useWatchProgressSync } from "./useWatchProgressSync";
 import { getResumePositionSeconds } from "./resumePosition";
 import { getPlaybackResumeOwner, resolveInitialPlaybackSeek } from "./targetResume";
 import type { PlaybackContext, PlaybackEndedPayload, PlaybackMode } from "./types";
-import type { DiscoveryContext, RootStackParamList } from "../navigation/types";
+import type { DiscoveryContext, MicroDramaAccessContext, RootStackParamList } from "../navigation/types";
 import type {
   ApiEpisode,
   ApiShortFilm,
@@ -83,6 +85,7 @@ type PlayerScreenProps = {
   shortFilmChai?: ShortFilmChaiAvailability | null;
   source: PlaybackSource;
   searchContext?: DiscoveryContext;
+  microDramaAccess?: MicroDramaAccessContext | null;
 };
 
 const DOUBLE_TAP_DELAY_MS = 280;
@@ -176,6 +179,7 @@ export function PlayerScreen({
   shortFilmChai,
   source,
   searchContext,
+  microDramaAccess: propsMicroDramaAccess,
 }: PlayerScreenProps) {
   const isPreviewMode = playbackMode === "preview";
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -366,6 +370,79 @@ export function PlayerScreen({
       emitPlaybackEvidence("qualified_watch", { definition: "continuous_playback_30s_v1", watched_seconds: Math.floor(behaviorWatchedSecondsRef.current) });
     }
   }, [controller.currentTime, controller.isPlaying, emitPlaybackEvidence, isPreviewMode]);
+
+  const activeMicroDramaAccess = useMemo<MicroDramaAccessContext | null>(() => {
+    if (context.type !== "SERIES_EPISODE") {
+      return null;
+    }
+    if (propsMicroDramaAccess && propsMicroDramaAccess.episodeNumber === context.episodeNumber) {
+      return propsMicroDramaAccess;
+    }
+    const targetEpisode: ApiEpisode =
+      episodes?.find((candidate) => candidate.number === context.episodeNumber) ??
+      (propsMicroDramaAccess?.episodeNumber === context.episodeNumber ? propsMicroDramaAccess.episode : null) ?? {
+        ageVerificationRequired: false,
+        coinPrice: 10,
+        coinUnlockEnabled: true,
+        contentDescriptors: [],
+        contentDescriptorsOverride: [],
+        contentRating: null,
+        contentRatingOverride: null,
+        description: "",
+        id: `${context.seriesSlug}:${context.episodeNumber}`,
+        isFree: false,
+        lockedPreviewSeconds: previewSeconds ?? 5,
+        number: context.episodeNumber,
+        parentalLockRequired: false,
+        plusAccess: false,
+        requiredRewardedCompletions: 1,
+        rewardedAccessMode: "permanent",
+        rewardedUnlockEnabled: false,
+        runtime: "",
+        title: context.episodeTitle || `Episode ${context.episodeNumber}`,
+      };
+
+    const targetAccess =
+      episodeAccess?.[String(context.episodeNumber)] ??
+      (propsMicroDramaAccess?.episodeNumber === context.episodeNumber ? propsMicroDramaAccess.access : null) ?? {
+        canWatch: false,
+        kind: context.accessKind ?? "locked",
+        label: context.accessLabel ?? "Locked",
+      };
+
+    const result = {
+      access: targetAccess,
+      episode: targetEpisode,
+      episodeAccess: episodeAccess ?? propsMicroDramaAccess?.episodeAccess ?? {},
+      episodeNumber: targetEpisode.number,
+      resumeAtSeconds: previewSeconds ?? Math.floor(controller.currentTime),
+      seriesSlug: context.seriesSlug,
+      seriesTitle: context.seriesTitle,
+    };
+    return result;
+  }, [propsMicroDramaAccess, context, episodes, episodeAccess, previewSeconds, controller.currentTime]);
+
+  const handleUnlockSuccess = useCallback(async () => {
+    const resumePos = previewSeconds ?? Math.floor(controller.currentTime);
+    if (context.type === "SERIES_EPISODE" && session?.access_token) {
+      try {
+        const refreshed = await getSeries(context.seriesSlug, session.access_token);
+        publishConfirmedSeriesAccess(refreshed, captureAccessRequest(session.access_token));
+      } catch {
+        // Best-effort cache update
+      }
+    }
+    if (onRefreshSource) {
+      onRefreshSource(resumePos);
+    } else if (context.type === "SERIES_EPISODE") {
+      navigation.replace("Watch", {
+        seriesSlug: context.seriesSlug,
+        episodeNumber: context.episodeNumber,
+        resumeAtSeconds: resumePos,
+      });
+    }
+  }, [context, controller.currentTime, navigation, onRefreshSource, previewSeconds, session?.access_token]);
+
   useEffect(() => {
     if (!isTransitionRequested || seamlessTransitionQueuedRef.current === false) {
       return undefined;
@@ -1187,27 +1264,36 @@ export function PlayerScreen({
                 {controller.hasEnded && isPreviewMode ? (
                   <View pointerEvents="box-none" style={styles.previewEndedOverlay}>
                     <View pointerEvents="none" style={styles.previewEndedScrim} />
-                    <View style={styles.previewEndedContent}>
-                      <Text style={styles.previewEndedTitle}>Preview ended</Text>
-                      <Text style={styles.previewEndedBody}>
-                        Locked options are still available for this episode.
-                      </Text>
-                      <Pressable
-                        accessibilityLabel="See options"
-                        accessibilityRole="button"
-                        onPress={() => {
-                          if (onSeeOptions) {
-                            onSeeOptions();
-                            return;
-                          }
+                    {activeMicroDramaAccess ? (
+                      <WalletAccessPaywall
+                        microDramaAccess={activeMicroDramaAccess}
+                        onDismiss={handleBack}
+                        onSuccess={handleUnlockSuccess}
+                        variant="player"
+                      />
+                    ) : (
+                      <View style={styles.previewEndedContent}>
+                        <Text style={styles.previewEndedTitle}>Preview ended</Text>
+                        <Text style={styles.previewEndedBody}>
+                          Locked options are still available for this episode.
+                        </Text>
+                        <Pressable
+                          accessibilityLabel="See options"
+                          accessibilityRole="button"
+                          onPress={() => {
+                            if (onSeeOptions) {
+                              onSeeOptions();
+                              return;
+                            }
 
-                          handleBack();
-                        }}
-                        style={({ pressed }) => [styles.previewEndedButton, pressed && styles.pressed]}
-                      >
-                        <Text style={styles.previewEndedButtonText}>See Options</Text>
-                      </Pressable>
-                    </View>
+                            handleBack();
+                          }}
+                          style={({ pressed }) => [styles.previewEndedButton, pressed && styles.pressed]}
+                        >
+                          <Text style={styles.previewEndedButtonText}>See Options</Text>
+                        </Pressable>
+                      </View>
+                    )}
                   </View>
                 ) : controller.hasEnded &&
                   !isAutoAdvancing &&

@@ -1,12 +1,10 @@
 import type { ApiEpisode, EpisodeAccess, WatchProgressItem } from "../types/api";
-
-const RESUME_MIN_SECONDS = 5;
+import { isContinueWatchingProgress } from "./playbackCompletion";
 
 export function isQualifyingProgress(item: WatchProgressItem) {
   return (
     item.contentType === "series_episode" &&
-    !item.completed &&
-    item.positionSeconds >= RESUME_MIN_SECONDS
+    isContinueWatchingProgress(item)
   );
 }
 

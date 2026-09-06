@@ -1,4 +1,5 @@
 import type { WatchProgressItem } from "../types/api";
+import { isPlaybackCompleted } from "../lib/playbackCompletion";
 
 export function getResumePositionSeconds(
   progress: Pick<WatchProgressItem, "completed" | "durationSeconds" | "positionSeconds"> | null | undefined,
@@ -7,7 +8,8 @@ export function getResumePositionSeconds(
 ) {
   if (
     !progress ||
-    progress.completed ||
+    isPlaybackCompleted(progress, durationSeconds) ||
+    !Number.isFinite(progress.positionSeconds) ||
     progress.positionSeconds <= 0 ||
     progress.positionSeconds < minEntrySeconds
   ) {
@@ -18,10 +20,6 @@ export function getResumePositionSeconds(
     typeof durationSeconds === "number" && durationSeconds > 0
       ? durationSeconds
       : progress.durationSeconds;
-
-  if (effectiveDuration > 0 && effectiveDuration - progress.positionSeconds <= 5) {
-    return null;
-  }
 
   return Math.max(0, Math.min(progress.positionSeconds, effectiveDuration || progress.positionSeconds));
 }

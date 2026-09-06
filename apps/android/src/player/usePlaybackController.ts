@@ -10,7 +10,9 @@ import {
   type VideoSource,
 } from "expo-video";
 import { perfConsumeAutoNextPlaybackPending, perfMark } from "../lib/perf";
+import { getMobileEnv } from "../config/env";
 import type { PlaybackContext, PlaybackEndedPayload } from "./types";
+import { useWebHlsPlayback } from "./useWebHlsPlayback";
 
 /* eslint-disable react-hooks/immutability -- expo-video exposes its player as an imperative mutable object. */
 
@@ -45,8 +47,19 @@ function normalizeRetrySeekSeconds(position: number | null | undefined, duration
   return clampedPosition;
 }
 
-function getPerfContextFields(context: PlaybackContext) {
-  return context.type === "SERIES_EPISODE"
+function getVideoSourceUri(source: VideoSource) {
+  if (typeof source === "string") {
+    return source;
+  }
+
+  if (source && typeof source === "object" && "uri" in source && typeof source.uri === "string") {
+    return source.uri;
+  }
+
+  return null;
+}
+
+function getPerfContextFields(context: PlaybackContext) {  return context.type === "SERIES_EPISODE"
     ? {
         content_type: "series_episode",
         episode_number: context.episodeNumber,
@@ -77,12 +90,18 @@ export function usePlaybackController({
   const [status, setStatus] = useState<VideoPlayerStatus>(INITIAL_STATUS);
   const [error, setError] = useState<PlayerError | undefined>();
   const [sourceLoadCount, setSourceLoadCount] = useState(0);
-  const isMountedRef = useRef(true);
+const isMountedRef = useRef(true);
   const userPausedRef = useRef(false);
   const endedRef = useRef(false);
   const pendingRetrySeekRef = useRef<number | null>(null);
   const hasMarkedPlaybackStartedRef = useRef(false);
   const previousStatusRef = useRef<VideoPlayerStatus>(INITIAL_STATUS);
+  // Guards the autoplay effect against a replaceAsync that is still resolving.
+  // A new source load interrupts any in-flight play() request, which is the
+  // expected expo-video "play() interrupted by a new load" race; the autoplay
+  // effect is skipped while a retry is in flight and retry() resumes play()
+  // itself once the new source is attached.
+  const replaceInFlightRef = useRef(false);
   const playbackLimit =
     typeof playbackLimitSeconds === "number" && Number.isFinite(playbackLimitSeconds) && playbackLimitSeconds > 0
       ? playbackLimitSeconds
@@ -128,6 +147,32 @@ export function usePlaybackController({
     }
     onEnded?.({ context });
   }, [context, duration, onEnded, playbackLimit, player]);
+
+  const handleWebSourceReady = useCallback(
+    (durationSeconds: number) => {
+      perfMark("PLAYER_LOADED", {
+        ...getPerfContextFields(context),
+        duration_seconds: Number.isFinite(durationSeconds) ? durationSeconds.toFixed(1) : null,
+        subtitle_track_count: 0,
+      });
+      setDuration(durationSeconds);
+      setError(undefined);
+      setStatus("readyToPlay");
+      setSourceLoadCount((count) => count + 1);
+    },
+    [context],
+  );
+
+  const handleWebSourceError = useCallback((message: string) => {
+    setError({ message });
+    setStatus("error");
+  }, []);
+
+  useWebHlsPlayback({
+    onError: handleWebSourceError,
+    onReady: handleWebSourceReady,
+    uri: getVideoSourceUri(source),
+  });
 
   useEffect(() => {
     // expo-video exposes playbackRate as a mutable player property.
@@ -234,7 +279,7 @@ export function usePlaybackController({
     [player],
   );
 
-  const retry = useCallback(async (seekSeconds?: number | null) => {
+const retry = useCallback(async (seekSeconds?: number | null) => {
     perfMark("PLAY_REQUESTED", {
       ...getPerfContextFields(context),
       action: "retry",
@@ -245,10 +290,19 @@ export function usePlaybackController({
     pendingRetrySeekRef.current = normalizeRetrySeekSeconds(seekSeconds);
     setCurrentTime(pendingRetrySeekRef.current ?? 0);
     setDuration(0);
+
+    // A new source load interrupts any in-flight play() request, which is the
+    // expected expo-video "play() interrupted by a new load" race. Gate the
+    // autoplay effect on this flag so it never fires against a replaceAsync
+    // that is still resolving; the retry() call resumes play() itself once
+    // the new source is actually attached.
+    replaceInFlightRef.current = true;
+
     try {
       await player.replaceAsync(source);
     } catch (error) {
       pendingRetrySeekRef.current = null;
+      replaceInFlightRef.current = false;
       throw error;
     }
     if (pendingRetrySeekRef.current !== null) {
@@ -257,14 +311,14 @@ export function usePlaybackController({
       player.currentTime = retryPosition;
       setCurrentTime(retryPosition);
     }
+    replaceInFlightRef.current = false;
     if (isMountedRef.current && !userPausedRef.current) {
       player.play();
     }
   }, [context, player, source]);
 
   useEffect(() => {
-    userPausedRef.current = false;
-    endedRef.current = false;
+    // Source swaps are lifecycle boundaries; clear the old URL before resolving a fresh one.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- player changes are source lifecycle boundaries; reset stale source state before autoplay.
     setHasEnded(false);
     setCurrentTime(0);
@@ -279,6 +333,14 @@ export function usePlaybackController({
     // A new player instance always constructs with subtitleTrack: null (expo-video default).
     setSubtitleTrack(null);
     pendingRetrySeekRef.current = null;
+
+    // Never start a play() against a source that is already being replaced by
+    // retry(). The interrupt warning is expected in that case and would mask a
+    // genuine playback failure.
+    if (replaceInFlightRef.current) {
+      return;
+    }
+
     perfMark("PLAY_REQUESTED", {
       ...getPerfContextFields(context),
       action: "autoplay",
@@ -286,7 +348,7 @@ export function usePlaybackController({
     player.play();
   }, [context, player]);
 
-  useEventListener(player, "statusChange", (payload) => {
+useEventListener(player, "statusChange", (payload) => {
     const previousStatus = previousStatusRef.current;
     if (payload.status === "loading" && previousStatus !== "loading") {
       perfMark("BUFFER_START", getPerfContextFields(context));
@@ -306,6 +368,57 @@ export function usePlaybackController({
     setStatus(payload.status);
     setError(payload.error);
   });
+
+  useEffect(() => {
+    // expo-video's web backend emits a benign "play() request was interrupted by
+    // a new load request" page error whenever a source swap lands while a
+    // previous play() is still resolving. It is not a playback failure, so it
+    // is filtered out of the runtime error surface in dev builds only. Real
+    // playback errors still surface through statusChange/error and the
+    // PLAYBACK_ERROR perf mark.
+    if (!__DEV__ || !getMobileEnv().suppressPlayInterruptionPageError) {
+      return undefined;
+    }
+
+    const isBenignPlayInterruption = (message: string) =>
+      /play\(\) request was interrupted by a new load request/i.test(message);
+
+    const originalOnError = window.onerror;
+    const originalConsoleWarn = console.warn;
+    const originalConsoleError = console.error;
+
+    window.onerror = (message, source, lineno, colno, error) => {
+      if (isBenignPlayInterruption(typeof message === "string" ? message : String(message))) {
+        return true;
+      }
+
+      return typeof originalOnError === "function"
+        ? originalOnError.call(window, message, source, lineno, colno, error)
+        : false;
+    };
+
+    console.warn = (...args: unknown[]) => {
+      if (isBenignPlayInterruption(typeof args[0] === "string" ? args[0] : String(args[0]))) {
+        return;
+      }
+
+      originalConsoleWarn(...args);
+    };
+
+    console.error = (...args: unknown[]) => {
+      if (isBenignPlayInterruption(typeof args[0] === "string" ? args[0] : String(args[0]))) {
+        return;
+      }
+
+      originalConsoleError(...args);
+    };
+
+    return () => {
+      window.onerror = originalOnError;
+      console.warn = originalConsoleWarn;
+      console.error = originalConsoleError;
+    };
+  }, []);
 
   useEventListener(player, "playingChange", (payload) => {
     if (payload.isPlaying && !hasMarkedPlaybackStartedRef.current) {

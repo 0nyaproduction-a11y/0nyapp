@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SubtitleTrack } from "expo-video";
 import { getSubtitleTrackLabel, getSubtitleTrackSelectionKey } from "../lib/subtitles";
+import { borders, colors, radii, surfaces, typography } from "../theme/tokens";
 
 type SubtitleTrackSheetProps = {
   currentTrack: SubtitleTrack | null;
@@ -98,13 +99,15 @@ export function SubtitleTrackSheet({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(3, 6, 6, 0.72)",
+    backgroundColor: "rgba(3, 5, 4, 0.65)",
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "rgba(5, 10, 10, 0.98)",
-    borderTopColor: "rgba(244, 255, 253, 0.14)",
-    borderTopWidth: 1,
+    backgroundColor: colors.surfaceElevated,
+    borderTopColor: borders.color,
+    borderTopWidth: borders.width,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     maxHeight: "52%",
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -116,7 +119,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   headerTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 17,
     fontWeight: "800",
   },
@@ -128,12 +131,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   closeText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 14,
     fontWeight: "700",
   },
   description: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 4,
@@ -144,7 +147,9 @@ const styles = StyleSheet.create({
   },
   option: {
     alignItems: "center",
-    borderColor: "rgba(244, 255, 253, 0.12)",
+    backgroundColor: surfaces.s1,
+    borderColor: borders.color,
+    borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -153,35 +158,35 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   optionSelected: {
-    backgroundColor: "rgba(0, 229, 204, 0.12)",
-    borderColor: "#00E5CC",
+    backgroundColor: colors.surfaceSelected,
+    borderColor: colors.accent,
   },
   optionText: {
     flex: 1,
     gap: 3,
   },
   optionLabel: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
   },
   optionLabelSelected: {
-    color: "#00E5CC",
+    color: colors.accent,
   },
   optionDetail: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 16,
   },
   optionBadge: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
     marginLeft: 12,
     textTransform: "uppercase",
   },
   optionBadgeSelected: {
-    color: "#00E5CC",
+    color: colors.accent,
   },
   pressed: {
     opacity: 0.78,

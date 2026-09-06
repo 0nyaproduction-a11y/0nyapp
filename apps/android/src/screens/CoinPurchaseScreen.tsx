@@ -13,6 +13,7 @@ import {
 } from "../components/ui";
 import { getWallet, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
+import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import { getBillingService, type BillingHarnessScenario, type StoreProduct } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { WalletResponse } from "../types/api";
@@ -23,6 +24,7 @@ type Props = RootStackScreenProps<"CoinPurchase">;
 export function CoinPurchaseScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
+  const [storeProducts, setStoreProducts] = useState<StoreProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
@@ -45,6 +47,8 @@ export function CoinPurchaseScreen({ navigation, route }: Props) {
     try {
       const walletData = await getWallet(token);
       setWallet(walletData);
+      const products = await getBillingService(walletData).getProducts("coin_pack");
+      setStoreProducts(products.filter((product) => product.kind === "coin_pack"));
       setError(null);
     } catch {
       setWallet(null);
@@ -110,7 +114,7 @@ export function CoinPurchaseScreen({ navigation, route }: Props) {
             <Label>Balance</Label>
             <Title>{`${wallet.balance} coins`}</Title>
           </Card>
-          {wallet.coinProducts.length > 0 ? (
+          {storeProducts.length > 0 ? (
             <Card>
               <Label>Coin packs</Label>
               <Body>
@@ -118,7 +122,7 @@ export function CoinPurchaseScreen({ navigation, route }: Props) {
                 wallet credit server-authoritative.
               </Body>
               <View style={styles.productList}>
-                {getStoreProducts(wallet).map((product) => (
+                {storeProducts.map((product) => (
                   <CoinPackRow
                     disabled={isPurchasing}
                     key={product.productCode}
@@ -149,7 +153,7 @@ export function CoinPurchaseScreen({ navigation, route }: Props) {
                     disabled={isPurchasing}
                     key={scenario}
                     onPress={() => {
-                      const firstProduct = getStoreProducts(wallet)[0] ?? defaultHarnessProduct;
+                      const firstProduct = storeProducts[0] ?? defaultHarnessProduct;
                       void handlePurchase(firstProduct, scenario);
                     }}
                     style={({ pressed }) => [
@@ -175,7 +179,19 @@ export function CoinPurchaseScreen({ navigation, route }: Props) {
       {!token ? (
         <Card>
           <Label>Guest</Label>
-          <Body>Sign in to view your balance.</Body>
+          <Title>Sign in to buy coins</Title>
+          <Body>Sign in to view your balance and buy coins.</Body>
+          <Button
+            accessibilityLabel="Sign in to buy coins"
+            onPress={async () => {
+              await navigateToSignIn(() => navigation.navigate("SignIn"), {
+                kind: "wallet",
+                microDramaAccess: walletReturn?.microDramaAccess ?? null,
+              });
+            }}
+          >
+            Sign In
+          </Button>
         </Card>
       ) : null}
       {chaiReturn ? (
@@ -217,6 +233,7 @@ const coinHarnessScenarios: BillingHarnessScenario[] = [
 
 const defaultHarnessProduct: StoreProduct = {
   billingPeriodLabel: null,
+  billingPlan: null,
   coinAmount: 100,
   displayName: "100 Coins",
   googleProductId: null,
@@ -226,19 +243,6 @@ const defaultHarnessProduct: StoreProduct = {
   status: "not_configured",
 };
 
-function getStoreProducts(wallet: WalletResponse): StoreProduct[] {
-  return wallet.coinProducts.map((product) => ({
-    billingPeriodLabel: null,
-    coinAmount: product.coinAmount,
-    displayName: product.displayName,
-    googleProductId: null,
-    kind: "coin_pack",
-    localizedPrice: null,
-    productCode: product.code,
-    status: "not_configured",
-  }));
-}
-
 type CoinPackRowProps = {
   disabled: boolean;
   onPress: () => void;
@@ -246,11 +250,18 @@ type CoinPackRowProps = {
 };
 
 function CoinPackRow({ disabled, onPress, product }: CoinPackRowProps) {
-  const priceLabel = product.localizedPrice ?? "Google Play price not configured";
+  // Monetary price only: store-localized when the billing layer provides it,
+  // otherwise the row carries no duplicated coin amount on the price side.
+  const priceLabel = product.localizedPrice;
+  const priceMeta = priceLabel
+    ? product.googleProductId
+      ? "Google Play price"
+      : "Launch reference price"
+    : "Google Play price not configured";
 
   return (
     <Pressable
-      accessibilityLabel={`${product.displayName}. ${priceLabel}`}
+      accessibilityLabel={`${product.displayName}. ${priceLabel ?? priceMeta}`}
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
@@ -262,9 +273,9 @@ function CoinPackRow({ disabled, onPress, product }: CoinPackRowProps) {
     >
       <View style={styles.productCopy}>
         <Text style={styles.productTitle}>{product.displayName}</Text>
-        <Text style={styles.productMeta}>{priceLabel}</Text>
+        <Text style={styles.productMeta}>{priceMeta}</Text>
       </View>
-      <Text style={styles.productAmount}>{`${product.coinAmount ?? 0} Coins`}</Text>
+      {priceLabel ? <Text style={styles.productAmount}>{priceLabel}</Text> : null}
     </Pressable>
   );
 }
@@ -285,7 +296,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   productRowPressed: {
-    backgroundColor: "rgba(13, 209, 188, 0.08)",
+    backgroundColor: "rgba(43, 126, 125, 0.12)",
   },
   productRowDisabled: {
     opacity: 0.62,
@@ -315,14 +326,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   harnessChip: {
-    borderColor: "rgba(13, 209, 188, 0.24)",
+    borderColor: "rgba(43, 126, 125, 0.24)",
     borderWidth: borders.width,
     minHeight: 38,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   harnessChipPressed: {
-    backgroundColor: "rgba(13, 209, 188, 0.10)",
+    backgroundColor: "rgba(43, 126, 125, 0.14)",
   },
   harnessChipDisabled: {
     opacity: 0.5,

@@ -1,52 +1,81 @@
-// Foundation design tokens sourced from the verified 0nya web design system
-// (src/app/globals.css) and aligned to docs/0nya_DESIGN_SYSTEM_v1.0.md §3–§11.
-// Existing tokens are preserved for backward-compatibility.
-// Typography tokens now follow the restrained Quiet Cinema scale (§7).
+// Foundation design tokens aligned to docs/0nya_PRODUCT_UIUX_BIBLE_v3.0.md
+// (B04-VIS supersession) and docs/0nya_DESIGN_SYSTEM_v1.0.md §3–§11.
+// Existing tokens are preserved as aliases for backward-compatibility.
+// Typography tokens follow the restrained Quiet Cinema scale (§7).
 
 export const colors = {
-  // ── Core brand ──────────────────────────────────────────────
-  // web --background (src/app/globals.css)
-  background: "#050505",
-  // web --deep (src/app/globals.css)
+  // ── Core brand / Canvas (B04-VIS V1) ─────────────────────────
+  // Cinema Canvas (S0 base background)
+  background: "#030504",
+  // Cinema Canvas deep alias
   backgroundDeep: "#030504",
-  // web --soft (src/app/globals.css)
-  backgroundSoft: "#071414",
-  // design-system §4 color.bg.secondary
-  backgroundSecondary: "#0b0b0b",
-  // design-system §4 color.bg.elevated
-  bgElevated: "#111111",
-  // web --surface (src/app/globals.css)
-  surface: "#1a1a1a",
-  // web --foreground / --bone (src/app/globals.css)
-  text: "#e8e4da",
-  // web --muted (src/app/globals.css)
-  muted: "#a0a0a0",
-  // design-system §4 color.text.secondary (~72% bone)
-  textSecondary: "rgba(232,228,218,0.72)",
-  // design-system §4 color.text.muted (~52% bone)
-  textMuted: "rgba(232,228,218,0.52)",
-  // design-system §4 color.text.disabled (~32% bone)
-  textDisabled: "rgba(232,228,218,0.32)",
-  // web --teal / design-system §3 0nya Teal
-  accent: "#0dd1bc",
-  // design-system §3 Teal Highlight (#4DE5D2)
-  accentHighlight: "#4de5d2",
-  // design-system §4 color.accent.onPrimary (text on teal buttons)
-  accentOnPrimary: "#050505",
-  // actual rendered web border value (Tailwind `border-bone/10`)
-  border: "rgba(232, 228, 218, 0.10)",
+  // S1 Quiet Matte
+  backgroundSoft: "#080B0A",
+  // S1 Quiet Matte (design-system §4 color.bg.secondary)
+  backgroundSecondary: "#080B0A",
+  // S2 Structural Elevated Matte (design-system §4 color.bg.elevated)
+  bgElevated: "#101312",
+  // S1 Quiet Matte default card/surface
+  surface: "#080B0A",
+  // S2 Structural Elevated Matte
+  surfaceElevated: "#101312",
+
+  // ── Typography & Text (B04-VIS V1) ───────────────────────────
+  // Soft White (design-system §4 color.text.primary)
+  text: "#FEFDFD",
+  // Neutral Grey (B04-VIS core neutral)
+  muted: "#5F6160",
+  // design-system §4 color.text.secondary (~72% soft white)
+  textSecondary: "rgba(254, 253, 253, 0.72)",
+  // design-system §4 color.text.muted (~52% soft white)
+  textMuted: "rgba(254, 253, 253, 0.52)",
+  // design-system §4 color.text.disabled (~32% soft white)
+  textDisabled: "rgba(254, 253, 253, 0.32)",
+
+  // ── Accents & Brand (B04-VIS V1) ─────────────────────────────
+  // Primary Muted Teal (interaction / selection / progress)
+  accent: "#2B7E7D",
+  // Secondary Muted Teal (highlight / companion)
+  accentHighlight: "#47746F",
+  // Secondary Muted Teal alias
+  accentSecondary: "#47746F",
+  // Soft White text on teal buttons (design-system §4 color.accent.onPrimary)
+  accentOnPrimary: "#FEFDFD",
+  // Resting CTA candidate (design-system §3 / §4)
+  ctaResting: "#1A4D4C",
+  // 0nya+ Red (rare identity, no glow)
+  plusRed: "#B91825",
+
+  // ── Borders (B04-VIS) ────────────────────────────────────────
+  // Base subtle border
+  border: "rgba(254, 253, 253, 0.10)",
   // design-system §4 color.border.subtle
-  borderSubtle: "rgba(232,228,218,0.12)",
+  borderSubtle: "rgba(254, 253, 253, 0.12)",
   // design-system §4 color.border.strong
-  borderStrong: "rgba(232,228,218,0.22)",
+  borderStrong: "rgba(254, 253, 253, 0.22)",
+
+  // ── Surface states (B04-VIS) ─────────────────────────────────
   // design-system §4 color.surface.selected (teal tint)
-  surfaceSelected: "rgba(13,209,188,0.10)",
-  // design-system §4 color.surface.pressed (bone tint)
-  surfacePressed: "rgba(232,228,218,0.08)",
-  // design-system §4 color.bg.overlay
-  overlay: "rgba(0,0,0,0.72)",
-  // existing app semantic error tone (previously hardcoded in shared UI)
+  surfaceSelected: "rgba(43, 126, 125, 0.14)",
+  // design-system §4 color.surface.pressed (soft white tint)
+  surfacePressed: "rgba(254, 253, 253, 0.08)",
+  // S3 smoked transient media overlay (design-system §4 color.bg.overlay)
+  overlay: "rgba(0, 0, 0, 0.72)",
+
+  // ── Status ───────────────────────────────────────────────────
   error: "#ff8d76",
+} as const;
+
+// ── Surface Hierarchy (B04-VIS V3) ────────────────────────────
+// S0: Cinema Canvas base background
+// S1: Quiet Matte cards and content surfaces
+// S2: Structural Elevated Matte sheets, dialogs, elevated actions
+// S3: Smoked transient media overlays
+export const surfaces = {
+  s0: "#030504",
+  s1: "#080B0A",
+  s2: "#101312",
+  s3: "rgba(0, 0, 0, 0.72)",
 } as const;
 
 // ── Spacing ────────────────────────────────────────────────────
@@ -67,16 +96,20 @@ export const spacing = {
 } as const;
 
 // ── Radii ──────────────────────────────────────────────────────
-// design-system §11: restrained set.
-// Posters: 8–12. Primary buttons: 12–14. Sheets: 20–24.
+// design-system §11 & B04-VIS V2 geometry:
+// Posters: 8dp. Secondary/Search: 8dp. Primary CTA: 9dp.
+// Access row: 10dp. Dialog: 12dp. Sheet top: 16dp. Pill: 999.
 export const radii = {
-  // web design language uses square corners for some elements; keep for existing uses
   none: 0,
-  xs:   6,
-  sm:   8,
-  md:   12,
-  lg:   16,
-  sheet: 22,
+  xs: 6,
+  sm: 8,
+  poster: 8,
+  cta: 9,
+  row: 10,
+  md: 12,
+  dialog: 12,
+  lg: 16,
+  sheet: 16,
   pill: 999,
 } as const;
 
@@ -198,6 +231,15 @@ export const typography = createTypography("en");
 export const borders = {
   width: 1,
   color: colors.border,
+} as const;
+
+// ── Motion ─────────────────────────────────────────────────────
+// design-system §V4 touch/motion: fast acknowledgement, calm settling,
+// no decorative spring/bounce, reduced-motion parity.
+// loaderPeriod is a tunable runtime candidate for the 16-facet loader
+// (roadmap B04-I1), not a universal constant.
+export const motion = {
+  loaderPeriod: 1400,
 } as const;
 
 export const artwork = {

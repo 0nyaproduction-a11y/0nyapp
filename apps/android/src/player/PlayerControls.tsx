@@ -9,6 +9,7 @@ import {
   type PanResponderGestureState,
   View,
 } from "react-native";
+import { colors, radii, typography } from "../theme/tokens";
 import { TOP_DOWN_SCRIM_GRADIENT_URI } from "./gradientAssets";
 
 type PlayerControlsProps = {
@@ -476,24 +477,24 @@ const styles = StyleSheet.create({
   },
   topIconButton: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 10, 10, 0.28)",
-    borderRadius: 19,
+    backgroundColor: "rgba(3, 5, 4, 0.45)",
+    borderRadius: radii.pill,
     height: 38,
     justifyContent: "center",
     width: 38,
   },
   backGlyph: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 21,
     fontWeight: "700",
   },
   title: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 20,
     fontWeight: "700",
   },
   subtitle: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "500",
   },
@@ -503,7 +504,7 @@ const styles = StyleSheet.create({
   },
   playButton: {
     alignItems: "center",
-    backgroundColor: "rgba(5, 10, 10, 0.38)",
+    backgroundColor: "rgba(3, 5, 4, 0.55)",
     borderRadius: 26,
     height: 52,
     justifyContent: "center",
@@ -516,7 +517,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderBottomColor: "transparent",
     borderBottomWidth: 14,
-    borderLeftColor: "#F4FFFD",
+    borderLeftColor: colors.text,
     borderLeftWidth: 22,
     borderTopColor: "transparent",
     borderTopWidth: 14,
@@ -529,13 +530,13 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   pauseBar: {
-    backgroundColor: "#F4FFFD",
+    backgroundColor: colors.text,
     borderRadius: 1,
     height: 26,
     width: 7,
   },
   replayGlyph: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 26,
     fontWeight: "700",
   },
@@ -549,30 +550,30 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   timeText: {
-    color: "#D8EDE9",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
   },
   track: {
-    borderRadius: 999,
+    borderRadius: radii.pill,
     height: 48,
     justifyContent: "center",
   },
   bufferedTrack: {
-    borderRadius: 999,
-    backgroundColor: "rgba(216, 237, 233, 0.22)",
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(254, 253, 253, 0.22)",
     height: 3,
     position: "absolute",
   },
   progressTrack: {
-    borderRadius: 999,
-    backgroundColor: "#00E5CC",
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
     height: 3,
     position: "absolute",
   },
   thumb: {
-    backgroundColor: "#F4FFFD",
-    borderColor: "#00E5CC",
+    backgroundColor: colors.text,
+    borderColor: colors.accent,
     borderRadius: 5,
     borderWidth: 2,
     height: 10,
@@ -581,7 +582,7 @@ const styles = StyleSheet.create({
     width: 10,
   },
   thumbActive: {
-    borderRadius: 8,
+    borderRadius: radii.sm,
     height: 16,
     marginLeft: -8,
     width: 16,
@@ -635,12 +636,12 @@ const styles = StyleSheet.create({
     top: 10,
   },
   actionLabel: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "600",
   },
   gearGlyph: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 21,
   },
   shareGlyphBox: {

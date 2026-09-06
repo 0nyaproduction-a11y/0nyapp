@@ -29,7 +29,7 @@ type EpisodeRewardedUnlockAdState = {
   status: EpisodeRewardedUnlockAdStatus;
 };
 
-function resolveRewardedUnlockAdUnitId() {
+export function resolveRewardedUnlockAdUnitId() {
   if (__DEV__) {
     return TestIds.REWARDED;
   }
@@ -72,6 +72,7 @@ export function useEpisodeRewardedUnlockAd({
   const adRef = useRef<RewardedAd | null>(null);
   const listenerCleanupsRef = useRef<(() => void)[]>([]);
   const pendingShowRef = useRef(false);
+  const earnedRewardRef = useRef(false);
   const [status, setStatus] = useState<EpisodeRewardedUnlockAdStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastEvent, setLastEvent] = useState<EpisodeRewardedUnlockAdEvent | null>(null);
@@ -91,9 +92,11 @@ export function useEpisodeRewardedUnlockAd({
 
     if (!adRef.current) {
       const ad = createRewardedUnlockAd(customData);
+      earnedRewardRef.current = false;
 
       listenerCleanupsRef.current = [
         ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+          if (adRef.current !== ad) return;
           setError(null);
           setStatus("loaded");
           setLastEvent("loaded");
@@ -105,17 +108,23 @@ export function useEpisodeRewardedUnlockAd({
           }
         }),
         ad.addAdEventListener(AdEventType.OPENED, () => {
+          if (adRef.current !== ad) return;
           setStatus("showing");
           setLastEvent("opened");
         }),
         ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
+          if (adRef.current !== ad) return;
+          earnedRewardRef.current = true;
           setLastEvent("earned_client_signal");
         }),
         ad.addAdEventListener(AdEventType.CLOSED, () => {
+          if (adRef.current !== ad) return;
           setStatus("idle");
-          setLastEvent("closed");
+          // A rapid close must not erase the signal that starts server polling.
+          setLastEvent(earnedRewardRef.current ? "earned_client_signal" : "closed");
         }),
         ad.addAdEventListener(AdEventType.ERROR, (adError) => {
+          if (adRef.current !== ad) return;
           setStatus("failed");
           setError(adError.message);
           setLastEvent("failed");
@@ -157,6 +166,19 @@ export function useEpisodeRewardedUnlockAd({
       setLastEvent(null);
     };
   }, [clearListeners, enabled, ensureAd]);
+
+  useEffect(() => {
+    if (status !== "loading") return;
+    const timeout = setTimeout(() => {
+      pendingShowRef.current = false;
+      clearListeners();
+      adRef.current = null;
+      setStatus("failed");
+      setError("The rewarded ad timed out. Please try again.");
+      setLastEvent("failed");
+    }, 30000);
+    return () => clearTimeout(timeout);
+  }, [clearListeners, status]);
 
   const prepare = useCallback(() => {
     if (!enabled) {

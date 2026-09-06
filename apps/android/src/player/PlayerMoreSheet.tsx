@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatPlaybackSpeed, PLAYBACK_SPEED_OPTIONS } from "../lib/playbackSpeed";
+import { borders, colors, radii } from "../theme/tokens";
 
 // Keeps the effective tap target >= ~44dp for a slightly shorter visible chip.
 const CHIP_HIT_SLOP = { top: 5, bottom: 5, left: 2, right: 2 };
@@ -97,13 +98,15 @@ export function PlayerMoreSheet({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(3, 6, 6, 0.72)",
+    backgroundColor: "rgba(3, 5, 4, 0.65)",
     justifyContent: "flex-end",
   },
   sheet: {
-    backgroundColor: "rgba(5, 10, 10, 0.98)",
-    borderTopColor: "rgba(244, 255, 253, 0.14)",
-    borderTopWidth: 1,
+    backgroundColor: colors.surfaceElevated,
+    borderTopColor: borders.color,
+    borderTopWidth: borders.width,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     paddingHorizontal: 16,
     paddingTop: 14,
   },
@@ -113,7 +116,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   headerTitle: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 17,
     fontWeight: "800",
   },
@@ -125,17 +128,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   closeText: {
-    color: "#00E5CC",
+    color: colors.accent,
     fontSize: 14,
     fontWeight: "700",
   },
   rowLabel: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 14,
     fontWeight: "700",
   },
   rowValue: {
-    color: "#F4FFFD",
+    color: colors.text,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -152,12 +155,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rowChevron: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: "700",
   },
   rowNote: {
-    color: "#A8B9B6",
+    color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 16,
     marginTop: 6,
@@ -170,8 +173,8 @@ const styles = StyleSheet.create({
   },
   speedChip: {
     alignItems: "center",
-    borderColor: "rgba(244, 255, 253, 0.16)",
-    borderRadius: 999,
+    borderColor: borders.color,
+    borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 34,
@@ -179,16 +182,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   speedChipSelected: {
-    backgroundColor: "rgba(0, 229, 204, 0.14)",
-    borderColor: "#00E5CC",
+    backgroundColor: colors.surfaceSelected,
+    borderColor: colors.accent,
   },
   speedChipLabel: {
-    color: "#D8EDE9",
+    color: colors.textSecondary,
     fontSize: 13,
     fontWeight: "700",
   },
   speedChipLabelSelected: {
-    color: "#00E5CC",
+    color: colors.accent,
   },
   pressed: {
     opacity: 0.78,

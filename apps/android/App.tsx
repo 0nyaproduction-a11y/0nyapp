@@ -2,7 +2,11 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
+import { useEffect, useRef } from "react";
 import { LoadingState } from "./src/components/ui";
+import { AppState, LogBox, type AppStateStatus } from "react-native";
+
+LogBox.ignoreAllLogs(true);
 import { AdMobProvider } from "./src/lib/adMob";
 import { AuthProvider, useAuth } from "./src/lib/authContext";
 import { AppLanguageProvider, useAppLanguage } from "./src/lib/appLanguage";
@@ -28,15 +32,44 @@ import { PlusScreen } from "./src/screens/PlusScreen";
 import { WatchScreen } from "./src/screens/WatchScreen";
 import { PlayTogetherRoomScreen } from "./src/screens/PlayTogetherRoomScreen";
 import { perfMark } from "./src/lib/perf";
+import { createSessionObservationController } from "./src/lib/sessionObservations";
+import { setupNotificationListeners, setupTokenRefreshListener } from "./src/lib/notifications";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 perfMark("APP_START");
 
 function AppNavigator() {
-  const { isLoading } = useAuth();
+  const { isLoading, session } = useAuth();
   const { t, typography } = useAppLanguage();
   const linking = getAndroidLinkingConfig();
+  const sessionObservationController = useRef(createSessionObservationController());
+
+  useEffect(() => {
+    const controller = sessionObservationController.current;
+    controller.appOpened();
+    const subscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      if (nextState === "background" || nextState === "inactive") {
+        controller.appBackground();
+      } else if (nextState === "active") {
+        controller.appForeground();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    sessionObservationController.current.setActorId(session?.user.id ?? null);
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    const cleanupRefresh = setupTokenRefreshListener(session?.access_token);
+    const cleanupListeners = setupNotificationListeners();
+    return () => {
+      cleanupRefresh();
+      cleanupListeners();
+    };
+  }, [session?.access_token]);
 
   if (isLoading) {
     return <LoadingState />;
@@ -62,7 +95,14 @@ function AppNavigator() {
           component={MainTabsNavigator}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Wallet" component={WalletScreen} options={{ title: t("wallet.title", "Wallet") }} />
+        <Stack.Screen
+          name="Wallet"
+          component={WalletScreen}
+          options={{
+            headerRight: () => null,
+            title: "Activity",
+          }}
+        />
         <Stack.Screen
           name="CoinPurchase"
           component={CoinPurchaseScreen}
@@ -88,7 +128,16 @@ function AppNavigator() {
         <Stack.Screen
           name="EpisodeAccessOptions"
           component={EpisodeAccessOptionsScreen}
-          options={{ title: t("unlock.title", "Unlock options") }}
+          options={{
+            // W02 is a contextual access presentation over the frozen W01
+            // preview frame, not a full-screen replacement: keep the player
+            // screen underneath mounted and visible.
+            animation: "fade",
+            contentStyle: { backgroundColor: "transparent" },
+            headerShown: false,
+            presentation: "transparentModal",
+            title: t("unlock.title", "Unlock options"),
+          }}
         />
         <Stack.Screen
           name="ParentalControls"
