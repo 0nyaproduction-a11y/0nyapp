@@ -10,8 +10,8 @@ import {
 import { canUserWatchEpisode, resolvePlaybackMaxResolution } from "@/lib/entitlements";
 import { getPerfCollector, timePerf } from "@/lib/api/perf";
 import {
-  createMuxPreviewClip,
   createMuxSignedPlaybackUrl,
+  createMuxSignedPreviewPlaybackUrl,
   createMuxSignedThumbnailUrl,
 } from "@/lib/mux";
 import {
@@ -26,7 +26,6 @@ import type { Database } from "@/types/database";
 type SeriesRow = Database["public"]["Tables"]["series"]["Row"];
 type EpisodeRow = Database["public"]["Tables"]["episodes"]["Row"];
 type ShortFilmRow = Database["public"]["Tables"]["short_films"]["Row"];
-type MediaAssetRow = Database["public"]["Tables"]["media_assets"]["Row"];
 
 export type PlaybackTarget =
   | {
@@ -79,23 +78,6 @@ export type PreviewPlaybackAuthorizationResult =
         | "preview_not_required"
         | "preview_not_ready"
         | "preview_unavailable";
-    };
-
-export type EpisodePreviewProvisioningResult =
-  | {
-      episodeId: string;
-      previewMediaAssetId: string;
-      previewSeconds: number;
-      status: "provisioned";
-    }
-  | {
-      episodeId: string;
-      previewMediaAssetId: string;
-      previewSeconds: number;
-      status: "reused";
-    }
-  | {
-      status: "not_found" | "preview_disabled" | "media_not_ready" | "playback_unavailable";
     };
 
 function getSupabase(supabase?: SupabaseClient<Database>) {
@@ -380,6 +362,21 @@ async function resolveEpisodePlayback(
   };
 }
 
+/**
+ * W01 locked-episode preview authorization (architecture correction:
+ * "REMOVE PREVIEW-CLIP ARCHITECTURE / USE SAME VIDEO FOR W01").
+ *
+ * A locked episode's preview authorizes the SAME main media source as full
+ * playback — no separate preview clip/asset is created or stored. The Mux JWT
+ * embeds signed VOD instant-clipping modifiers for 0..previewSeconds. Android's
+ * `playbackLimitSeconds` remains exact-stop UX and defense-in-depth while the
+ * provider's actual segment/media boundary is independently measured. The API remains explicit and
+ * distinguishable from full playback: this endpoint returns `previewUrl` +
+ * `previewSeconds`, only for content the viewer cannot yet watch, and never
+ * grants full playback authorization. `/api/v1/playback` (full playback) stays
+ * auth-gated and greedily returns `access_required` for locked episodes.
+ * A final W01 security classification depends on the media-boundary proof.
+ */
 async function resolvePreviewPlayback(
   target: Extract<PlaybackTarget, { targetType: "SERIES_EPISODE" }>,
   auth: PlaybackAuthContext,
@@ -428,46 +425,14 @@ async function resolvePreviewPlayback(
     return { status: "preview_not_ready" };
   }
 
-  const previewMediaAssetId = episode.preview_media_asset_id?.trim();
-  let previewMediaAsset: MediaAssetRow | null = null;
-
-  if (previewMediaAssetId) {
-    const { data, error } = await supabase
-      .from("media_assets")
-      .select("*")
-      .eq("id", previewMediaAssetId)
-      .maybeSingle();
-
-    if (!error && data) {
-      previewMediaAsset = data;
-    }
-  }
-
-  if (
-    !previewMediaAsset ||
-    previewMediaAsset.source_media_asset_id !== fullMediaAsset.id ||
-    previewMediaAsset.clip_start_seconds !== 0 ||
-    previewMediaAsset.clip_end_seconds !== previewSeconds
-  ) {
-    return { status: "preview_not_ready" };
-  }
-
-  if (previewMediaAsset.status === "failed") {
-    return { status: "preview_unavailable" };
-  }
-
-  if (previewMediaAsset.status !== "ready") {
-    return { status: "preview_not_ready" };
-  }
-
-  const previewPlaybackReference = previewMediaAsset.provider_playback_reference?.trim();
+  const previewPlaybackReference = fullMediaAsset.provider_playback_reference?.trim();
 
   if (!previewPlaybackReference) {
     return { status: "preview_unavailable" };
   }
 
   const previewMaxResolution = await resolvePlaybackMaxResolution(auth.userId, supabase);
-  const signedPlayback = createMuxSignedPlaybackUrl(
+  const signedPlayback = createMuxSignedPreviewPlaybackUrl(
     previewPlaybackReference,
     previewSeconds,
     previewMaxResolution,
@@ -603,192 +568,6 @@ async function resolveShortFilmPlayback(
     ...(stillUrl ? { stillUrl } : {}),
     status: "ok",
   };
-}
-
-export async function provisionEpisodePreviewMediaAsset(
-  episodeId: string,
-  supabaseClient?: SupabaseClient<Database>,
-): Promise<EpisodePreviewProvisioningResult> {
-  const supabase = getSupabase(supabaseClient);
-  const normalizedEpisodeId = episodeId.trim();
-
-  if (!normalizedEpisodeId) {
-    return { status: "not_found" };
-  }
-
-  const { data: episode, error: episodeError } = await supabase
-    .from("episodes")
-    .select("*")
-    .eq("id", normalizedEpisodeId)
-    .eq("status", "published")
-    .maybeSingle();
-
-  if (episodeError || !episode || !isReleased(episode.published_at)) {
-    return { status: "not_found" };
-  }
-
-  const previewSeconds = Math.max(0, Math.floor(episode.locked_preview_seconds));
-
-  if (previewSeconds <= 0) {
-    return { status: "preview_disabled" };
-  }
-
-  if (!episode.media_asset_id) {
-    return { status: "playback_unavailable" };
-  }
-
-  const { data: fullMediaAsset, error: fullMediaAssetError } = await supabase
-    .from("media_assets")
-    .select("*")
-    .eq("id", episode.media_asset_id)
-    .maybeSingle();
-
-  if (fullMediaAssetError || !fullMediaAsset) {
-    return { status: "playback_unavailable" };
-  }
-
-  if (fullMediaAsset.status !== "ready") {
-    return { status: "media_not_ready" };
-  }
-
-  const sourceAssetId = fullMediaAsset.provider_asset_reference?.trim();
-
-  if (!sourceAssetId) {
-    return { status: "playback_unavailable" };
-  }
-
-  const previewMatchesCurrentConfig = (mediaAsset: MediaAssetRow | null) =>
-    Boolean(
-      mediaAsset &&
-      mediaAsset.source_media_asset_id === fullMediaAsset.id &&
-      mediaAsset.clip_start_seconds === 0 &&
-      mediaAsset.clip_end_seconds === previewSeconds &&
-      mediaAsset.status !== "failed",
-    );
-
-  let previewMediaAsset: MediaAssetRow | null = null;
-
-  if (episode.preview_media_asset_id) {
-    const { data, error } = await supabase
-      .from("media_assets")
-      .select("*")
-      .eq("id", episode.preview_media_asset_id)
-      .maybeSingle();
-
-    if (!error && previewMatchesCurrentConfig(data)) {
-      previewMediaAsset = data;
-    }
-  }
-
-  if (!previewMediaAsset) {
-    const { data } = await supabase
-      .from("media_assets")
-      .select("*")
-      .eq("source_media_asset_id", fullMediaAsset.id)
-      .eq("clip_start_seconds", 0)
-      .eq("clip_end_seconds", previewSeconds)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (previewMatchesCurrentConfig(data)) {
-      previewMediaAsset = data;
-    }
-  }
-
-  if (previewMediaAsset) {
-    if (episode.preview_media_asset_id !== previewMediaAsset.id) {
-      const { error: updateEpisodeError } = await supabase
-        .from("episodes")
-        .update({ preview_media_asset_id: previewMediaAsset.id })
-        .eq("id", episode.id);
-
-      if (updateEpisodeError) {
-        throw new Error("Unable to attach the existing preview media asset.");
-      }
-    }
-
-    return {
-      episodeId: episode.id,
-      previewMediaAssetId: previewMediaAsset.id,
-      previewSeconds,
-      status: "reused",
-    };
-  }
-
-  const { data: createdPreviewMediaAsset, error: createPreviewMediaAssetError } = await supabase
-    .from("media_assets")
-    .insert({
-      clip_end_seconds: previewSeconds,
-      clip_start_seconds: 0,
-      provider_name: "mux",
-      source_media_asset_id: fullMediaAsset.id,
-      status: "pending",
-    })
-    .select("*")
-    .single();
-
-  if (createPreviewMediaAssetError || !createdPreviewMediaAsset) {
-    throw new Error("Unable to create the preview media asset.");
-  }
-
-  const { error: attachPreviewMediaAssetError } = await supabase
-    .from("episodes")
-    .update({ preview_media_asset_id: createdPreviewMediaAsset.id })
-    .eq("id", episode.id);
-
-  if (attachPreviewMediaAssetError) {
-    throw new Error("Unable to attach the preview media asset to the episode.");
-  }
-
-  try {
-    const muxPreviewClip = await createMuxPreviewClip({
-      endTime: previewSeconds,
-      passthrough: createdPreviewMediaAsset.id,
-      sourceAssetId,
-      startTime: 0,
-    });
-
-    const nextStatus = muxPreviewClip.status === "ready" && muxPreviewClip.playbackId ? "ready" : "processing";
-
-    const { error: updatePreviewMediaAssetError } = await supabase
-      .from("media_assets")
-      .update({
-        provider_asset_reference: muxPreviewClip.assetId,
-        provider_playback_reference: muxPreviewClip.playbackId,
-        provider_name: "mux",
-        status: nextStatus,
-      })
-      .eq("id", createdPreviewMediaAsset.id);
-
-    if (updatePreviewMediaAssetError) {
-      throw new Error("Unable to persist the preview Mux asset reference.");
-    }
-
-    return {
-      episodeId: episode.id,
-      previewMediaAssetId: createdPreviewMediaAsset.id,
-      previewSeconds,
-      status: "provisioned",
-    };
-  } catch (error) {
-    const failureMessage = error instanceof Error ? error.message : "Unable to create the preview Mux asset.";
-
-    const { error: markFailedError } = await supabase
-      .from("media_assets")
-      .update({
-        failure_code: "mux_preview_asset_error",
-        failure_message: failureMessage,
-        status: "failed",
-      })
-      .eq("id", createdPreviewMediaAsset.id);
-
-    if (markFailedError) {
-      throw new Error("Unable to mark the preview media asset as failed.");
-    }
-
-    throw error instanceof Error ? error : new Error(failureMessage);
-  }
 }
 
 export async function authorizeMuxPlayback(

@@ -290,8 +290,7 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
             Media assignment
           </h2>
           <p className="mt-2 text-sm text-bone/60">
-            Video: <span className="text-bone">{mediaReadiness.video}</span> · Preview clip:{" "}
-            <span className="text-bone">{mediaReadiness.preview}</span>
+            Video: <span className="text-bone">{mediaReadiness.video}</span>
           </p>
           <div className="mt-4">
             <EpisodeMediaAssignmentForm

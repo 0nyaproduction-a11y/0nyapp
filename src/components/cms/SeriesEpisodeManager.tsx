@@ -9,7 +9,6 @@ import { buildAccessSummary, type EpisodeRow } from "@/lib/cms/constants";
 import type { EpisodeFormState } from "@/lib/cms/episode-form";
 
 type MediaReadiness = {
-  preview: string;
   video: string;
 };
 
@@ -273,7 +272,6 @@ export function SeriesEpisodeManager({ addEpisodeHref, bulkUploadHref, rows }: S
                       Duration: {formatDuration(row.episode.duration_seconds)} · Media: {row.mediaReadiness.video} · Access:{" "}
                       {buildAccessSummary(row.episode)}
                     </p>
-                    <p className="text-xs text-bone/45">Preview clip: {row.mediaReadiness.preview}</p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -376,10 +374,6 @@ export function SeriesEpisodeManager({ addEpisodeHref, bulkUploadHref, rows }: S
                         <div className="flex justify-between gap-4">
                           <dt>Media video</dt>
                           <dd className="text-bone">{selectedRow.mediaReadiness.video}</dd>
-                        </div>
-                        <div className="flex justify-between gap-4">
-                          <dt>Preview clip</dt>
-                          <dd className="text-bone">{selectedRow.mediaReadiness.preview}</dd>
                         </div>
                         <div className="flex justify-between gap-4">
                           <dt>Access</dt>

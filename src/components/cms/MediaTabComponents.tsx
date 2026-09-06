@@ -519,7 +519,6 @@ export function DeleteImpactReportView({ report }: { report: DeleteImpactReport 
 
   const rows: [string, string][] = [
     ["Episode media refs", impactRefLabel(details.episodeRefs)],
-    ["Episode preview refs", impactRefLabel(details.previewRefs)],
     ["Short-film refs", impactRefLabel(details.shortFilmRefs)],
     ["Derived child assets", impactRefLabel(details.derivedChildren)],
     [

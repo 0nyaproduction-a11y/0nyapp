@@ -167,13 +167,13 @@ export function EpisodeMetadataForm({
           Included with Plus
         </label>
 
-        <Field label="Locked preview seconds (0–3)" error={errors.lockedPreviewSeconds}>
+        <Field label="Locked preview seconds (0–5)" error={errors.lockedPreviewSeconds}>
           <input
             className={inputClassName}
             type="number"
             name="lockedPreviewSeconds"
             min={0}
-            max={3}
+            max={5}
             defaultValue={episode?.locked_preview_seconds ?? 0}
           />
         </Field>

@@ -360,8 +360,8 @@ export function BulkEpisodeUploadForm({
       messages.push("Coin price must be greater than zero when coin unlock is enabled.");
     }
 
-    if (batchDefaults.lockedPreviewSeconds < 0 || batchDefaults.lockedPreviewSeconds > 3) {
-      messages.push("Locked preview seconds must be between 0 and 3.");
+    if (batchDefaults.lockedPreviewSeconds < 0 || batchDefaults.lockedPreviewSeconds > 5) {
+      messages.push("Locked preview seconds must be between 0 and 5.");
     }
 
     if (!REWARDED_REQUIRED_COMPLETIONS_VALUES.includes(batchDefaults.requiredRewardedCompletions as 1 | 2)) {
@@ -883,12 +883,12 @@ export function BulkEpisodeUploadForm({
                 className={inputClassName}
                 type="number"
                 min={0}
-                max={3}
+                max={5}
                 value={batchDefaults.lockedPreviewSeconds}
                 onChange={(event) =>
                   setBatchDefaults((current) => ({
                     ...current,
-                    lockedPreviewSeconds: Math.min(3, Math.max(0, Number(event.target.value) || 0)),
+                    lockedPreviewSeconds: Math.min(5, Math.max(0, Number(event.target.value) || 0)),
                   }))
                 }
                 disabled={isRunning}

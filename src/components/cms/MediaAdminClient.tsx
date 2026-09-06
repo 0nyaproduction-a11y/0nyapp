@@ -72,7 +72,6 @@ function matchesTab(tab: MediaViewTab, row: MediaViewRow): boolean {
         row.classification === "READY" &&
         !row.isMuxOnly &&
         row.contentRefs.episodes === 0 &&
-        row.contentRefs.previews === 0 &&
         row.contentRefs.shortFilms === 0
       );
     default:
