@@ -114,8 +114,8 @@ function SettingsToggleRow({
       <Switch
         accessibilityLabel={label}
         onValueChange={onValueChange}
-        thumbColor={value ? colors.accent : "#f1efe9"}
-        trackColor={{ false: "#3c3a37", true: "rgba(13, 209, 188, 0.4)" }}
+        thumbColor={value ? colors.accent : colors.muted}
+        trackColor={{ false: colors.borderStrong, true: "rgba(43, 126, 125, 0.4)" }}
         value={value}
       />
     </View>
@@ -124,7 +124,7 @@ function SettingsToggleRow({
 
 export function SettingsScreen({ navigation }: Props) {
   const { session } = useAuth();
-  const { language, setLanguage, t } = useAppLanguage();
+  const { setLanguage, t } = useAppLanguage();
   const [autoplayNext, setAutoplayNext] = useState(true);
   const [newReleaseNotifications, setNewReleaseNotifications] = useState(false);
   const [marketingNotifications, setMarketingNotifications] = useState(false);
@@ -196,10 +196,10 @@ export function SettingsScreen({ navigation }: Props) {
   };
 
   const openSubtitleLanguagePicker = () => {
+    // Hindi subtitle option hidden for now.
     const subtitleLanguageOptions: Array<{ label: string; value: string | null }> = [
       { label: "Auto", value: null },
       { label: "English", value: "en" },
-      { label: "Hindi", value: "hi" },
     ];
 
     Alert.alert(
@@ -306,6 +306,7 @@ export function SettingsScreen({ navigation }: Props) {
     <Screen>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("settings.section_app", "App Interface")}</Text>
+        {/* Hindi app-language option hidden for now; interface stays English-only. */}
         <SettingsRow
           detail={t("settings.app_language_detail", "Choose app interface language.")}
           label={t("settings.app_language", "App Language")}
@@ -319,14 +320,10 @@ export function SettingsScreen({ navigation }: Props) {
                   text: "English",
                   onPress: () => setLanguage("en"),
                 },
-                {
-                  text: "हिन्दी",
-                  onPress: () => setLanguage("hi"),
-                },
               ],
             );
           }}
-          value={language === "hi" ? "हिन्दी" : "English"}
+          value="English"
         />
       </View>
 

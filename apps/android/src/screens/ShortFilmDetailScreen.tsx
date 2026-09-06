@@ -20,7 +20,7 @@ import { resolveShortFilmArtwork } from "../lib/shortFilmArtwork";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiShortFilm, ShortFilmResponse } from "../types/api";
 import type { ParentalControlState } from "../lib/parentalControls";
-import { colors, borders, typography } from "../theme/tokens";
+import { borders, colors, radii, surfaces, typography } from "../theme/tokens";
 import { useAppLanguage } from "../lib/appLanguage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ShortFilm">;
@@ -469,16 +469,28 @@ posterImage: {
     color: colors.textSecondary,
   },
   shareButton: {
+    alignItems: "center",
     alignSelf: "flex-start",
-    paddingVertical: 4,
+    backgroundColor: "rgba(254, 253, 253, 0.04)",
+    borderColor: "rgba(254, 253, 253, 0.10)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
   },
   shareButtonPressed: {
+    backgroundColor: colors.surfacePressed,
     opacity: 0.75,
+    transform: [{ scale: 0.975 }],
   },
   shareButtonText: {
     ...typography.label,
-    color: colors.accent,
-    letterSpacing: 0.2,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.1,
   },
   sectionHeading: {
     ...typography.h3,
