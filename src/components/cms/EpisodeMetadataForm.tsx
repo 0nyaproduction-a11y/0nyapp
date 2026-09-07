@@ -85,6 +85,7 @@ export function EpisodeMetadataForm({
 
       <fieldset className="space-y-3 border border-bone/10 p-4">
         <legend className={labelClassName}>Access configuration</legend>
+        {errors.access && <p className="mt-1 text-xs text-red-400">{errors.access}</p>}
 
         <label className="flex items-center gap-2 text-sm text-bone/80">
           <input
@@ -132,6 +133,7 @@ export function EpisodeMetadataForm({
               className={inputClassName}
               name="rewardedAccessMode"
               defaultValue={episode?.rewarded_access_mode ?? "permanent"}
+              disabled
               options={[{ label: "Permanent", value: "permanent" }]}
             />
           </Field>
@@ -151,11 +153,9 @@ export function EpisodeMetadataForm({
           </Field>
         </div>
 
-        {episode?.rewarded_unlock_enabled ? (
-          <p className="text-xs text-bone/40">
-            Launch rewarded unlock is permanent only. Session mode is not supported and is hidden from this editor.
-          </p>
-        ) : null}
+        <p className="text-xs text-bone/40">
+          Rewarded access is permanent-only at launch. Session mode is not supported and is disabled in this editor.
+        </p>
 
         <label className="flex items-center gap-2 text-sm text-bone/80">
           <input

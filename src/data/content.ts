@@ -14,7 +14,7 @@ export type Episode = {
   coinPrice?: number;
   coinUnlockEnabled: boolean;
   rewardedUnlockEnabled: boolean;
-  rewardedAccessMode: "permanent" | "session";
+  rewardedAccessMode: "permanent";
   requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
@@ -56,6 +56,15 @@ export type ContentItem = {
 
 const artwork = "/logo-og.jpg";
 
+// NEUTRALIZED STALE ASSUMPTION (CMS-C06B / 0nya Product Bible LOCKED): the unlock
+// boundary encoded in this mock sample — Episodes 1-3 free, Episode 4 onward
+// locked behind Plus — is SAMPLE DATA ONLY. The Product Bible locks the app to
+// NEVER assume "Episode 1-3 free / Episode 4 locked"; episode access is
+// backend/CMS-authoritative per episode (free / coin_unlock / rewarded / Plus are
+// independent CMS columns, no episode_number branching). Real consumers read
+// access from the live ApiEpisode; this mock is used only for fallback rendering
+// when Supabase is unavailable. Do not let "episode number 4" drive any logic or
+// test expectation here.
 const aadhaTakiyaEpisodes: Episode[] = [
   {
     number: 1,
@@ -67,8 +76,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: false,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
     progress: 100,
@@ -83,8 +92,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: false,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
     progress: 72,
@@ -99,8 +108,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: false,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -114,8 +123,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: true,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -129,8 +138,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: true,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -144,8 +153,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: true,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -159,8 +168,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: true,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -174,8 +183,8 @@ const aadhaTakiyaEpisodes: Episode[] = [
     isLocked: true,
     coinUnlockEnabled: false,
     rewardedUnlockEnabled: false,
-     rewardedAccessMode: "permanent",
-     requiredRewardedCompletions: 1,
+    rewardedAccessMode: "permanent",
+    requiredRewardedCompletions: 1,
     plusAccess: true,
     lockedPreviewSeconds: 0,
   },
@@ -206,7 +215,8 @@ const placeholderEpisodes = (
     return {
       number,
       title: `${titlePrefix} ${number}`,
-      description: "A compact vertical episode placeholder for the 0nya mock catalogue.",
+      description:
+        "A compact vertical episode placeholder for the 0nya mock catalogue.",
       runtime: duration.replace(" min episodes", ":00"),
       isFree: PLACEHOLDER_EPISODE_IS_FREE,
       isLocked: PLACEHOLDER_EPISODE_IS_LOCKED,
@@ -409,7 +419,9 @@ export function getSeriesBySlug(slug: string) {
 }
 
 export function getShortFilmBySlug(slug: string) {
-  return contentItems.find((item) => item.slug === slug && item.format === "Short");
+  return contentItems.find(
+    (item) => item.slug === slug && item.format === "Short",
+  );
 }
 
 export function getShortFilms() {

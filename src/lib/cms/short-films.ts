@@ -152,6 +152,37 @@ export function validateShortFilmInput(input: ShortFilmInput): ShortFilmValidati
     }
   }
 
+  // Mirrors the DB CHECK (009): midroll_enabled requires at least one timecode.
+  if (input.midrollEnabled && input.midrollTimecodes.length === 0) {
+    errors.push({
+      field: "midrollTimecodes",
+      message: "Mid-roll timecodes are required when mid-roll is enabled.",
+    });
+  }
+
+  if (input.midrollEnabled) {
+    // Each insertion point must fall strictly inside the runtime: a mid-roll ad
+    // at t=0 or at/after the end has nothing to precede/follow. The per-timecode
+    // integer check above stays lenient when mid-roll is disabled (vestigial).
+    for (const timecode of input.midrollTimecodes) {
+      if (timecode <= 0 || timecode >= input.durationSeconds) {
+        errors.push({
+          field: "midrollTimecodes",
+          message: "Mid-roll timecodes must fall within the short film runtime.",
+        });
+        break;
+      }
+    }
+
+    const uniqueTimecodes = new Set(input.midrollTimecodes);
+    if (uniqueTimecodes.size !== input.midrollTimecodes.length) {
+      errors.push({
+        field: "midrollTimecodes",
+        message: "Mid-roll timecodes must be unique.",
+      });
+    }
+  }
+
   if (input.status === "published") {
     if (!input.posterUrl || !input.posterUrl.trim()) {
       errors.push({ field: "posterUrl", message: "Poster artwork is required to publish." });

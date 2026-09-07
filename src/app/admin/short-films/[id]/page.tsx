@@ -254,6 +254,8 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
 
     const chaiEnabled = formData.get("chaiEnabled") === "on";
     const amountIds = formData.getAll("allowedCoinAmountId").map(String);
+    const parsedAmounts: { id: string; coinAmount: number; sortOrder: number; enabled: boolean }[] = [];
+
     for (let index = 0; index < amountIds.length; index += 1) {
       const amountId = amountIds[index];
       const coinAmount = Number(formData.get(`coinAmount-${amountId}`));
@@ -268,10 +270,25 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
         return { errors: { form: "Sort order must be a whole number." } };
       }
 
-      const updated = await updateChaiAllowedCoinAmount(amountIds[index], {
-        coinAmount,
-        enabled,
-        sortOrder,
+      parsedAmounts.push({ id: amountId, coinAmount, sortOrder, enabled });
+    }
+
+    // Detect duplicate coin amounts before saving — the DB unique constraint
+    // on chai_allowed_coin_amounts.coin_amount would reject the second
+    // occurrence with a generic 23505, producing an unclear error for admins.
+    const seenAmounts = new Set<number>();
+    for (const amount of parsedAmounts) {
+      if (seenAmounts.has(amount.coinAmount)) {
+        return { errors: { form: `Duplicate Chai coin amount: ${amount.coinAmount}. Each allowed amount must be unique.` } };
+      }
+      seenAmounts.add(amount.coinAmount);
+    }
+
+    for (const amount of parsedAmounts) {
+      const updated = await updateChaiAllowedCoinAmount(amount.id, {
+        coinAmount: amount.coinAmount,
+        enabled: amount.enabled,
+        sortOrder: amount.sortOrder,
       });
 
       if (!updated) {

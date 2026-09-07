@@ -1,13 +1,26 @@
 /**
  * Client/server-safe helpers for the multi-rewarded unlock configuration.
  *
- * These mirror the database CHECK constraints so the app can validate input
- * before it ever reaches Postgres. The authoritative required-count value is
- * backend/CMS controlled; it is NEVER derived from coin price.
+ * The required-completion bounds (1..2) are declared ONCE in
+ * `lib/cms/constants.ts` (client-safe, no `server-only` side-effect) and are
+ * re-exported here so legacy importers keep a single symbol path. The
+ * validation/clamp helpers below are `unknown`-safe (the `cms/constants` clamp
+ * accepts `number` and is used by the server-side CMS form path), and Phase 15's
+ * `isIndependentlyConfigured` commercial guard is retained: the required count is
+ * backend/CMS authoritative and is NEVER derived from coin price.
  */
 
-export const MIN_REWARDED_REQUIRED_COMPLETIONS = 1;
-export const MAX_REWARDED_REQUIRED_COMPLETIONS = 2;
+import {
+  MAX_REWARDED_REQUIRED_COMPLETIONS,
+  MIN_REWARDED_REQUIRED_COMPLETIONS,
+  REWARDED_REQUIRED_COMPLETIONS_VALUES,
+} from "@/lib/cms/constants";
+
+export {
+  MAX_REWARDED_REQUIRED_COMPLETIONS,
+  MIN_REWARDED_REQUIRED_COMPLETIONS,
+  REWARDED_REQUIRED_COMPLETIONS_VALUES,
+};
 
 export type RequiredCompletionsValidation =
   | { ok: true; value: number }
@@ -38,11 +51,6 @@ export function clampRewardedRequiredCompletions(value: unknown): number {
     Math.max(MIN_REWARDED_REQUIRED_COMPLETIONS, n),
   );
 }
-
-export const REWARDED_REQUIRED_COMPLETIONS_VALUES = [
-  MIN_REWARDED_REQUIRED_COMPLETIONS,
-  MAX_REWARDED_REQUIRED_COMPLETIONS,
-] as const;
 
 /**
  * Phase 15: explicit commercial guard. Required rewarded completions must NOT be

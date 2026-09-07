@@ -3,7 +3,7 @@ import { signOut } from "@/app/account/actions";
 import { Button } from "@/components/ui/Button";
 import { getSafeUserIdentifier } from "@/lib/account";
 import { requireCmsAdmin } from "@/lib/cms/auth";
-import { homeListPath, mediaListPath, seriesListPath, shortFilmListPath } from "@/lib/routes";
+import { billingListPath, homeListPath, mediaListPath, seriesListPath, shortFilmListPath } from "@/lib/routes";
 
 export default async function AdminPage() {
   const context = await requireCmsAdmin();
@@ -70,6 +70,15 @@ export default async function AdminPage() {
               Short Films
             </p>
             <p className="mt-2 text-sm text-bone/70">Short-film CMS</p>
+          </Link>
+          <Link
+            href={billingListPath}
+            className="border border-bone/10 bg-bone/[0.03] px-4 py-5 transition hover:border-teal/50 hover:bg-bone/[0.06]"
+          >
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/50">
+              Billing
+            </p>
+            <p className="mt-2 text-sm text-bone/70">Coin packs &amp; billing catalog</p>
           </Link>
           <Link
             href={homeListPath}

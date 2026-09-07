@@ -272,6 +272,14 @@ set
   status = excluded.status,
   published_at = coalesce(public.episodes.published_at, excluded.published_at);
 
+-- NEUTRALIZED STALE ASSUMPTION (CMS-C06B / 0nya Product Bible LOCKED): the
+-- episode-4 access override on Chaadar below is DEV SEED SAMPLE DATA ONLY. The
+-- Product Bible locks per-episode access as backend/CMS-authoritative; there is
+-- NO hardcoded "Episode 4 = paywall" platform rule. Consumer access is resolved
+-- per episode from live DB columns (is_free / coin_unlock_enabled /
+-- rewarded_unlock_enabled / plus_access) and must never branch on episode_number.
+-- This update exists only to exercise the rewarded unlock path in local/sample
+-- data.
 update public.episodes
 set
   coin_unlock_enabled = false,
