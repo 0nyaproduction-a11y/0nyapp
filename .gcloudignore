@@ -8,3 +8,6 @@ docs
 perf
 .local-backups
 0ny_autonomous
+.temp
+.temp/**
+**/node_modules
