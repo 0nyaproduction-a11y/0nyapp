@@ -14,7 +14,7 @@ export type Episode = {
   coinPrice?: number;
   coinUnlockEnabled: boolean;
   rewardedUnlockEnabled: boolean;
-  rewardedAccessMode: "permanent";
+  rewardedAccessMode: "permanent" | "session";
   requiredRewardedCompletions: number;
   plusAccess: boolean;
   lockedPreviewSeconds: number;
