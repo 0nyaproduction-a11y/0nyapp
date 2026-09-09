@@ -13,7 +13,7 @@
 
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect } from "react";
 import type {
   ContentItem,
   HomeRow,
@@ -25,7 +25,6 @@ import { Button } from "@/components/ui/Button";
 import { isRowDirty, confirmUnsavedChanges } from "@/lib/home/dirty-state";
 import { SubmittingButton } from "@/components/home/ui/States";
 import { saveHomeRow } from "@/lib/home/actions";
-import { confirmDestructiveAction } from "@/lib/home/destructive-action";
 
 type HomeRowEditorProps = {
   row: HomeRow;
@@ -483,6 +482,3 @@ function AddTitleSelector({
     </div>
   );
 }
-
-// Unused import guard — keep ReactNode available for future extensions
-void (null as unknown as ReactNode);
