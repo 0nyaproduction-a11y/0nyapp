@@ -139,8 +139,8 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
             ? {
                 ...row,
                 ...updatedRow,
-                items: [],
-                warnings: [],
+                items: row.items,
+                warnings: row.warnings,
                 isDirty: false,
               }
             : row,
