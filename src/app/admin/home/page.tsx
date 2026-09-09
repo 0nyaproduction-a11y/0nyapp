@@ -255,7 +255,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
 
     const guard = await requireCmsAdmin(homeListPath);
     if (guard.status !== "authorized") {
-      redirect(buildFlashUrl("error", "Not authorized."));
+      return { success: false, error: "Not authorized." } as const;
     }
 
     const rowId = String(formData.get("rowId") ?? "").trim();
@@ -264,20 +264,20 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
     const sortOrder = Number(formData.get("sortOrder"));
 
     if (!rowId) {
-      redirect(buildFlashUrl("error", "Row ID is required."));
+      return { success: false, error: "Row ID is required." } as const;
     }
 
     if (!title) {
-      redirect(buildFlashUrl("error", "Row title is required."));
+      return { success: false, error: "Row title is required." } as const;
     }
 
     if (!Number.isInteger(sortOrder)) {
-      redirect(buildFlashUrl("error", "Row sort order must be a whole number."));
+      return { success: false, error: "Row sort order must be a whole number." } as const;
     }
 
     const result = await updateHomeRow(rowId, { actorId: guard.user.id, enabled, sortOrder, title });
     if (!result) {
-      redirect(buildFlashUrl("error", "Unable to update row."));
+      return { success: false, error: "Unable to update row." } as const;
     }
 
     revalidatePath(homeListPath);
@@ -784,7 +784,7 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
                 </div>
               </div>
 
-              <form action={updateHomeRowAction} className="mt-4 flex flex-wrap items-end gap-3">
+              <form action={updateHomeRowAction as unknown as (formData: FormData) => void | Promise<void>} className="mt-4 flex flex-wrap items-end gap-3">
                 <input type="hidden" name="rowId" value={row.id} />
                 <label className="block space-y-1.5">
                   <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
