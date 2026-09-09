@@ -23,6 +23,7 @@ build
 
 # Android app (separate Expo/React Native workspace, not part of this build)
 apps
+apps/**
 
 # Supabase CLI local state and SQL (no migration runs from this image)
 supabase
