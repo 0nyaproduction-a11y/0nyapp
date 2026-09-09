@@ -485,6 +485,9 @@ export function PlayerScreen({
 
     return () => {
       cancelled = true;
+      autoNextActiveRef.current = false;
+      seamlessTransitionRequestedRef.current = false;
+      seamlessTransitionQueuedRef.current = false;
     };
   }, [advanceToNext, autoplayNextEnabled, context, contextKey, emitPlaybackEvidence, isTransitionRequested]);
   const player = controller.player;

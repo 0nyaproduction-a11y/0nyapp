@@ -302,9 +302,16 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
         const isAuthError = refreshError.status && refreshError.status >= 400 && refreshError.status < 500;
         if (isAuthError) {
           await supabase.auth.signOut({ scope: "local" });
+          // S1-03: Session authoritatively invalid — terminate immediately.
+          // Do NOT fall through into body parsing or Path B.
+          throw new ApiError("not_authenticated", "Your session has expired. Please sign in again.", 401);
         } else {
           throw new ApiError("network_error", "Could not reach 0nya during session refresh.", 0);
         }
+      } else {
+        // No session and no error — unusual Supabase state; terminate rather than
+        // falling through into Path B which would attempt a second refresh.
+        throw new ApiError("not_authenticated", "Session could not be established. Please sign in again.", 401);
       }
     } catch (refreshException) {
       if (refreshException instanceof ApiError) {
@@ -377,6 +384,20 @@ async function requestApi<T>(path: string, options: ApiRequestOptions = {}) {
       status: response.status,
     });
     throw new ApiError(body.error.code, body.error.message, response.status);
+  }
+
+  if (!response.ok) {
+    perfEnd(requestMeasure, {
+      method,
+      path: safePath,
+      source: "NETWORK",
+      status: response.status,
+    });
+    throw new ApiError(
+      "server_error",
+      "The server returned an unexpected error.",
+      response.status,
+    );
   }
 
   perfEnd(requestMeasure, {

@@ -300,10 +300,21 @@ const retry = useCallback(async (seekSeconds?: number | null) => {
 
     try {
       await player.replaceAsync(source);
-    } catch (error) {
+    } catch (replaceError) {
       pendingRetrySeekRef.current = null;
       replaceInFlightRef.current = false;
-      throw error;
+
+      if (isMountedRef.current) {
+        const normalizedMessage =
+          replaceError instanceof Error
+            ? replaceError.message
+            : "Playback retry failed. Please try again.";
+
+        setError({ message: normalizedMessage });
+        setStatus("error");
+      }
+
+      return;
     }
     if (pendingRetrySeekRef.current !== null) {
       const retryPosition = pendingRetrySeekRef.current;
