@@ -105,7 +105,7 @@ export function buildHomeRows(catalog: ContentItem[]): HomeRow[] {
  * Automatic assignment rules for editorial slots.
  * These mirror the existing HomePage component logic and must NOT change.
  */
-function computeAutoAssignedSlugs(
+export function computeAutoAssignedSlugs(
   type: HomeRowType,
   catalog: ContentItem[],
 ): string[] {

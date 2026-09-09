@@ -120,14 +120,15 @@ export function RowHeader({
 
       {/* Main header content */}
       <div className="flex flex-1 items-center gap-2 py-2.5">
-        {/* Expand / Collapse affordance */}
-        <button
-          type="button"
-          onClick={onToggleExpand}
-          aria-expanded={isExpanded}
-          aria-label={isExpanded ? `Collapse ${row.title}` : `Expand ${row.title}`}
-          className="grid size-7 place-items-center text-bone/50 transition hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-        >
+         {/* Expand / Collapse affordance */}
+         <button
+           type="button"
+           data-testid={`row-expand-${row.id}`}
+           onClick={onToggleExpand}
+           aria-expanded={isExpanded}
+           aria-label={isExpanded ? `Collapse ${row.title}` : `Expand ${row.title}`}
+           className="grid size-7 place-items-center text-bone/50 transition hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
+         >
           <Icon
             name={isExpanded ? "chevron-down" : "chevron-right"}
             className="h-3.5 w-3.5"
@@ -176,6 +177,7 @@ export function RowHeader({
         <div className="flex-shrink-0" title={warning.label}>
           <Icon
             name="alert-triangle"
+            data-testid={`row-warning-icon-${row.id}`}
             className="h-4 w-4 text-amber-400"
           />
         </div>

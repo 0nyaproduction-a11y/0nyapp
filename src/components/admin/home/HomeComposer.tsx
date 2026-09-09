@@ -227,29 +227,11 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
   );
 
   // Spotlight toggle
+  // Toggle Spotlight expand/collapse.
+  // The SpotlightComposer handles its own C08B-01 dirty-collapse safety.
   const handleToggleSpotlight = () => {
-    if (isSpotlightExpanded) {
-      if (spotlightHasUnsavedChanges()) {
-        alert("Spotlight has unsaved changes. Save or discard before collapsing.");
-        return;
-      }
-    }
-
     setIsSpotlightExpanded(!isSpotlightExpanded);
   };
-
-  function spotlightHasUnsavedChanges(): boolean {
-    if (!spotlightData) {
-      return false;
-    }
-
-    return !!(
-      spotlightData.enabled !== true ||
-      !spotlightData.featuredSlug ||
-      spotlightData.badge !== "Vertical original" ||
-      spotlightData.headline !== null
-    );
-  }
 
   // Loading state (C08B-03)
   if (!data && !error) {
@@ -328,9 +310,10 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
           isSpotlightExpanded={isSpotlightExpanded}
           onToggleSpotlightExpand={handleToggleSpotlight}
           onSpotlightSaved={() => {
-            setRows((prev) =>
-              prev.map((r) => (r.type === "spotlight" ? { ...r, isDirty: false } : r)),
-            );
+            // C08B-01: After successful save, collapse the Spotlight editor.
+            // The server revalidation (revalidatePath) will refresh data on
+            // next navigation; here we just reflect the clean state locally.
+            setIsSpotlightExpanded(false);
           }}
           onSpotlightCollapseBlocked={() => {
             setDirtyCollapseBlocked(true);

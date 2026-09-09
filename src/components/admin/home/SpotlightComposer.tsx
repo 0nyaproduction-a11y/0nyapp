@@ -13,7 +13,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { ContentItem, SpotlightFormState, RowWarning } from "@/lib/home/types";
+import type { ContentItem } from "@/data/content";
+import type { SpotlightConfig, SpotlightFormState, RowWarning } from "@/lib/home/types";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { confirmUnsavedChanges } from "@/lib/home/dirty-state";
@@ -21,13 +22,7 @@ import { SubmittingButton } from "@/components/home/ui/States";
 import { saveSpotlight } from "@/lib/home/actions";
 
 type SpotlightComposerProps = {
-  spotlight: {
-    enabled: boolean;
-    featuredSlug: string | null;
-    badge: string | null;
-    headline: string | null;
-    warnings: RowWarning[];
-  };
+  spotlight: SpotlightConfig & { warnings: RowWarning[] };
   catalog: ContentItem[];
   isSpotlightExpanded: boolean;
   onToggleSpotlightExpand: () => void;

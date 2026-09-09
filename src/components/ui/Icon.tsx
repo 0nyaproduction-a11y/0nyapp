@@ -30,6 +30,7 @@ type IconName =
 type IconProps = {
   name: IconName;
   className?: string;
+  "data-testid"?: string;
 };
 
 const paths: Record<IconName, string> = {
@@ -62,10 +63,11 @@ const paths: Record<IconName, string> = {
   spinner: "M12 2v4m8.66 0a10 10 0 0 1-12.62 4 10 10 0 0 1 0-12.62",
 };
 
-export function Icon({ name, className = "h-5 w-5" }: IconProps) {
+export function Icon({ name, className = "h-5 w-5", "data-testid": testId }: IconProps) {
   return (
     <svg
       aria-hidden="true"
+      data-testid={testId}
       className={className}
       fill="none"
       viewBox="0 0 24 24"

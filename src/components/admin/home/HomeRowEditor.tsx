@@ -14,8 +14,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { ContentItem } from "@/data/content";
 import type {
-  ContentItem,
   HomeRow,
   HomeRowFormState,
   RowWarning,
@@ -193,7 +193,10 @@ export function HomeRowEditor({
   const validationErrors = isDirty ? validateForm() : [];
 
   return (
-    <div className="overflow-hidden border-l-2 border-bone/10 bg-background transition-all data-expanded:border-l-teal">
+    <div
+      data-testid={`row-editor-${row.id}`}
+      className="overflow-hidden border-l-2 border-bone/10 bg-background transition-all data-expanded:border-l-teal"
+    >
       {/* Editor body */}
       <div className="p-4 sm:p-6">
         {/* Validation errors — C08B-01: validation failure keeps row dirty */}
