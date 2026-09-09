@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CmsAutoSubmitCheckbox } from "@/components/cms/CmsAutoSubmitCheckbox";
+import { HomeRowAccordion } from "@/components/cms/HomeRowAccordion";
+
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   addHomeRowItem,
@@ -720,242 +722,24 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
           </form>
         </section>
 
-        {/* HOME ROWS LIST */}
-        <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-              Home Rows (Ordered)
-            </h2>
-            <p className="text-xs text-bone/40">Only published items within enabled rows are consumer-visible.</p>
-          </div>
-
-          {homeData.homeRows.length === 0 && (
-            <div className="border border-bone/10 bg-bone/[0.03] p-4 text-sm text-bone/60">
-              No home rows configured.
-            </div>
-          )}
-
-          {homeData.homeRows.map((row, rowIndex) => (
-            <article key={row.id} className="border border-bone/10 bg-bone/[0.03] p-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold">{row.title}</h3>
-                  <p className="mt-1 text-xs text-bone/50">
-                    role: <span className="text-bone">{row.row_role}</span> ·{" "}
-                    <span className="text-bone">{row.enabled ? "enabled" : "disabled"}</span> · sort{" "}
-                    <span className="text-bone">{row.sort_order}</span> · items:{" "}
-                    <span className="text-bone">{row.items.length}</span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {row.row_role === "start_here" && (
-                    <span className="border border-teal/40 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-teal">
-                      Canonical Start Here
-                    </span>
-                  )}
-                  <form action={moveRowAction} className="flex gap-1">
-                    <input type="hidden" name="rowId" value={row.id} />
-                    <input type="hidden" name="direction" value="up" />
-                    <button
-                      type="submit"
-                      disabled={rowIndex === 0}
-                      className="border border-bone/20 px-2 py-0.5 text-xs text-bone/70 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
-                    >
-                      ▲ Up
-                    </button>
-                  </form>
-                  <form action={moveRowAction} className="flex gap-1">
-                    <input type="hidden" name="rowId" value={row.id} />
-                    <input type="hidden" name="direction" value="down" />
-                    <button
-                      type="submit"
-                      disabled={rowIndex === homeData.homeRows.length - 1}
-                      className="border border-bone/20 px-2 py-0.5 text-xs text-bone/70 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
-                    >
-                      ▼ Down
-                    </button>
-                  </form>
-                  {row.row_role === "editorial" && (
-                    <form action={deleteHomeRowAction}>
-                      <input type="hidden" name="rowId" value={row.id} />
-                      <Button type="submit">Delete row</Button>
-                    </form>
-                  )}
-                </div>
-              </div>
-
-              <form action={updateHomeRowAction as unknown as (formData: FormData) => void | Promise<void>} className="mt-4 flex flex-wrap items-end gap-3">
-                <input type="hidden" name="rowId" value={row.id} />
-                <label className="block space-y-1.5">
-                  <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
-                    Title
-                  </span>
-                  <input
-                    className="w-56 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-                    name="title"
-                    defaultValue={row.title}
-                    required
-                  />
-                </label>
-                <label className="flex items-center gap-2 pb-2 text-sm text-bone/80">
-                  <input
-                    type="checkbox"
-                    name="enabled"
-                    defaultChecked={row.enabled}
-                    className="h-4 w-4 border border-bone/20 bg-bone/[0.03]"
-                  />
-                  Enabled
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
-                    Sort order
-                  </span>
-                  <input
-                    className="w-32 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-                    type="number"
-                    name="sortOrder"
-                    defaultValue={row.sort_order}
-                  />
-                </label>
-                <Button type="submit" variant="secondary">
-                  Save row
-                </Button>
-              </form>
-
-              <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-                {/* ADD ITEM TO ROW */}
-                <form action={addHomeRowItemAction} className="space-y-3 border border-bone/10 p-4">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-                    Add content to row
-                  </h4>
-                  <input type="hidden" name="rowId" value={row.id} />
-                  <label className="block space-y-1.5">
-                    <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
-                      Content
-                    </span>
-                    <CmsSelect
-                      name="contentRef"
-                      defaultValue=""
-                      className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-                      placeholderLabel="Choose content (Series or Short Film)"
-                      options={[
-                        { label: "Choose content (Series or Short Film)", value: "" },
-                        ...seriesChoices.map((choice) => ({
-                          group: "Series",
-                          label: choice.label,
-                          value: choice.value,
-                        })),
-                        ...shortFilmChoices.map((choice) => ({
-                          group: "Short films",
-                          label: choice.label,
-                          value: choice.value,
-                        })),
-                      ]}
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">
-                      Sort order
-                    </span>
-                    <input
-                      className="w-32 border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone"
-                      type="number"
-                      name="sortOrder"
-                      defaultValue={100}
-                    />
-                  </label>
-                  <Button type="submit" variant="secondary">
-                    Add item
-                  </Button>
-                </form>
-
-                {/* ROW ITEMS LIST */}
-                <div className="space-y-3">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-bone/70">
-                    Row Items ({row.items.length})
-                  </h4>
-                  {row.items.length === 0 && (
-                    <p className="text-sm text-bone/60">No items in this row yet.</p>
-                  )}
-                  {row.items.map((item, itemIndex) => (
-                    <div key={item.id} className="border border-bone/10 p-3 bg-bone/[0.02]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{item.contentTitle ?? item.slug ?? item.id}</p>
-                          <p className="text-xs text-bone/50">
-                            {item.content_type} · {item.contentStatus ?? "unknown"}
-                            {item.consumerVisible ? " · visible" : " · hidden"}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <form action={moveItemAction} className="flex">
-                            <input type="hidden" name="itemId" value={item.id} />
-                            <input type="hidden" name="direction" value="up" />
-                            <button
-                              type="submit"
-                              disabled={itemIndex === 0}
-                              className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
-                            >
-                              ▲
-                            </button>
-                          </form>
-                          <form action={moveItemAction} className="flex">
-                            <input type="hidden" name="itemId" value={item.id} />
-                            <input type="hidden" name="direction" value="down" />
-                            <button
-                              type="submit"
-                              disabled={itemIndex === row.items.length - 1}
-                              className="border border-bone/20 px-1.5 py-0.5 text-xs text-bone/60 hover:bg-bone/10 disabled:opacity-30 disabled:pointer-events-none"
-                            >
-                              ▼
-                            </button>
-                          </form>
-                          <span className="font-mono text-[0.6rem] uppercase tracking-[0.14em] text-bone/40 pl-1">
-                            sort: {item.sort_order}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap items-end gap-3">
-                        <form action={updateHomeRowItemAction} className="flex items-end gap-2">
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <label className="block space-y-1">
-                            <span className="font-mono text-[0.6rem] uppercase tracking-[0.18em] text-bone/40">
-                              Sort
-                            </span>
-                            <input
-                              className="w-20 border border-bone/15 bg-bone/[0.03] px-2 py-1.5 text-xs text-bone"
-                              type="number"
-                              name="sortOrder"
-                              defaultValue={item.sort_order}
-                            />
-                          </label>
-                          <Button type="submit" variant="secondary">
-                            Save
-                          </Button>
-                        </form>
-                        <form action={removeHomeRowItemAction}>
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <Button type="submit">Remove</Button>
-                        </form>
-                        <p className="text-xs text-bone/40 self-center ml-auto">
-                          {item.sharePath ? (
-                            <>
-                              Path: <span className="text-bone/70">{item.sharePath}</span>
-                            </>
-                          ) : (
-                            "Orphaned item"
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </article>
-          ))}
-        </section>
+        <HomeRowAccordion
+          rows={homeData.homeRows}
+          updateHomeRowAction={updateHomeRowAction}
+          moveRowAction={moveRowAction}
+          deleteHomeRowAction={deleteHomeRowAction}
+          addHomeRowItemAction={addHomeRowItemAction}
+          removeHomeRowItemAction={removeHomeRowItemAction}
+          moveItemAction={moveItemAction}
+          updateHomeRowItemAction={updateHomeRowItemAction}
+          seriesChoices={seriesChoices}
+          shortFilmChoices={shortFilmChoices}
+          error={errorMessage}
+          flash={flashMessage}
+        />
       </div>
     </main>
   );
 }
+
+
+
