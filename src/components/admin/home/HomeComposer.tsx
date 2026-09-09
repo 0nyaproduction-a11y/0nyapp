@@ -353,35 +353,35 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
                     onDeleted={() => handleDeleted(row.id)}
                   />
 
-                  {/* Expanded editor */}
-                   {isExpanded ? (
-                     <HomeRowEditor
-                       row={row}
-                       position={index + 1}
-                       catalog={catalog}
-                       items={row.items}
-                       warnings={row.warnings}
-                       isExpanded={isExpanded}
-                       onExpand={() => setExpandedRowId(row.id)}
-                       onCollapse={() => setExpandedRowId(null)}
-                       onCollapseBlockedByDirty={() => {
-                         setDirtyCollapseBlocked(true);
-                         setTimeout(() => setDirtyCollapseBlocked(false), 4000);
-                       }}
-                       onSaved={(updatedRow) =>
-                         handleSaved(row.id, updatedRow)
-                       }
-                       canCollapseSafely={() => canCollapseRow(row)}
-                       onDirtyChange={(dirty) =>
-                         setRowDirtyState((prev) => ({
-                           ...prev,
-                           [row.id]: dirty,
-                         }))
-                       }
-                     />
-                   ) : null}
-                </div>
-              );
+                {/* Expanded editor */}
+                {isExpanded ? (
+                  <HomeRowEditor
+                    row={row}
+                    position={index + 1}
+                    catalog={catalog}
+                    items={row.items}
+                    warnings={row.warnings}
+                    isExpanded={isExpanded}
+                    onExpand={() => setExpandedRowId(row.id)}
+                    onCollapse={() => setExpandedRowId(null)}
+                    onCollapseBlockedByDirty={() => {
+                      setDirtyCollapseBlocked(true);
+                      setTimeout(() => setDirtyCollapseBlocked(false), 4000);
+                    }}
+                    onSaved={(updatedRow) =>
+                      handleSaved(row.id, updatedRow)
+                    }
+                    canCollapseSafely={() => canCollapseRow(row)}
+                    onDirtyChange={(dirty) =>
+                      setRowDirtyState((prev) => ({
+                        ...prev,
+                        [row.id]: dirty,
+                      }))
+                    }
+                  />
+                ) : null}
+              </div>
+            );
             })}
           </div>
         )}

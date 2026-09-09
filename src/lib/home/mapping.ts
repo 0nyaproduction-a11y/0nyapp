@@ -185,8 +185,12 @@ export function buildSpotlightConfig(catalog: ContentItem[]): SpotlightConfig {
  */
 export function findSeriesBySlug(
   catalog: ContentItem[],
-  slug: string,
+  slug: string | null,
 ): ContentItem | undefined {
+  if (!slug) {
+    return undefined;
+  }
+
   return catalog.find((item) => item.slug === slug);
 }
 

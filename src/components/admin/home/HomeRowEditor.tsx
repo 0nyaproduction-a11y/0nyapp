@@ -91,30 +91,10 @@ export function HomeRowEditor({
     onDirtyChange(isDirty);
   }, [isDirty, onDirtyChange]);
 
-  // C08B-01: Dirty collapse safety.
-  // Before collapsing, verify the row is clean. If dirty, invoke the
-  // authoritative unsaved-change confirmation. If the operator cancels,
-  // the row stays open.
-  const handleToggleExpand = () => {
-    if (isExpanded) {
-      // Attempting to collapse
-      if (isDirty) {
-        const confirmed = confirmUnsavedChanges(
-          `"${row.title}" has unsaved changes. Discard changes and collapse?`,
-        );
-
-        if (!confirmed) {
-          // C08B-01: Do NOT collapse. Stay open.
-          onCollapseBlockedByDirty();
-          return;
-        }
-      }
-
-      onCollapse();
-    } else {
-      onExpand();
-    }
-  };
+  // C08B-01: Dirty collapse safety is enforced by the parent HomeComposer
+  // via the onDirtyChange callback, which tracks per-row dirty state.
+  // Expanding/collapsing is controlled by the RowHeader's toggle button
+  // in the parent component.
 
   const handleTitleChange = (value: string) => {
     setFormState((prev) => ({ ...prev, title: value }));
