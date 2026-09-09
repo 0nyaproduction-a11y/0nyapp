@@ -33,12 +33,7 @@ type HomeRowEditorProps = {
   items: ContentItem[];
   warnings: RowWarning[];
   isExpanded: boolean;
-  onExpand: () => void;
-  onCollapse: () => void;
-  onCollapseBlockedByDirty: () => void;
   onSaved: (row: HomeRow) => void;
-  /** Returns true if this row can safely collapse (i.e. is clean). */
-  canCollapseSafely: () => boolean;
   /** Called when the row's dirty state changes. */
   onDirtyChange: (dirty: boolean) => void;
 };
@@ -50,11 +45,7 @@ export function HomeRowEditor({
   items,
   warnings,
   isExpanded,
-  onExpand,
-  onCollapse,
-  onCollapseBlockedByDirty,
   onSaved,
-  canCollapseSafely,
   onDirtyChange,
 }: HomeRowEditorProps) {
   // Form state — initialized from the committed row

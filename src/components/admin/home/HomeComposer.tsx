@@ -100,11 +100,6 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
     [expandedRowId, rowDirtyState],
   );
 
-  // Can the row collapse? (C08B-01 authority)
-  function canCollapseRow(row: HomeRow): boolean {
-    return !isRowDirtyState(row.id);
-  }
-
   // After a successful save, update the row's committed state
   const handleSaved = useCallback(
     (rowId: string, updatedRow: HomeRow) => {
@@ -362,16 +357,9 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
                     items={row.items}
                     warnings={row.warnings}
                     isExpanded={isExpanded}
-                    onExpand={() => setExpandedRowId(row.id)}
-                    onCollapse={() => setExpandedRowId(null)}
-                    onCollapseBlockedByDirty={() => {
-                      setDirtyCollapseBlocked(true);
-                      setTimeout(() => setDirtyCollapseBlocked(false), 4000);
-                    }}
                     onSaved={(updatedRow) =>
                       handleSaved(row.id, updatedRow)
                     }
-                    canCollapseSafely={() => canCollapseRow(row)}
                     onDirtyChange={(dirty) =>
                       setRowDirtyState((prev) => ({
                         ...prev,
