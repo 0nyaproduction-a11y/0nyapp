@@ -1825,7 +1825,175 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
-      };
+      },
+      notification_deliveries: {
+        Row: {
+          attempted_at: string;
+          created_at: string;
+          error_code: string | null;
+          error_message: string | null;
+          id: string;
+          notification_id: string;
+          provider: string;
+          provider_ticket_id: string | null;
+          push_device_id: string | null;
+          receipt_checked_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempted_at?: string;
+          created_at?: string;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          notification_id: string;
+          provider?: string;
+          provider_ticket_id?: string | null;
+          push_device_id?: string | null;
+          receipt_checked_at?: string | null;
+          status: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempted_at?: string;
+          created_at?: string;
+          error_code?: string | null;
+          error_message?: string | null;
+          id?: string;
+          notification_id?: string;
+          provider?: string;
+          provider_ticket_id?: string | null;
+          push_device_id?: string | null;
+          receipt_checked_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notification_deliveries_notification_id_fkey";
+            columns: ["notification_id"];
+            isOneToOne: false;
+            referencedRelation: "notifications";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notification_deliveries_push_device_id_fkey";
+            columns: ["push_device_id"];
+            isOneToOne: false;
+            referencedRelation: "push_devices";
+            referencedColumns: ["id"];
+          },
+        ];
+      },
+      notification_preferences: {
+        Row: {
+          account_security: boolean;
+          new_releases: boolean;
+          promotions: boolean;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          account_security?: boolean;
+          new_releases?: boolean;
+          promotions?: boolean;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          account_security?: boolean;
+          new_releases?: boolean;
+          promotions?: boolean;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      },
+      notifications: {
+        Row: {
+          body: string;
+          created_at: string;
+          deep_link: string | null;
+          expires_at: string | null;
+          id: string;
+          image_url: string | null;
+          payload: Json;
+          read_at: string | null;
+          title: string;
+          type: string;
+          user_id: string;
+        };
+        Insert: {
+          body: string;
+          created_at?: string;
+          deep_link?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          image_url?: string | null;
+          payload?: Json;
+          read_at?: string | null;
+          title: string;
+          type: string;
+          user_id: string;
+        };
+        Update: {
+          body?: string;
+          created_at?: string;
+          deep_link?: string | null;
+          expires_at?: string | null;
+          id?: string;
+          image_url?: string | null;
+          payload?: Json;
+          read_at?: string | null;
+          title?: string;
+          type?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      },
+      push_devices: {
+        Row: {
+          active: boolean;
+          created_at: string;
+          device_id: string;
+          expo_push_token: string | null;
+          id: string;
+          last_seen_at: string;
+          native_push_token: string | null;
+          platform: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          active?: boolean;
+          created_at?: string;
+          device_id: string;
+          expo_push_token?: string | null;
+          id?: string;
+          last_seen_at?: string;
+          native_push_token?: string | null;
+          platform: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          active?: boolean;
+          created_at?: string;
+          device_id?: string;
+          expo_push_token?: string | null;
+          id?: string;
+          last_seen_at?: string;
+          native_push_token?: string | null;
+          platform?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      },
     };
     Views: Record<string, never>;
     Functions: {
