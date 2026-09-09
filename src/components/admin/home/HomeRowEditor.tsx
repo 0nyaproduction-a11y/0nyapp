@@ -39,6 +39,8 @@ type HomeRowEditorProps = {
   onSaved: (row: HomeRow) => void;
   /** Returns true if this row can safely collapse (i.e. is clean). */
   canCollapseSafely: () => boolean;
+  /** Called when the row's dirty state changes. */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
 export function HomeRowEditor({
@@ -53,6 +55,7 @@ export function HomeRowEditor({
   onCollapseBlockedByDirty,
   onSaved,
   canCollapseSafely,
+  onDirtyChange,
 }: HomeRowEditorProps) {
   // Form state — initialized from the committed row
   const [formState, setFormState] = useState<HomeRowFormState>({
@@ -81,6 +84,12 @@ export function HomeRowEditor({
 
   const dirtyCheck = isRowDirty(row, formState);
   const isDirty = dirtyCheck.dirty;
+
+  // Report dirty state to parent so HomeComposer can enforce one-row focus
+  // C08B-01 safety (don't collapse a dirty row when switching focus).
+  useEffect(() => {
+    onDirtyChange(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   // C08B-01: Dirty collapse safety.
   // Before collapsing, verify the row is clean. If dirty, invoke the

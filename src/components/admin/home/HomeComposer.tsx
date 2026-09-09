@@ -20,7 +20,6 @@
 import { useState, useCallback } from "react";
 import type {
   HomeRow,
-  HomeRowFormState,
   HomeRowWithContent,
   HomeComposerData,
 } from "@/lib/home/types";
@@ -30,7 +29,6 @@ import { LoadingState, EmptyState, ErrorState } from "@/components/home/ui/State
 import { RowHeader } from "@/components/admin/home/RowHeader";
 import { HomeRowEditor } from "@/components/admin/home/HomeRowEditor";
 import { SpotlightComposer } from "@/components/admin/home/SpotlightComposer";
-import { isRowDirty } from "@/lib/home/dirty-state";
 import {
   updateRowOrder,
   toggleRowVisibility,
@@ -60,8 +58,17 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
   const catalog = data?.catalog ?? [];
   const spotlightData = data?.spotlight;
 
+  // C08B-06: Track per-row dirty state from child editors.
+  // The HomeRowEditor owns the form state; it reports back whether it is dirty.
+  const [rowDirtyState, setRowDirtyState] = useState<Record<string, boolean>>({});
+
   // C08B-06: Dirty collapse safety.
   const [dirtyCollapseBlocked, setDirtyCollapseBlocked] = useState(false);
+
+  // Check if a row is currently dirty (reported by the child editor).
+  function isRowDirtyState(rowId: string): boolean {
+    return rowDirtyState[rowId] ?? false;
+  }
 
   // Handle expanding a row — one-row focus.
   const handleToggleExpand = useCallback(
@@ -70,20 +77,7 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
 
       if (wasExpanded) {
         // Attempting to collapse the currently expanded row
-        const row = rows.find((r) => r.id === rowId);
-
-        if (!row) {
-          return;
-        }
-
-        const formSnapshot: HomeRowFormState = {
-          title: row.title,
-          kicker: row.kicker ?? "",
-          visible: row.visible,
-          assignedSlugs: [...row.assignedSlugs],
-        };
-
-        if (isRowDirty(row, formSnapshot).dirty) {
+        if (isRowDirtyState(rowId)) {
           // C08B-01: Don't collapse a dirty row silently
           setDirtyCollapseBlocked(true);
           setTimeout(() => setDirtyCollapseBlocked(false), 4000);
@@ -94,40 +88,21 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
       } else {
         // Expanding a new row — collapse the previous one first
         // (unless it's dirty, in which case C08B-01 prevents it)
-        const currentRow = rows.find((r) => r.id === expandedRowId);
-
-        if (currentRow) {
-          const formSnapshot: HomeRowFormState = {
-            title: currentRow.title,
-            kicker: currentRow.kicker ?? "",
-            visible: currentRow.visible,
-            assignedSlugs: [...currentRow.assignedSlugs],
-          };
-
-          if (isRowDirty(currentRow, formSnapshot).dirty) {
-            // C08B-01: Previous row is dirty — don't switch focus
-            setDirtyCollapseBlocked(true);
-            setTimeout(() => setDirtyCollapseBlocked(false), 4000);
-            return;
-          }
+        if (expandedRowId && isRowDirtyState(expandedRowId)) {
+          setDirtyCollapseBlocked(true);
+          setTimeout(() => setDirtyCollapseBlocked(false), 4000);
+          return;
         }
 
         setExpandedRowId(rowId);
       }
     },
-    [rows, expandedRowId],
+    [expandedRowId, rowDirtyState],
   );
 
   // Can the row collapse? (C08B-01 authority)
   function canCollapseRow(row: HomeRow): boolean {
-    const formSnapshot: HomeRowFormState = {
-      title: row.title,
-      kicker: row.kicker ?? "",
-      visible: row.visible,
-      assignedSlugs: [...row.assignedSlugs],
-    };
-
-    return !isRowDirty(row, formSnapshot).dirty;
+    return !isRowDirtyState(row.id);
   }
 
   // After a successful save, update the row's committed state
@@ -143,9 +118,11 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
                 warnings: row.warnings,
                 isDirty: false,
               }
-            : row,
+             : row,
         ),
       );
+      // C08B-01: After successful save, clear dirty state for this row.
+      setRowDirtyState((prev) => ({ ...prev, [rowId]: false }));
       setExpandedRowId(null);
     },
     [],
@@ -377,26 +354,32 @@ export function HomeComposer({ data, error, onRetry }: HomeComposerProps) {
                   />
 
                   {/* Expanded editor */}
-                  {isExpanded ? (
-                    <HomeRowEditor
-                      row={row}
-                      position={index + 1}
-                      catalog={catalog}
-                      items={row.items}
-                      warnings={row.warnings}
-                      isExpanded={isExpanded}
-                      onExpand={() => setExpandedRowId(row.id)}
-                      onCollapse={() => setExpandedRowId(null)}
-                      onCollapseBlockedByDirty={() => {
-                        setDirtyCollapseBlocked(true);
-                        setTimeout(() => setDirtyCollapseBlocked(false), 4000);
-                      }}
-                      onSaved={(updatedRow) =>
-                        handleSaved(row.id, updatedRow)
-                      }
-                      canCollapseSafely={() => canCollapseRow(row)}
-                    />
-                  ) : null}
+                   {isExpanded ? (
+                     <HomeRowEditor
+                       row={row}
+                       position={index + 1}
+                       catalog={catalog}
+                       items={row.items}
+                       warnings={row.warnings}
+                       isExpanded={isExpanded}
+                       onExpand={() => setExpandedRowId(row.id)}
+                       onCollapse={() => setExpandedRowId(null)}
+                       onCollapseBlockedByDirty={() => {
+                         setDirtyCollapseBlocked(true);
+                         setTimeout(() => setDirtyCollapseBlocked(false), 4000);
+                       }}
+                       onSaved={(updatedRow) =>
+                         handleSaved(row.id, updatedRow)
+                       }
+                       canCollapseSafely={() => canCollapseRow(row)}
+                       onDirtyChange={(dirty) =>
+                         setRowDirtyState((prev) => ({
+                           ...prev,
+                           [row.id]: dirty,
+                         }))
+                       }
+                     />
+                   ) : null}
                 </div>
               );
             })}
