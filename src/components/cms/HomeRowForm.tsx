@@ -1,8 +1,8 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { FormWrapper } from "@/lib/cms/form-wrapper";
 import { Button } from "@/components/ui/Button";
-import { useState } from "react";
 
 type UpdateHomeRowActionResult =
   | { success: false; error: string }
@@ -18,12 +18,12 @@ type HomeRowFormProps = {
 };
 
 export function HomeRowForm({ rowId, title, enabled, sortOrder, action, onDirtyChange }: HomeRowFormProps) {
-  const initialValues = {
+  const initialValues = useMemo(() => ({
     rowId,
     title,
     enabled,
     sortOrder,
-  };
+  }), [rowId, title, enabled, sortOrder]);
 
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -89,9 +89,3 @@ export function HomeRowForm({ rowId, title, enabled, sortOrder, action, onDirtyC
     </FormWrapper>
   );
 }
-
-
-
-
-
-

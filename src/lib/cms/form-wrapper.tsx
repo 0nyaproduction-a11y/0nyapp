@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 
@@ -33,6 +33,11 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   const [values, setValues] = useState<T>(initialValues);
   const hasRegisteredRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const initialValuesRef = useRef<T>(initialValues);
+
+  useEffect(() => {
+    initialValuesRef.current = initialValues;
+  }, [initialValues]);
 
   useEffect(() => {
     console.log("[FormWrapper] MOUNT formId:", formId, "initialValues:", JSON.stringify(initialValues));
@@ -42,21 +47,22 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
       console.log("[FormWrapper] UNMOUNT formId:", formId);
       unregisterForm(formId);
     };
-  }, [formId, initialValues, registerForm, unregisterForm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formId, registerForm, unregisterForm]);
 
   useEffect(() => {
     if (!hasRegisteredRef.current) return;
     console.log("[FormWrapper] DIRTY CHECK formId:", formId, "values:", JSON.stringify(values));
 
-    const isDirty = !isEqual(values, initialValues);
+    const isDirty = !isEqual(values, initialValuesRef.current);
     if (isDirty) {
-      markDirty(formId, values, initialValues);
+      markDirty(formId, values, initialValuesRef.current);
       onDirtyChange?.(true);
     } else {
       markClean(formId);
       onDirtyChange?.(false);
     }
-  }, [values, initialValues, formId, markDirty, markClean, onDirtyChange]);
+  }, [values, formId, markDirty, markClean, onDirtyChange]);
 
   useEffect(() => {
     const form = formRef.current;
