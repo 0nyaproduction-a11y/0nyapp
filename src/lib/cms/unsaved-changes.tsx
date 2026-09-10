@@ -100,24 +100,24 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirtyForms.size]);
 
-  const registerForm = (formId: string, _initialValues: Record<string, unknown>) => {
+  const registerForm = useCallback((formId: string, _initialValues: Record<string, unknown>) => {
     void _initialValues;
     setDirtyForms((prev) => {
       const newSet = new Set(prev);
       newSet.add(formId);
       return newSet;
     });
-  };
+  }, []);
 
-  const unregisterForm = (formId: string) => {
+  const unregisterForm = useCallback((formId: string) => {
     setDirtyForms((prev) => {
       const newSet = new Set(prev);
       newSet.delete(formId);
       return newSet;
     });
-  };
+  }, []);
 
-  const markDirty = (formId: string, currentValues: Record<string, unknown>, originalValues: Record<string, unknown>) => {
+  const markDirty = useCallback((formId: string, currentValues: Record<string, unknown>, originalValues: Record<string, unknown>) => {
     if (!isEqual(currentValues, originalValues)) {
       setDirtyForms((prev) => {
         const newSet = new Set(prev);
@@ -125,15 +125,15 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
         return newSet;
       });
     }
-  };
+  }, []);
 
-  const markClean = (formId: string) => {
+  const markClean = useCallback((formId: string) => {
     setDirtyForms((prev) => {
       const newSet = new Set(prev);
       newSet.delete(formId);
       return newSet;
     });
-  };
+  }, []);
 
   const isFormDirty = useCallback(
     (formId: string) => dirtyForms.has(formId),
