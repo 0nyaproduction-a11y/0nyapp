@@ -7,6 +7,7 @@ import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import { SERIES_FORMATS, type SeriesRow } from "@/lib/cms/constants";
 import { CANONICAL_GENRES, normalizeGenreAssignments } from "@/lib/taxonomy";
 import type { SeriesFormState } from "@/lib/cms/series-form";
+import { FormWrapper } from "@/lib/cms/form-wrapper";
 
 const inputClassName =
   "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
@@ -23,14 +24,39 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
   const errors = state.errors;
   const selectedGenreId = normalizeGenreAssignments(series?.genre).primaryGenre?.id ?? "";
 
+  const initialValues = {
+    title: series?.title ?? "",
+    slug: series?.slug ?? "",
+    synopsis: series?.synopsis ?? "",
+    genre: selectedGenreId,
+    language: series?.language ?? "",
+    format: series?.format ?? "",
+    episodeDurationLabel: series?.episode_duration_label ?? "",
+    episodeCount: series?.episode_count ?? 0,
+    sortOrder: series?.sort_order ?? 0,
+    contentRating: series?.content_rating ?? "",
+    featured: series?.featured ?? false,
+    contentDescriptors: series?.content_descriptors ?? [],
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    formAction(new FormData(e.currentTarget));
+  };
+
   return (
-    <form action={formAction} className="space-y-5">
+    <FormWrapper
+      formId="series-metadata"
+      initialValues={initialValues}
+      onSubmit={handleSubmit}
+      className="space-y-5"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Title" error={errors.title}>
           <input
             className={inputClassName}
             name="title"
-            defaultValue={series?.title ?? ""}
+            defaultValue={initialValues.title}
             required
           />
         </Field>
@@ -38,7 +64,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           <input
             className={inputClassName}
             name="slug"
-            defaultValue={series?.slug ?? ""}
+            defaultValue={initialValues.slug}
             placeholder="my-series-title"
             required
           />
@@ -50,7 +76,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           className={inputClassName}
           name="synopsis"
           rows={3}
-          defaultValue={series?.synopsis ?? ""}
+          defaultValue={initialValues.synopsis}
         />
       </Field>
 
@@ -59,7 +85,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           <CmsSelect
             className={inputClassName}
             name="genre"
-            defaultValue={selectedGenreId}
+            defaultValue={initialValues.genre}
             placeholderLabel="Unset"
             options={[
               { label: "Unset", value: "" },
@@ -68,13 +94,13 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           />
         </Field>
         <Field label="Language" error={errors.language}>
-          <input className={inputClassName} name="language" defaultValue={series?.language ?? ""} />
+          <input className={inputClassName} name="language" defaultValue={initialValues.language} />
         </Field>
         <Field label="Format" error={errors.format}>
           <CmsSelect
             className={inputClassName}
             name="format"
-            defaultValue={series?.format ?? ""}
+            defaultValue={initialValues.format}
             placeholderLabel="Unset"
             options={[
               { label: "Unset", value: "" },
@@ -90,7 +116,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
             className={inputClassName}
             name="episodeDurationLabel"
             placeholder="e.g. 8–10 min"
-            defaultValue={series?.episode_duration_label ?? ""}
+            defaultValue={initialValues.episodeDurationLabel}
           />
         </Field>
         <Field label="Episode count" error={errors.episodeCount}>
@@ -99,7 +125,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
             type="number"
             name="episodeCount"
             min={0}
-            defaultValue={series?.episode_count ?? 0}
+            defaultValue={initialValues.episodeCount}
           />
         </Field>
         <Field label="Sort order" error={errors.sortOrder}>
@@ -107,7 +133,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
             className={inputClassName}
             type="number"
             name="sortOrder"
-            defaultValue={series?.sort_order ?? 0}
+            defaultValue={initialValues.sortOrder}
           />
         </Field>
       </div>
@@ -117,7 +143,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           <CmsSelect
             className={inputClassName}
             name="contentRating"
-            defaultValue={series?.content_rating ?? ""}
+            defaultValue={initialValues.contentRating}
             placeholderLabel="Unrated"
             options={[
               { label: "Unrated", value: "" },
@@ -130,7 +156,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
           <input
             type="checkbox"
             name="featured"
-            defaultChecked={series?.featured ?? false}
+            defaultChecked={initialValues.featured}
             className="h-4 w-4 border border-bone/20 bg-bone/[0.03]"
           />
           Featured
@@ -146,7 +172,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
                 type="checkbox"
                 name="contentDescriptors"
                 value={descriptor}
-                defaultChecked={series?.content_descriptors?.includes(descriptor) ?? false}
+                defaultChecked={initialValues.contentDescriptors.includes(descriptor)}
                 className="h-4 w-4 border border-bone/20 bg-bone/[0.03]"
               />
               {descriptor}
@@ -163,7 +189,7 @@ export function SeriesMetadataForm({ action, series, submitLabel }: SeriesMetada
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : submitLabel}
       </Button>
-    </form>
+    </FormWrapper>
   );
 }
 

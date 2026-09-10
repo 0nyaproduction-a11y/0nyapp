@@ -127,3 +127,7 @@ CMS lock does not automatically lock rendered Android UI. CMS data affecting the
 
 - **No AI agent** (Gemini, Kilo, Nemotron, Claude, Codex, etc.) or automated test runner has authority to grant final visual or CMS operational approval.
 - Statuses: `SOURCE VERIFIED`, `EMULATOR VERIFIED`, `CMS/API VERIFIED`, `CMS WEBSITE VERIFIED`, `READY FOR OWNER/CHATGPT REVIEW`, `VISUAL CANDIDATE APPROVED — READY FOR PHYSICAL FINAL CHECK`, `PHYSICAL QA PASS`, `FINAL ACCEPTANCE PENDING`, `VERIFIED COMPLETE`, `LOCKED BASELINE`.
+
+## Shared generic coding guidance
+
+This file is the shared 0nya project and product authority. After the current task and all approved 0nya project, product, and technical authority in this file, agents may apply the generic guidance in [`KARPATHY_GUIDELINES.md`](KARPATHY_GUIDELINES.md). The generic guidance never overrides this file or its referenced authority documents.

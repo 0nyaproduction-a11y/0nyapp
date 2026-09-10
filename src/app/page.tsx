@@ -1,5 +1,10 @@
 import { HomePage } from "@/components/home/HomePage";
+import { RecoveryErrorGuard } from "@/components/auth/RecoveryErrorGuard";
 
 export default function Home() {
-  return <HomePage />;
+  return (
+    <RecoveryErrorGuard>
+      <HomePage />
+    </RecoveryErrorGuard>
+  );
 }

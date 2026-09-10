@@ -4,6 +4,7 @@ const AUTOPLAY_NEXT_PREFERENCE_KEY = "0nya.autoplay-next-preference";
 const NEW_RELEASE_NOTIFICATIONS_PREFERENCE_KEY = "0nya.new-release-notifications-preference";
 const MARKETING_NOTIFICATIONS_PREFERENCE_KEY = "0nya.marketing-notifications-preference";
 const APP_LANGUAGE_PREFERENCE_KEY = "0nya.app-language-preference";
+const PICTURE_IN_PICTURE_PREFERENCE_KEY = "0nya.picture-in-picture-preference";
 
 export type StoredAppLanguage = "en" | "hi";
 
@@ -73,4 +74,12 @@ export async function getMarketingNotificationsPreference(): Promise<boolean> {
 
 export async function setMarketingNotificationsPreference(value: boolean) {
   await writeBooleanPreference(MARKETING_NOTIFICATIONS_PREFERENCE_KEY, value);
+}
+
+export async function getPictureInPicturePreference(): Promise<boolean> {
+  return readBooleanPreference(PICTURE_IN_PICTURE_PREFERENCE_KEY, true);
+}
+
+export async function setPictureInPicturePreference(value: boolean) {
+  await writeBooleanPreference(PICTURE_IN_PICTURE_PREFERENCE_KEY, value);
 }

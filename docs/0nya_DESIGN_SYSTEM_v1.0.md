@@ -1,13 +1,13 @@
 ---
 title: "0nya Design System"
-version: "1.0"
-status: "Visual Implementation Lock"
+version: "1.1"
+status: "Visual Implementation Lock — v1.1 UI Sync"
 authority: "Companion to Product Bible v3.0 + Master User Flow v1.1 + All-Screen Wireframes v1.0"
-date: "2026-08-21"
+date: "2026-09-07"
 product: "0nya"
 ---
 
-# 0nya DESIGN SYSTEM v1.0
+# 0nya DESIGN SYSTEM v1.1
 
 **Use with:**
 
@@ -29,6 +29,35 @@ product: "0nya"
 ---
 
 # 1. DESIGN INTENT
+
+> ## v1.1 SYNC NOTES (2026-09-07)
+>
+> This version re-anchors the design system to the **currently approved +
+> implemented consumer-app UI** (final-stage Android work). No new product
+> decisions were invented; this pass only reflects what ships today and
+> supersedes stale wording. Updated/clarified in v1.1:
+>
+> - **Series Detail (D01, # 26):** dynamic per-episode primary CTA, compact 9:16
+>   poster, Episodes launcher pill, format/classification badge treatment.
+> - **Player (V01/V02, # 28–29):** 9:16-first video viewport preserved;
+>   compact translucent scrim controls; auto-hide while playing; title →
+>   episode hierarchy; Episodes pill.
+> - **Universal Episode Sheet (V03, # 27):** one quiet number-grid language used
+>   from Series Detail and from the Player Episodes control — selected/current
+>   state, backend-driven Free / Ad / Coin / Plus micro-labels, episode-number
+>   clarity, responsive columns, no thumbnail-heavy scaling.
+> - **Locked Preview / Paywall (W01/W02, # 32–33):** locked preview → current
+>   frame freezes → dim/blur → paywall rises directly in the player context.
+> - **Account / Profile (P01–P04, C01):** list-based quiet Profile; compact
+>   premium wallet balance strip with a small coin glyph.
+> - **Auth / Sign-in (R01/R02, NEW # 87):** production layout is
+>   compositionally complete on its own; developer/test sign-in is an optional
+>   dev-only appendage that must not create empty production space when hidden.
+> - **Buttons / surfaces (# 15):** compact/cozy premium; pill treatment where
+>   approved; dark surfaces, subtle borders, restrained teal; no giant grey
+>   blocks.
+>
+> Bible precedence and color/token values are unchanged (see # 84, # 66).
 
 0nya should feel:
 
@@ -609,6 +638,16 @@ Resend
 
 Use sparingly.
 
+## 15.4 Compact surface & pill language (synced)
+
+- Prefer compact/cozy/premium controls over oversized blocks.
+- Use dark surfaces, subtle hairline borders, and restrained teal.
+- Pill treatment (full radius) where approved (Episodes launcher, wallet and
+  paywall action pills).
+- No giant grey dashboard blocks.
+- Current pressed state is a subtle opacity/surface change; scale-on-press only
+  where it is already implemented.
+
 ---
 
 # 16. BUTTON PRIORITY RULE
@@ -943,6 +982,36 @@ Coming Soon
 
 Only show states actually valid for the viewer/configuration.
 
+Layout (synced to implemented Series Detail):
+
+```text
+compact 9:16 poster      (subtle hairline border, small radius)
+title
+metadata / genre
+classification  (+ content descriptors)
+primary episode CTA      (dynamic, see below)
+Episodes launcher pill   (text + chevron)
+synopsis
+```
+
+- Poster is a compact 9:16 artwork with a subtle border — no oversized hero
+  card; title/meta sit beside the poster in a quiet two-column hero.
+- Primary CTA is dynamic per the next playable episode:
+
+```text
+partial progress  -> Resume Episode N
+no history        -> Start Watching
+locked            -> Unlock options
+```
+
+- The Episodes launcher is a compact pill/text action (accent label + chevron)
+  adjacent to the CTA that opens the compact episode sheet (# 27) — not a
+  full-screen catalog.
+- Format/classification badges stay small and text-first; avoid a loud stack
+  of badges.
+- Related / "More Like This", when present, is a quiet horizontal row of compact
+  9:16 poster cards after synopsis, not a full discovery grid.
+
 ---
 
 # 27. EPISODE ROW
@@ -967,6 +1036,27 @@ subtle teal indicator
 Do not use large padlock artwork.
 
 For V03, use the compact same-screen Episode Tray anchored over D01, with range controls derived from the published episode collection and the initial view centered near the viewer's resume context when multiple ranges exist. Keep the tray compact and content-aware; do not imply that every episode must render at once, and do not reintroduce a giant full-screen episode browser for MVP.
+
+## Universal Episode Sheet (V03) — synced
+
+A single quiet number-grid visual language is shared by the Series Detail
+Episode launcher and the Player Episodes control:
+
+```text
+current / selected cell   -> subtle teal tint + teal border
+available                 -> bone number
+locked                    -> muted number + small backend access micro-label
+episode number first      -> the number is the primary affordance
+access micro-labels       -> Free / Ad / Coin / Plus, backend-driven only
+browse                    -> range chips when multiple episode groups exist;
+                             initial view starts near the viewer's current/resume
+```
+
+- Number-forward grid cells — no thumbnail-heavy scaling problem.
+- Effective touch cells stay at/above 48dp; column count is responsive and never
+  shrinks a cell below the accessible touch target.
+- Keep the sheet compact and anchored; never reintroduce a full-screen episode
+  browser.
 
 ---
 
@@ -1050,6 +1140,19 @@ Guest / Free: Auto/adaptive playback with a 720p maximum ceiling
 
 Quality controls must render only actual available renditions or a truthful Auto/adaptive state. Do not add 4K UI.
 
+Compact translucent controls (synced):
+
+```text
+video viewport  -> preserves 9:16-first visual priority (9:16-safe)
+scrim           -> compact translucent top/bottom gradient, no hard bands
+hierarchy       -> Title (primary) / Episode (secondary)
+Episodes        -> compact pill in the bottom action row (Series only)
+auto-hide       -> controls auto-hide while playing; tap toggles them back
+```
+
+Keep the player the most minimal surface; do not push permanent UI over the
+9:16 video.
+
 ---
 
 # 30. PLAYER PROGRESS BAR
@@ -1090,18 +1193,29 @@ transition screen.
 
 # 32. LOCKED PREVIEW — W01
 
-At preview end:
+The approved locked-preview presentation is a single, continuous in-player
+sequence:
 
 ```text
-freeze/pause current frame
-dark overlay
-short locked message
-See Options
+locked preview (short, backend-signed clip)
+  -> episode reaches preview end
+  -> current frame freezes
+  -> dim / blur treatment over the frozen frame
+  -> paywall rises directly in the player context (W02)
 ```
 
-Avoid abruptly replacing the video with a bright commerce page.
+Do NOT present this as a separate commerce detour:
 
-Transition into W02 should feel connected to the content.
+```text
+preview
+  -> generic intermediate screen
+  -> tap "See options"
+  -> separate commerce destination
+```
+
+unless future product authority explicitly changes it. The transition into W02
+must feel connected to the content — never like a bright commerce page or a
+detached storefront.
 
 ---
 
@@ -1139,6 +1253,11 @@ Get 0nya Plus
 ```
 
 Only show backend-enabled methods.
+
+The paywall may rise directly inside the player over the frozen preview frame,
+keeping a compact decision hierarchy: episode context → available methods →
+Not now. Methods are rendered from backend-enabled options only; Add Coins is
+offered contextually when the viewer's coin balance is insufficient.
 
 ---
 
@@ -1232,12 +1351,17 @@ Buy Coins
 Recent activity
 ```
 
-Coin balance:
+Coin balance (current implemented treatment):
 
 ```text
-large number
-small "Coins" label
+small coin glyph
+concise balance label   (e.g. "12 Coins available")
+compact actions         (Add Coins / Watch & Earn) as dark pills
+restrained negative space
 ```
+
+Use the small coin glyph + numeric balance; do not render an oversized wallet
+card or a large display number.
 
 Transaction rows:
 
@@ -1513,6 +1637,11 @@ Guest
 Free
 0nya Plus
 ```
+
+Where a wallet/account balance surface appears below the user header, keep it a
+compact restrained card (coin glyph + balance + one primary action), not a
+dashboard-style bordered card with heavy chrome — aligned with the C01/Wallet
+treatment.
 
 ---
 
@@ -2482,6 +2611,30 @@ SOURCE -> EMULATOR -> SCREENSHOTS -> PRODUCT OWNER + CHATGPT REVIEW -> REFINEMEN
 
 ---
 
+# 87. AUTH / SIGN-IN — R01/R02
+
+Production-auth layout rule (explicit, synced):
+
+> The production auth/sign-in layout must be **compositionally complete on its
+> own**. Developer/test sign-in is an **optional dev-only appendage** and must
+> NOT create empty production space when hidden.
+
+Additional current auth rules:
+
+- Back/title hierarchy: a clear back action and a short, quiet title lead each
+  step (phone → OTP).
+- Phone input: a single focused field with the +91/India prefix and a 10-digit
+  entry; keep the target comfortable and unambiguous.
+- Compact premium mobile layout: centered, quiet, generous but restrained
+  negative space — not a stretched desktop-style form.
+- The disabled primary CTA must still feel intentional (readable label, clear
+  affordance once the required input length is met) — disabled ≠ invisible.
+- Hide debug/settings controls from the production auth surface.
+- Preserve guest return-to-origin context visually where relevant — the user
+  should understand they can continue as guest and return where they were.
+
+---
+
 **0nya · शून्य**
 
-**DESIGN SYSTEM v1.0**
+**DESIGN SYSTEM v1.1**

@@ -7,6 +7,7 @@ type MobileEnv = {
   devBillingHarnessEnabled: boolean;
   muxTestPlaybackEnabled: boolean;
   shortFilmMuxTestPlaybackEnabled: boolean;
+  suppressPlayInterruptionPageError?: boolean;
 };
 
 function readEnv(name: string, value: string | undefined) {
@@ -29,6 +30,9 @@ export function getMobileEnv(): MobileEnv {
   const shortFilmMuxTestPlaybackEnabled = readBooleanEnv(
     process.env.EXPO_PUBLIC_ONYA_TEST_SHORT_FILM_MUX_PLAYBACK,
   );
+  const suppressPlayInterruptionPageError = readBooleanEnv(
+    process.env.EXPO_PUBLIC_ONYA_SUPPRESS_PLAY_INTERRUPTION,
+  );
 
   return {
     supabaseUrl: readEnv(
@@ -48,5 +52,6 @@ export function getMobileEnv(): MobileEnv {
     devBillingHarnessEnabled,
     muxTestPlaybackEnabled,
     shortFilmMuxTestPlaybackEnabled,
+    suppressPlayInterruptionPageError,
   };
 }

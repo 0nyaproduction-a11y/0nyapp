@@ -1,121 +1,138 @@
-import { useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useMemo } from "react";
+import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
-import {
-  buildEpisodeRanges,
-  EPISODE_RANGE_SIZE,
-  getEpisodesInRange,
-  getInitialEpisodeRangeStart,
-} from "../lib/episodeRanges";
+import { EpisodeAccessMarkers } from "../components/EpisodeAccessMarkers";
+import { EpisodeRangeSelector } from "../components/EpisodeRangeSelector";
+import { getEpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
+import { useEpisodeRanges } from "../lib/episodeRanges";
 import type { ApiEpisode, EpisodeAccess } from "../types/api";
-import { borders, colors } from "../theme/tokens";
+import { colors } from "../theme/tokens";
 
 type SeriesEpisodeTrayProps = {
   currentEpisodeNumber?: number;
   episodeAccess: Record<string, EpisodeAccess>;
   episodes: ApiEpisode[];
+  isGuest?: boolean;
+  isPlus?: boolean;
   onClose: () => void;
   onSelectEpisode: (episode: ApiEpisode) => void;
   seriesTitle: string;
 };
 
+// Layout constants — compact circular episode buttons filling width edge-to-edge
+const CIRCLE_SIZE = 44;
+const SHEET_HORIZONTAL_PADDING = 20;
+const GRID_GAP_VERTICAL = 14;
+const SHEET_TOP_PADDING = 12;
 const SHEET_HORIZONTAL_PADDING = 16;
-const GRID_GAP = 6;
-const TOUCH_TARGET_MIN = 48;
-const MIN_COLUMNS = 3;
-const PREFERRED_COLUMNS = 5;
-const PLUS_MARKER_COLOR = "#B91825";
-const TRAY_HEIGHT_RATIO = 0.4;
-const SHEET_TOP_PADDING = 14;
-// Chrome block heights below mirror the actual style values used for those
-// rows (see styles below) so the JS height budget matches what really lays
-// out on-device instead of guessing.
-const HEADER_ROW_HEIGHT = 48;
-const SERIES_TITLE_BLOCK_HEIGHT = 20;
-const RANGE_STRIP_HEIGHT = 48;
-const GRID_VERTICAL_PADDING = 6;
-// Real-device font scaling / metrics can nudge the chrome rows a few dp
-// taller than the estimate above — pad the budget so the first grid row is
-// never clipped.
-const CHROME_SAFETY_MARGIN = 12;
+const GRID_GAP_VERTICAL = 12;
+const SHEET_TOP_PADDING = 10;
+const HEADER_ROW_HEIGHT = 38;
+const HEADER_MARGIN_BOTTOM = 16;
+const HEADER_MARGIN_BOTTOM = 14;
+const RANGE_STRIP_HEIGHT = 44;
+const SAFE_BOTTOM_BREATHING_ROOM = 12;
+const MIN_BOTTOM_PADDING = 20;
+const MIN_BOTTOM_PADDING = 14;
+const SHEET_TOP_RADIUS = 24;
 
-// Keeps the normal-phone layout at five columns, then backs off on narrow
-// widths so every cell still clears the minimum accessible touch target.
-function getColumnsForWidth(width: number) {
-  const availableWidth = width - SHEET_HORIZONTAL_PADDING * 2;
-  const preferredCellSize = Math.floor(
-    (availableWidth - (PREFERRED_COLUMNS - 1) * GRID_GAP) / PREFERRED_COLUMNS,
-  );
+// Color theme — adapted from cinema inspiration
+// Color theme — adapted from cinema inspiration + 0nya palette
+// Color theme — 0nya cinema palette with smarter tonal depth
+const SCRIM_COLOR = "rgba(0, 0, 0, 0.55)";
+const TRAY_SURFACE = "#0C1211";
+const CIRCLE_SURFACE = "#050505";
+const TRAY_SURFACE = "#0B0F0E";
+const CIRCLE_SURFACE = "#060808";
+const CIRCLE_BORDER = "rgba(254, 253, 253, 0.10)";
+const SELECTED_CIRCLE_FILL = "#367B79";
+const SELECTED_CIRCLE_BORDER = "#4BA29F";
+const SELECTED_NUMBER = "#FFFFFF";
+const TRAY_TOP_BORDER = "rgba(43, 126, 125, 0.22)";
+const SELECTED_CIRCLE_FILL = "rgba(43, 126, 125, 0.22)";
+const SELECTED_CIRCLE_BORDER = "#2B7E7D";
+const SELECTED_NUMBER = "#FEFDFD";
+const TRAY_TOP_BORDER = "rgba(43, 126, 125, 0.28)";
 
-  if (preferredCellSize >= TOUCH_TARGET_MIN) {
-    return PREFERRED_COLUMNS;
+function getColumnsForWidth(width: number): number {
+  const available = width - SHEET_HORIZONTAL_PADDING * 2;
+  // Choose maximum columns that maintain at least 10dp breathing space between adjacent circles
+  for (let cols = 8; cols >= 4; cols--) {
+    const gap = (available - cols * CIRCLE_SIZE) / (cols - 1);
+    if (gap >= 10) return cols;
+  if (width >= 600) {
+    return 8;
   }
-
-  for (let columns = PREFERRED_COLUMNS - 1; columns >= MIN_COLUMNS; columns -= 1) {
-    const cellSize = Math.floor((availableWidth - (columns - 1) * GRID_GAP) / columns);
-    if (cellSize >= TOUCH_TARGET_MIN) {
-      return columns;
-    }
-  }
-
-  return MIN_COLUMNS;
+  return 5;
+  return 6;
 }
 
 export function SeriesEpisodeTray({
   currentEpisodeNumber,
   episodeAccess,
   episodes,
+  isGuest,
+  isPlus,
   onClose,
   onSelectEpisode,
-  seriesTitle,
+  seriesTitle: _seriesTitle,
 }: SeriesEpisodeTrayProps) {
+  const isPlusUser =
+    Boolean(isPlus) ||
+    Object.values(episodeAccess).some(
+      (access) => access?.kind === "subscription" && access?.canWatch,
+    );
   const { height: windowHeight, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const columns = useMemo(() => getColumnsForWidth(width), [width]);
-  const cellOuterSize = Math.floor(
-    (width - SHEET_HORIZONTAL_PADDING * 2 - (columns - 1) * GRID_GAP) / columns,
+  const sheetBottomPadding = Math.max(
+    MIN_BOTTOM_PADDING,
+    insets.bottom + SAFE_BOTTOM_BREATHING_ROOM,
+    insets.bottom + 6,
   );
-  const cellVisualSize = Math.max(TOUCH_TARGET_MIN, cellOuterSize);
-  const maxTrayHeight = Math.round(windowHeight * TRAY_HEIGHT_RATIO);
-  const sheetBottomPadding = Math.max(20, insets.bottom + 12);
 
-  // Published episodes are the ONLY grid source. episodeAccess is looked up
-  // per-episode below purely for the lock/current visual — it never filters
-  // or shortens this list.
-  const ranges = useMemo(() => buildEpisodeRanges(episodes, EPISODE_RANGE_SIZE), [episodes]);
-  const initialRangeStart = useMemo(
-    () => getInitialEpisodeRangeStart(episodes, currentEpisodeNumber),
-    [currentEpisodeNumber, episodes],
-  );
-  const [selectedRangeStart, setSelectedRangeStart] = useState<number | null>(null);
-  const activeRangeStart =
-    ranges.some((range) => range.start === selectedRangeStart)
-      ? selectedRangeStart
-      : initialRangeStart;
-  const selectedRange =
-    ranges.find((range) => range.start === activeRangeStart) ?? ranges[0];
+  const {
+    activeRangeStart,
+    onSelectRange,
+    ranges,
+    visibleEpisodes,
+  } = useEpisodeRanges({
+    currentEpisodeNumber,
+    episodes,
+  });
 
-  const visibleEpisodes = useMemo(() => {
-    return getEpisodesInRange(episodes, selectedRange);
-  }, [episodes, selectedRange]);
+  // Calculate gap so circles span from left corner to right corner with no empty corner dead space
+  const horizontalGap = useMemo(() => {
+    const available = width - SHEET_HORIZONTAL_PADDING * 2;
+    return Math.floor((available - columns * CIRCLE_SIZE) / (columns - 1));
+  }, [width, columns]);
 
-  // FlatList/ScrollView are given a definite (numeric) parent height so they
-  // lay out and virtualize predictably on Android, rather than relying on
-  // `maxHeight` + `flexShrink` alone. Every grid row (including the last)
-  // carries a trailing margin (see cellTouchArea), so row height budget is
-  // `cellOuterSize + GRID_GAP` per row, plus a safety margin for on-device
-  // font-metric variance — this guarantees at least one full row is visible.
   const rows = Math.max(1, Math.ceil(visibleEpisodes.length / columns));
-  const gridContentHeight = rows * (cellOuterSize + GRID_GAP) + GRID_VERTICAL_PADDING;
+  const maxTrayHeight = Math.round(windowHeight * 0.70);
+  const minTrayHeight = Math.round(windowHeight * 0.38);
+  const maxTrayHeight = Math.round(windowHeight * 0.72);
+  const gridContentHeight =
+    rows * CIRCLE_SIZE + Math.max(0, rows - 1) * GRID_GAP_VERTICAL;
   const chromeHeight =
     SHEET_TOP_PADDING +
+    18 + // handle bar + margin
     HEADER_ROW_HEIGHT +
-    SERIES_TITLE_BLOCK_HEIGHT +
+    HEADER_MARGIN_BOTTOM +
     (ranges.length > 1 ? RANGE_STRIP_HEIGHT : 0) +
-    sheetBottomPadding +
-    CHROME_SAFETY_MARGIN;
+    sheetBottomPadding;
   const sheetHeight = Math.min(maxTrayHeight, chromeHeight + gridContentHeight);
+  const naturalHeight = chromeHeight + gridContentHeight;
+  const sheetHeight = Math.min(maxTrayHeight, Math.max(minTrayHeight, naturalHeight));
+
+  // Left-aligned with sheet padding so row 1 starts under "Episodes" and partial rows stay left-aligned
+  const columnWrapperStyle = useMemo(
+    () => ({
+      gap: horizontalGap,
+      justifyContent: "flex-start" as const,
+      paddingHorizontal: SHEET_HORIZONTAL_PADDING,
+    }),
+    [horizontalGap],
+  );
 
   return (
     <View pointerEvents="auto" style={styles.backdrop}>
@@ -127,66 +144,73 @@ export function SeriesEpisodeTray({
       />
 
       <View style={[styles.sheet, { height: sheetHeight, paddingBottom: sheetBottomPadding }]}>
+        {/* Grab handle indicator */}
+        <View style={styles.handleBar} />
+
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Episodes</Text>
-          <Pressable
-            accessibilityLabel="Close episode list"
-            accessibilityRole="button"
-            onPress={onClose}
-            style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.closeText}>Close</Text>
-          </Pressable>
+          <View style={styles.headerSideLeft}>
+            <Text style={styles.headerTitle}>
+              {"Episodes"}
+              {episodes.length > 0 ? (
+                <Text style={styles.headerCount}>{` (${episodes.length})`}</Text>
+              ) : null}
+            </Text>
+          </View>
+
+          <View style={styles.headerCenter}>
+            <Text numberOfLines={1} style={styles.plusStatusText}>
+              <Text style={styles.plusShunya}>{"Shunya "}</Text>
+              <Text style={styles.plusBrand}>{"Plus"}</Text>
+              <Text style={styles.plusDot}>{" · "}</Text>
+              <Text style={styles.plusActive}>{"Active"}</Text>
+            </Text>
+            {isPlusUser ? (
+              <Text numberOfLines={1} style={styles.plusStatusText}>
+                <Text style={styles.plusShunya}>{"Shunya "}</Text>
+                <Text style={styles.plusBrand}>{"Plus"}</Text>
+                <Text style={styles.plusDot}>{" · "}</Text>
+                <Text style={styles.plusActive}>{"Active"}</Text>
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={styles.headerSideRight}>
+            <Pressable
+              accessibilityLabel="Close episode list"
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={onClose}
+              style={({ pressed }) => [styles.closeCircle, pressed && styles.pressed]}
+            >
+              <CloseIcon />
+            </Pressable>
+          </View>
         </View>
 
-        <Text numberOfLines={1} style={styles.seriesTitle}>
-          {seriesTitle}
-        </Text>
-
-        {ranges.length > 1 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.rangeStrip}
-            contentContainerStyle={styles.rangeRow}
-          >
-            {ranges.map((range) => {
-              const isSelected = range.start === activeRangeStart;
-
-              return (
-                <Pressable
-                  key={`${range.start}-${range.end}`}
-                  accessibilityLabel={`Show episodes ${range.start} to ${range.end}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                  onPress={() => setSelectedRangeStart(range.start)}
-                  style={({ pressed }) => [
-                    styles.rangeChip,
-                    isSelected && styles.rangeChipSelected,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.rangeText, isSelected && styles.rangeTextSelected]}>
-                    {`${range.start}-${range.end}`}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
+        <EpisodeRangeSelector
+          activeRangeStart={activeRangeStart}
+          onSelectRange={onSelectRange}
+          ranges={ranges}
+          style={{ marginHorizontal: SHEET_HORIZONTAL_PADDING }}
+        />
 
         <FlatList
           key={columns}
+          columnWrapperStyle={columnWrapperStyle}
           contentContainerStyle={styles.grid}
           data={visibleEpisodes}
           keyExtractor={(episode) => String(episode.number)}
           numColumns={columns}
           showsVerticalScrollIndicator={false}
           style={styles.gridList}
-          renderItem={({ item }) => {
+          renderItem={({ index, item }) => {
             const access = episodeAccess[String(item.number)];
             const isCurrent = item.number === currentEpisodeNumber;
-            const accessDisplay = getEpisodeAccessDisplay(item, access);
+            const accessDisplay = getEpisodeAccessDisplay(item, access, {
+              isGuest,
+              isPlus: isPlusUser,
+            });
+            const isLastRow = Math.floor(index / columns) === rows - 1;
 
             return (
               <Pressable
@@ -195,25 +219,23 @@ export function SeriesEpisodeTray({
                 }`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isCurrent }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 onPress={() => onSelectEpisode(item)}
                 style={({ pressed }) => [
-                  styles.cellTouchArea,
-                  { height: cellOuterSize, width: cellOuterSize },
+                  styles.circle,
+                  {
+                    height: CIRCLE_SIZE,
+                    marginBottom: isLastRow ? 0 : GRID_GAP_VERTICAL,
+                    width: CIRCLE_SIZE,
+                  },
+                  isCurrent && styles.circleCurrent,
                   pressed && styles.pressed,
                 ]}
               >
-                <View
-                  style={[
-                    styles.cell,
-                    { height: cellVisualSize, width: cellVisualSize },
-                    isCurrent && styles.cellCurrent,
-                  ]}
-                >
-                  <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
-                    {item.number}
-                  </Text>
-                  {renderAccessMarkers(accessDisplay, isCurrent)}
-                </View>
+                <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
+                  {item.number}
+                </Text>
+                <EpisodeAccessMarkers accessDisplay={accessDisplay} />
               </Pressable>
             );
           }}
@@ -223,45 +245,41 @@ export function SeriesEpisodeTray({
   );
 }
 
-function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boolean) {
+function CloseIcon({
+  color = "rgba(254, 253, 253, 0.72)",
+  size = 11,
+}: {
+  color?: string;
+  size?: number;
+}) {
   return (
-    <View style={styles.markerRow}>
-      {accessDisplay.markers.map((marker) => (
-        <View
-          key={`${marker.label}-${marker.accessibilityLabel}`}
-          style={[
-            styles.marker,
-            marker.tone === "available" && styles.markerAvailable,
-            marker.tone === "locked" && styles.markerLocked,
-            isCurrent && styles.markerCurrent,
-          ]}
-        >
-          {marker.icon === "coin" ? <CoinGlyph /> : null}
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.cellAccessLabel,
-              marker.tone === "available" && styles.cellAccessLabelAvailable,
-              marker.tone === "locked" && styles.cellAccessLabelLocked,
-              marker.variant === "plus" && styles.cellAccessLabelPlus,
-              marker.variant === "ad" && styles.cellAccessLabelAd,
-              marker.variant === "coin" && styles.cellAccessLabelCoin,
-              isCurrent && styles.cellAccessLabelCurrent,
-            ]}
-          >
-            {marker.label}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function CoinGlyph() {
-  return (
-    <View style={styles.coinGlyph}>
-      <View style={styles.coinGlyphInner} />
-      <View style={styles.coinGlyphHighlight} />
+    <View
+      style={{
+        alignItems: "center",
+        height: size,
+        justifyContent: "center",
+        transform: [{ rotate: "45deg" }],
+        width: size,
+      }}
+    >
+      <View
+        style={{
+          backgroundColor: color,
+          borderRadius: 1,
+          height: 1.5,
+          position: "absolute",
+          width: size,
+        }}
+      />
+      <View
+        style={{
+          backgroundColor: color,
+          borderRadius: 1,
+          height: size,
+          position: "absolute",
+          width: 1.5,
+        }}
+      />
     </View>
   );
 }
@@ -276,173 +294,133 @@ const styles = StyleSheet.create({
     top: 0,
   },
   scrimArea: {
-    backgroundColor: "rgba(3, 6, 6, 0.72)",
+    backgroundColor: SCRIM_COLOR,
     flex: 1,
   },
   sheet: {
-    backgroundColor: colors.background,
-    borderColor: borders.color,
-    borderTopWidth: borders.width,
-    paddingHorizontal: SHEET_HORIZONTAL_PADDING,
+    backgroundColor: TRAY_SURFACE,
+    borderTopColor: TRAY_TOP_BORDER,
+    borderTopLeftRadius: SHEET_TOP_RADIUS,
+    borderTopRightRadius: SHEET_TOP_RADIUS,
+    borderTopWidth: 1,
+    paddingHorizontal: 0,
     paddingTop: SHEET_TOP_PADDING,
+  },
+  handleBar: {
+    alignSelf: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.22)",
+    borderRadius: 2,
+    height: 4,
+    marginBottom: 14,
+    width: 38,
+    height: 3.5,
+    marginBottom: 12,
+    width: 36,
   },
   header: {
     alignItems: "center",
     flexDirection: "row",
+    height: HEADER_ROW_HEIGHT,
     justifyContent: "space-between",
+    marginBottom: HEADER_MARGIN_BOTTOM,
+    paddingHorizontal: SHEET_HORIZONTAL_PADDING,
+  },
+  headerSideLeft: {
+    alignItems: "flex-start",
+    flexShrink: 0,
+    justifyContent: "center",
+  },
+  headerCenter: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  headerSideRight: {
+    alignItems: "flex-end",
+    flexShrink: 0,
+    justifyContent: "center",
   },
   headerTitle: {
     color: colors.text,
     fontSize: 17,
-    fontWeight: "800",
-  },
-  closeButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 48,
-    minWidth: 48,
-    paddingHorizontal: 6,
-  },
-  closeText: {
-    color: colors.accent,
-    fontSize: 14,
     fontWeight: "700",
+  },
+  headerCount: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  plusStatusText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  plusShunya: {
+    color: colors.accent,
+    fontWeight: "700",
+  },
+  plusBrand: {
+    color: "#955E61",
+    fontWeight: "700",
+  },
+  plusDot: {
+    color: "rgba(254, 253, 253, 0.45)",
+    fontWeight: "400",
+  },
+  plusActive: {
+    color: colors.plusRed,
+    fontWeight: "600",
+  },
+  closeCircle: {
+    alignItems: "center",
+    backgroundColor: CIRCLE_SURFACE,
+    borderColor: CIRCLE_BORDER,
+    borderRadius: 9999,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
   },
   pressed: {
     opacity: 0.78,
-  },
-  seriesTitle: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  rangeStrip: {
-    maxHeight: RANGE_STRIP_HEIGHT,
-  },
-  rangeRow: {
-    gap: 8,
-    paddingBottom: 6,
-    paddingTop: 10,
-  },
-  rangeChip: {
-    alignItems: "center",
-    borderColor: borders.color,
-    borderWidth: borders.width,
-    justifyContent: "center",
-    minHeight: 32,
-    paddingHorizontal: 12,
-  },
-  rangeChipSelected: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
-    borderColor: colors.accent,
-  },
-  rangeText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  rangeTextSelected: {
-    color: colors.accent,
   },
   gridList: {
     flex: 1,
   },
   grid: {
-    paddingBottom: 4,
-    paddingTop: 2,
+    paddingBottom: 0,
+    paddingTop: 0,
   },
-  cellTouchArea: {
+  // Compact circular episode buttons
+  circle: {
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: GRID_GAP,
-    marginRight: GRID_GAP,
-  },
-  cell: {
-    alignItems: "center",
-    borderColor: borders.color,
-    borderRadius: 6,
-    borderWidth: borders.width,
+    backgroundColor: CIRCLE_SURFACE,
+    borderColor: CIRCLE_BORDER,
+    borderRadius: 9999,
+    borderWidth: 1,
     gap: 1,
     justifyContent: "center",
-    paddingHorizontal: 3,
+    paddingHorizontal: 2,
   },
-  cellCurrent: {
-    backgroundColor: "rgba(13, 209, 188, 0.12)",
-    borderColor: colors.accent,
+  // Selected active circle — rich brand teal fill
+  // Selected active circle — subtle brand teal active fill and border
+  circleCurrent: {
+    backgroundColor: SELECTED_CIRCLE_FILL,
+    borderColor: SELECTED_CIRCLE_BORDER,
+    borderWidth: 1.5,
   },
   cellNumber: {
     color: colors.text,
-    fontSize: 12,
-    fontWeight: "800",
+    fontSize: 14,
+    color: "rgba(254, 253, 253, 0.85)",
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   cellNumberCurrent: {
-    color: colors.accent,
-  },
-  markerRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 2,
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  cellAccessLabel: {
-    color: colors.muted,
-    fontSize: 7,
+    color: SELECTED_NUMBER,
     fontWeight: "700",
-    lineHeight: 9,
-    textAlign: "center",
-  },
-  cellAccessLabelAvailable: {
-    color: colors.text,
-  },
-  cellAccessLabelAd: {
-    color: colors.muted,
-  },
-  cellAccessLabelCoin: {
-    color: colors.text,
-  },
-  cellAccessLabelLocked: {
-    color: colors.muted,
-  },
-  cellAccessLabelPlus: {
-    color: PLUS_MARKER_COLOR,
-  },
-  cellAccessLabelCurrent: {
-    color: colors.accent,
-  },
-  marker: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 2,
-  },
-  markerAvailable: {},
-  markerLocked: {},
-  markerCurrent: {},
-  coinGlyph: {
-    alignItems: "center",
-    backgroundColor: "#F2B705",
-    borderColor: "#F6DD63",
-    borderRadius: 999,
-    borderWidth: 1.2,
-    height: 7,
-    justifyContent: "center",
-    width: 7,
-  },
-  coinGlyphInner: {
-    backgroundColor: "#D89100",
-    borderRadius: 999,
-    height: 4,
-    width: 4,
-  },
-  coinGlyphHighlight: {
-    backgroundColor: "#FFF0A6",
-    borderRadius: 999,
-    height: 1.4,
-    left: 1.8,
-    position: "absolute",
-    top: 1.3,
-    width: 1.4,
   },
 });

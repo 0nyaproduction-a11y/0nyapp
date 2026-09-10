@@ -60,7 +60,7 @@ export function useWatchProgressSync({
           };
           const measure = perfStart("PROGRESS_SYNC", { content_type: request.contentType, mode });
           try {
-            await saveWatchHistory(sessionRef.current, request, sample.durationSeconds, isCurrentIdentity);
+            await saveWatchHistory(sessionRef.current, request, sample.durationSeconds);
             perfEnd(measure, { content_type: request.contentType, mode, position_seconds: sample.positionSeconds, result: "ok" });
           } catch (error) {
             perfEnd(measure, { content_type: request.contentType, mode, position_seconds: sample.positionSeconds, result: "error" });

@@ -11,6 +11,172 @@ import {
   type RewardedAccessMode,
 } from "@/lib/cms/constants";
 
+export const EPISODE_ACCESS_MODES = [
+  "FREE",
+  "COINS",
+  "PLUS",
+  "COINS_OR_PLUS",
+  "REWARDED_OR_PLUS",
+] as const;
+
+export type EpisodeAccessMode = (typeof EPISODE_ACCESS_MODES)[number];
+
+export const EPISODE_ACCESS_MODE_OPTIONS: readonly {
+  label: string;
+  value: EpisodeAccessMode;
+  description: string;
+}[] = [
+  {
+    label: "Free",
+    value: "FREE",
+    description: "Free for all viewers (guests, free accounts, and Plus subscribers). No coins, ads, or Plus required.",
+  },
+  {
+    label: "Coins",
+    value: "COINS",
+    description: "Pay-per-view with Coins only. Plus subscribers must also use Coins.",
+  },
+  {
+    label: "Plus",
+    value: "PLUS",
+    description: "Included with 0nya Plus subscription. Free viewers must subscribe.",
+  },
+  {
+    label: "Coins or Plus",
+    value: "COINS_OR_PLUS",
+    description: "Free viewers unlock with Coins; 0nya Plus subscribers get included access.",
+  },
+  {
+    label: "Rewarded or Plus",
+    value: "REWARDED_OR_PLUS",
+    description: "Free viewers unlock by watching rewarded ads; 0nya Plus subscribers get included access.",
+  },
+];
+
+export type EpisodeAccessFields = {
+  isFree: boolean;
+  coinUnlockEnabled: boolean;
+  coinPrice: number;
+  rewardedUnlockEnabled: boolean;
+  requiredRewardedCompletions: number;
+  plusAccess: boolean;
+};
+
+/**
+ * Compiles an explicit EpisodeAccessMode down to existing canonical database fields.
+ *
+ * Enforces the Hard Exclusivity Rule and canonical field combinations:
+ * - FREE: is_free=true, coin=false, price=0, rewarded=false, plus=false
+ * - COINS: is_free=false, coin=true, price>0, rewarded=false, plus=false
+ * - PLUS: is_free=false, coin=false, price=0, rewarded=false, plus=true
+ * - COINS_OR_PLUS: is_free=false, coin=true, price>0, rewarded=false, plus=true
+ * - REWARDED_OR_PLUS: is_free=false, coin=false, price=0, rewarded=true, completions>=1, plus=true
+ */
+export function mapAccessModeToFields(
+  mode: EpisodeAccessMode,
+  options: {
+    coinPrice?: number;
+    requiredRewardedCompletions?: number;
+  } = {},
+): EpisodeAccessFields {
+  switch (mode) {
+    case "FREE":
+      return {
+        isFree: true,
+        coinUnlockEnabled: false,
+        coinPrice: 0,
+        rewardedUnlockEnabled: false,
+        requiredRewardedCompletions: 1,
+        plusAccess: false,
+      };
+    case "COINS":
+      return {
+        isFree: false,
+        coinUnlockEnabled: true,
+        coinPrice: Math.max(0, options.coinPrice ?? 0),
+        rewardedUnlockEnabled: false,
+        requiredRewardedCompletions: 1,
+        plusAccess: false,
+      };
+    case "PLUS":
+      return {
+        isFree: false,
+        coinUnlockEnabled: false,
+        coinPrice: 0,
+        rewardedUnlockEnabled: false,
+        requiredRewardedCompletions: 1,
+        plusAccess: true,
+      };
+    case "COINS_OR_PLUS":
+      return {
+        isFree: false,
+        coinUnlockEnabled: true,
+        coinPrice: Math.max(0, options.coinPrice ?? 0),
+        rewardedUnlockEnabled: false,
+        requiredRewardedCompletions: 1,
+        plusAccess: true,
+      };
+    case "REWARDED_OR_PLUS":
+      return {
+        isFree: false,
+        coinUnlockEnabled: false,
+        coinPrice: 0,
+        rewardedUnlockEnabled: true,
+        requiredRewardedCompletions: Math.min(2, Math.max(1, options.requiredRewardedCompletions ?? 1)),
+        plusAccess: true,
+      };
+  }
+}
+
+/**
+ * Classifies raw episode access fields into one of the 5 locked product modes.
+ * Returns null if the combination is ambiguous, invalid, or violates hard exclusivity.
+ */
+export function inferEpisodeAccessMode(fields: {
+  isFree: boolean;
+  coinUnlockEnabled: boolean;
+  coinPrice?: number;
+  rewardedUnlockEnabled: boolean;
+  plusAccess: boolean;
+}): EpisodeAccessMode | null {
+  // FREE: standalone
+  if (fields.isFree && !fields.coinUnlockEnabled && !fields.rewardedUnlockEnabled && !fields.plusAccess) {
+    return "FREE";
+  }
+
+  // Hard exclusivity: is_free cannot be combined with ANY monetized method
+  if (fields.isFree) {
+    return null;
+  }
+
+  // Coins + Rewarded combination is unsupported
+  if (fields.coinUnlockEnabled && fields.rewardedUnlockEnabled) {
+    return null;
+  }
+
+  // COINS: coin unlock enabled without plus access
+  if (fields.coinUnlockEnabled && !fields.rewardedUnlockEnabled && !fields.plusAccess) {
+    return "COINS";
+  }
+
+  // PLUS: plus access enabled without coin or rewarded unlock
+  if (!fields.coinUnlockEnabled && !fields.rewardedUnlockEnabled && fields.plusAccess) {
+    return "PLUS";
+  }
+
+  // COINS_OR_PLUS: coin unlock enabled with plus access
+  if (fields.coinUnlockEnabled && !fields.rewardedUnlockEnabled && fields.plusAccess) {
+    return "COINS_OR_PLUS";
+  }
+
+  // REWARDED_OR_PLUS: rewarded unlock enabled with plus access
+  if (!fields.coinUnlockEnabled && fields.rewardedUnlockEnabled && fields.plusAccess) {
+    return "REWARDED_OR_PLUS";
+  }
+
+  return null;
+}
+
 // Matches episodes_preview_seconds check (locked_preview_seconds between 0
 // and 5) added in migration 006_episode_access_controls.
 const MIN_LOCKED_PREVIEW_SECONDS = 0;
@@ -48,18 +214,16 @@ export type EpisodeAccessValidationError = { field: string; message: string };
 /**
  * Pure validation of episode access configuration.
  *
- * Mirrors the database CHECK constraints so the admin gets an immediate,
- * friendly error instead of a raw DB failure. The authoritative value is
- * backend/CMS controlled; it is NEVER derived from coin price.
+ * Mirrors database constraints and enforces the 5 Locked Product Modes and
+ * the Hard Exclusivity Rule:
  *
- * Rules enforced:
- *   - coin_price must be >= 0
- *   - coin_unlock_enabled requires coin_price > 0 (mirrors episodes_coin_unlock_requires_price)
- *   - rewarded_access_mode must be in the allowed set (launch = permanent-only)
- *   - required_rewarded_completions must be 1 or 2 (launch bounds)
- *   - locked_preview_seconds must be between 0 and 5
- *   - content_rating_override must be a valid rating (if set)
- *   - content_descriptors_override entries must be valid descriptors
+ *   1. FREE: is_free=true, coin=false, price=0, rewarded=false, plus=false
+ *   2. COINS: is_free=false, coin=true, price>0, rewarded=false, plus=false
+ *   3. PLUS: is_free=false, coin=false, price=0, rewarded=false, plus=true
+ *   4. COINS_OR_PLUS: is_free=false, coin=true, price>0, rewarded=false, plus=true
+ *   5. REWARDED_OR_PLUS: is_free=false, coin=false, price=0, rewarded=true, completions>=1, plus=true
+ *
+ * Any other authoring combination is rejected at the save boundary.
  */
 export function validateEpisodeAccessInput(
   input: EpisodeAccessInput,
@@ -78,9 +242,13 @@ export function validateEpisodeAccessInput(
     errors.push({ field: "coinPrice", message: "Coin price must be zero or a positive whole number." });
   }
 
-  // Mirrors the DB constraint episodes_coin_unlock_requires_price.
+  // Coin price constraints
   if (input.coinUnlockEnabled && input.coinPrice <= 0) {
     errors.push({ field: "coinPrice", message: "Coin price must be greater than zero when coin unlock is enabled." });
+  }
+
+  if (!input.coinUnlockEnabled && input.coinPrice > 0) {
+    errors.push({ field: "coinPrice", message: "Coin price must be 0 when coin unlock is disabled." });
   }
 
   if (!(REWARDED_ACCESS_MODES as readonly RewardedAccessMode[]).includes(input.rewardedAccessMode)) {
@@ -123,21 +291,58 @@ export function validateEpisodeAccessInput(
     }
   }
 
-  // Combination guard (mirrors the product rule): a non-free episode must expose
-  // at least one unlock path. The server stays fail-closed (access_required)
-  // regardless, but the editor should not silently publish an inaccessible,
-  // non-free episode with no configured method. Free episodes are always valid
-  // alongside any combination of interactive methods.
-  if (
-    !input.isFree &&
-    !input.coinUnlockEnabled &&
-    !input.rewardedUnlockEnabled &&
-    !input.plusAccess
-  ) {
+  // HARD EXCLUSIVITY RULE: FREE is standalone.
+  // If any monetized access is active, is_free MUST be false.
+  if (input.isFree) {
+    if (input.coinUnlockEnabled) {
+      errors.push({
+        field: "isFree",
+        message: "Free episodes cannot enable coin unlock. Free access is standalone.",
+      });
+    }
+    if (input.plusAccess) {
+      errors.push({
+        field: "isFree",
+        message: "Free episodes cannot enable Plus access. Free access is standalone.",
+      });
+    }
+    if (input.rewardedUnlockEnabled) {
+      errors.push({
+        field: "isFree",
+        message: "Free episodes cannot enable rewarded-ad unlock. Free access is standalone.",
+      });
+    }
+  } else {
+    // Non-free must enable at least one access method
+    if (!input.coinUnlockEnabled && !input.rewardedUnlockEnabled && !input.plusAccess) {
+      errors.push({
+        field: "access",
+        message: "A non-free episode must enable at least one access method (Coins, Plus, Coins or Plus, or Rewarded or Plus).",
+      });
+    }
+  }
+
+  // Unsupported combination: both coin and rewarded unlock enabled
+  if (input.coinUnlockEnabled && input.rewardedUnlockEnabled) {
     errors.push({
       field: "access",
-      message:
-        "A non-free episode must enable at least one access method (Coin unlock, Rewarded-ad unlock, or Plus).",
+      message: "Episodes cannot enable both coin unlock and rewarded unlock. Choose Coins, Plus, Coins or Plus, or Rewarded or Plus.",
+    });
+  }
+
+  // Unsupported combination: rewarded unlock without Plus access
+  if (input.rewardedUnlockEnabled && !input.plusAccess) {
+    errors.push({
+      field: "plusAccess",
+      message: "Rewarded-ad unlock requires Plus access to be enabled (Rewarded or Plus mode).",
+    });
+  }
+
+  // Validate that the combination maps to one of the 5 locked product modes
+  if (errors.length === 0 && inferEpisodeAccessMode(input) === null) {
+    errors.push({
+      field: "access",
+      message: "Unsupported access mode combination. Exactly 5 modes are allowed: Free, Coins, Plus, Coins or Plus, Rewarded or Plus.",
     });
   }
 

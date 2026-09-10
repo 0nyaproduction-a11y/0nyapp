@@ -7,6 +7,16 @@ PARTIAL / PENDING / BLOCKED / UNVERIFIED.
 Title: coins, subscriptions, entitlements, rewarded ads, Chai tips, wallet,
 payments, playback authorization, and the server/client authority boundary.
 
+## 2026-09-10 audit reconciliation
+
+`apps/android/src/billing/googlePlay.ts` is an implemented `expo-iap` client
+adapter with purchase-update handling and server-bound purchase/restore
+payloads. It is not a production-complete billing system: Play product setup,
+real purchase-token verification, acknowledgement/consumption policy,
+restore/revocation lifecycle, and device E2E remain `PARTIAL / UNVERIFIED /
+BLOCKED_EXTERNAL`. References below that call the client service a “stub” mean
+the old development boundary and must not be read as “no adapter exists”.
+
 ## Server/client authority (non-negotiable)
 
 Client (Android or web) is NEVER authoritative for identity, wallet balance,
@@ -60,9 +70,12 @@ authority docs must be re-verified against the working tree.
 
 Server wallet read is COMPLETE. Android top-up purchase goes through the
 Google Play billing boundary (`POST /api/v1/billing/google-play`); the
-client billing service (`apps/android/src/billing/googlePlay.ts`) is a
-`not_configured` stub and `devHarness.ts` is dev-only — real Play purchase
-integration UNVERIFIED / PARTIAL.
+client billing service (`apps/android/src/billing/googlePlay.ts`) is now a
+real `expo-iap` implementation (connection + purchase listener + offer-token
+plan resolution; `finishTransaction` withheld until W3-B server verification
+per the W3-A/W3-B gate). `devHarness.ts` is dev-only. Real Play purchase
+integration remains UNVERIFIED / PARTIAL and EXTERNALLY BLOCKED (D-U-N-S /
+Play availability).
 
 Real Google Play Billing is **EXTERNALLY BLOCKED — D-U-N-S / Play organization
 + current availability; expected unavailable approximately one month from
@@ -101,10 +114,12 @@ Coins/Plus.
   `rewarded_access_mode`, `rewarded_unlock_enabled`,
   `required_rewarded_completions` (launch 1–2, `src/lib/cms/constants.ts`).
 - Multi-completion: migration `20260830093000_027_rewarded_multi_completion.sql`
-  (adds `rewarded_monetization_events`, `record_rewarded_event`,
-  `get_rewarded_progress`, redefines attempt RPCs) plus untracked
-  `src/lib/rewarded-*.ts`/tests and `monetization/rewarded-events` route —
-  IN-PROGRESS / uncommitted.
+  (tracked/committed) adds `rewarded_monetization_events`,
+  `record_rewarded_event`, `get_rewarded_progress`, and redefines attempt RPCs;
+  `src/lib/monetization/events.ts` + the `monetization/rewarded-events` route
+  are tracked/committed (foundation source, commit `5126208`) — IN-PROGRESS /
+  not remotely proven; real AdMob SSV device E2E + session-mode-trap
+  remediation remain open (B03).
 - `ad_unit` production pin required for SSV acceptance (fail closed).
 
 ### Short-film access (Chai tipping) — COMPLETE (ledger + route)

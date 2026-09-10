@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from "react";
 import {
-  ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -41,22 +41,6 @@ export function BrandWordmark({ allWhite = false, plus = false, style }: BrandWo
       <Text style={allWhite ? styles.brandText : styles.brandAccent}>0</Text>
       <Text style={styles.brandText}>nya</Text>
       {plus ? <Text style={allWhite ? styles.brandText : styles.brandPlusRed}>+</Text> : null}
-    </Text>
-  );
-}
-
-export function OnyaPlusBrandMark({
-  fontSize = 16,
-  style,
-}: {
-  fontSize?: number;
-  style?: StyleProp<TextStyle>;
-}) {
-  return (
-    <Text accessibilityLabel="0nya+" allowFontScaling style={[{ fontSize, fontWeight: "800", letterSpacing: -0.2 }, style]}>
-      <Text style={{ color: colors.accent }}>0</Text>
-      <Text style={{ color: colors.text }}>nya</Text>
-      <Text style={{ color: colors.plusRed }}>+</Text>
     </Text>
   );
 }
@@ -200,9 +184,142 @@ export function PlusVectorIcon({ color = colors.accent, size = 11 }: { color?: s
   );
 }
 
+export function OnyaPlusGlyph({ size = 8 }: { size?: number }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ color: colors.accent, fontSize: size, fontWeight: "800", lineHeight: size + 2 }}>
+        0
+      </Text>
+      <Text style={{ color: colors.text, fontSize: size, fontWeight: "800", lineHeight: size + 2 }}>
+        nya
+      </Text>
+      <Text style={{ color: "#955E61", fontSize: size, fontWeight: "800", lineHeight: size + 2, marginLeft: 0.5 }}>
+        +
+      </Text>
+    </View>
+  );
+}
+
 export function CheckmarkVectorIcon({ color = colors.accent, size = 12 }: { color?: string; size?: number }) {
   return (
     <Text style={{ color, fontSize: size, fontWeight: "700", lineHeight: size + 2 }}>{"\u2713"}</Text>
+  );
+}
+
+export function LockIcon({ color = "rgba(254, 253, 253, 0.42)", size = 10 }: { color?: string; size?: number }) {
+  const bodyWidth = size;
+  const bodyHeight = Math.max(4, Math.round(size * 0.55));
+  const shackleWidth = Math.max(4, Math.round(size * 0.65));
+  const shackleHeight = Math.max(3, Math.round(size * 0.45));
+
+  return (
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "flex-end" }}>
+      <View
+        style={{
+          width: shackleWidth,
+          height: shackleHeight,
+          borderTopLeftRadius: shackleWidth / 2,
+          borderTopRightRadius: shackleWidth / 2,
+          borderWidth: 1.2,
+          borderColor: color,
+          borderBottomWidth: 0,
+          marginBottom: -0.5,
+        }}
+      />
+      <View
+        style={{
+          width: bodyWidth,
+          height: bodyHeight,
+          backgroundColor: color,
+          borderRadius: 1.5,
+        }}
+      />
+    </View>
+  );
+}
+
+export function UnlockedIcon({ color = colors.accent, size = 10 }: { color?: string; size?: number }) {
+  const bodyWidth = size;
+  const bodyHeight = Math.max(4, Math.round(size * 0.55));
+  const shackleWidth = Math.max(5, Math.round(size * 0.65));
+  const shackleHeight = Math.max(5, Math.round(size * 0.55));
+  const stroke = 1.2;
+  const gap = Math.max(2, Math.round(size * 0.25));
+  const archHeight = Math.max(2.5, shackleHeight - gap);
+
+  return (
+    <View style={{ width: size + 2, height: bodyHeight + shackleHeight, alignItems: "center", justifyContent: "flex-end" }}>
+      <View
+        style={{
+          width: shackleWidth,
+          height: shackleHeight,
+          alignSelf: "flex-start",
+          marginLeft: 0.5,
+          marginBottom: -0.5,
+        }}
+      >
+        {/* Upper shackle arch with short right tip */}
+        <View
+          style={{
+            width: shackleWidth,
+            height: archHeight,
+            borderTopLeftRadius: shackleWidth / 2,
+            borderTopRightRadius: shackleWidth / 2,
+            borderWidth: stroke,
+            borderBottomWidth: 0,
+            borderColor: color,
+          }}
+        />
+        {/* Left post extension from arch down to lock body */}
+        <View
+          style={{
+            position: "absolute",
+            left: 0,
+            top: archHeight - 0.5,
+            bottom: 0,
+            width: stroke,
+            backgroundColor: color,
+          }}
+        />
+      </View>
+      <View
+        style={{
+          width: bodyWidth,
+          height: bodyHeight,
+          backgroundColor: color,
+          borderRadius: 1.5,
+          alignSelf: "center",
+        }}
+      />
+    </View>
+  );
+}
+
+export function EyeIcon({ color = "rgba(254, 253, 253, 0.45)", size = 11 }: { color?: string; size?: number }) {
+  const height = Math.max(5, Math.round(size * 0.65));
+  const pupilSize = Math.max(2.5, Math.round(size * 0.35));
+
+  return (
+    <View
+      style={{
+        width: size,
+        height,
+        borderRadius: size / 2,
+        borderWidth: 1.1,
+        borderColor: color,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <View
+        style={{
+          width: pupilSize,
+          height: pupilSize,
+          borderRadius: pupilSize / 2,
+          backgroundColor: color,
+        }}
+      />
+    </View>
   );
 }
 
@@ -228,6 +345,53 @@ const chevronStyles = StyleSheet.create({
     marginRight: 2,
   },
 });
+
+export function DetailInfoIcon({
+  color = "rgba(232, 228, 218, 0.75)",
+  size = 11,
+}: {
+  color?: string;
+  size?: number;
+}) {
+  return (
+    <View style={styles.detailInfoIconWrap}>
+      <Text style={[styles.detailInfoIconText, { color, fontSize: size }]}>i</Text>
+    </View>
+  );
+}
+
+export const InfoIcon = DetailInfoIcon;
+export const InfoGlyph = DetailInfoIcon;
+
+export type DetailInfoButtonProps = {
+  accessibilityLabel: string;
+  hitSlop?: number;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+};
+
+export function DetailInfoButton({
+  accessibilityLabel,
+  hitSlop = 6,
+  onPress,
+  style,
+}: DetailInfoButtonProps) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      hitSlop={hitSlop}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.detailInfoButton,
+        pressed && styles.detailInfoButtonPressed,
+        style,
+      ]}
+    >
+      <DetailInfoIcon />
+    </Pressable>
+  );
+}
 
 export function GearIcon({ color = "rgba(254, 253, 253, 0.55)", size = 18 }: { color?: string; size?: number }) {
   const toothWidth = Math.max(3, Math.round(size * 0.22));
@@ -611,7 +775,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   brandPlusRed: {
-    color: colors.plusRed,
+    color: "#955E61",
   },
   label: {
     ...typography.micro,
@@ -871,5 +1035,34 @@ const styles = StyleSheet.create({
   },
   compactPillTextDisabled: {
     color: colors.textDisabled,
+  },
+  detailInfoButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+    zIndex: 2,
+  },
+  detailInfoButtonPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.95 }],
+  },
+  detailInfoIconWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailInfoIconText: {
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+    fontStyle: "italic",
+    fontWeight: "700",
+    lineHeight: 14,
+    marginTop: -1,
   },
 });

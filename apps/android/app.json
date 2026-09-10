@@ -1,50 +1,58 @@
 {
-  "expo": {
-    "name": "0nya Android",
-    "slug": "0nya-android",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.onya.app",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#050505",
-        "foregroundImage": "./assets/icon.png"
+   "expo": {
+      "name": "0nya Android",
+      "slug": "0nya-android",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "icon": "./assets/icon.png",
+      "userInterfaceStyle": "light",
+      "ios": {
+         "supportsTablet": true,
+         "bundleIdentifier": "com.onya.app",
+         "infoPlist": {
+            "ITSAppUsesNonExemptEncryption": false
+         }
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.onya.app"
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-secure-store",
-      "expo-video",
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
-          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
-        }
-      ]
-    ],
-    "updates": {
-      "url": "https://u.expo.dev/6d1467ba-a4db-42cc-b048-8ecc114f87fd"
-    },
-    "runtimeVersion": {
-      "policy": "fingerprint"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "6d1467ba-a4db-42cc-b048-8ecc114f87fd"
+      "android": {
+         "adaptiveIcon": {
+            "backgroundColor": "#050505",
+            "foregroundImage": "./assets/icon.png"
+         },
+         "predictiveBackGestureEnabled": false,
+         "package": "com.onya.app",
+         "googleServicesFile": "./google-services.json"
+      },
+      "web": {
+         "favicon": "./assets/favicon.png"
+      },
+      "plugins": [
+         "expo-secure-store",
+         "expo-iap",
+         [
+            "expo-video",
+            {
+               "supportsPictureInPicture": true
+            }
+         ],
+         [
+            "react-native-google-mobile-ads",
+            {
+               "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+               "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+            }
+         ],
+         "./plugins/withRemoveSystemAlertWindow"
+      ],
+      "updates": {
+         "url": "https://u.expo.dev/6d1467ba-a4db-42cc-b048-8ecc114f87fd"
+      },
+      "runtimeVersion": {
+         "policy": "fingerprint"
+      },
+      "extra": {
+         "eas": {
+            "projectId": "6d1467ba-a4db-42cc-b048-8ecc114f87fd"
+         }
       }
-    }
-  }
+   }
 }

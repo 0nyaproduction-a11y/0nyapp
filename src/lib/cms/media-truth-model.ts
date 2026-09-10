@@ -552,3 +552,13 @@ export interface MediaViewRow {
   maxResolutionTier: string | null;
   resolutionTier: string | null;
 }
+
+export interface MediaViewListResult {
+  rows: MediaViewRow[];
+  totalCount: number;
+  filteredCount: number;
+  page: number;
+  pageSize: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}

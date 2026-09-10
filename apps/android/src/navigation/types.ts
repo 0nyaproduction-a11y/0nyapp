@@ -19,6 +19,10 @@ export type ParentalControlsTarget =
   | {
       params: RootStackParamList["EpisodeAccessOptions"];
       screen: "EpisodeAccessOptions";
+    }
+  | {
+      params: RootStackParamList["Wallet"];
+      screen: "Wallet";
     };
 
 export type ProfileStackParamList = {
@@ -76,6 +80,7 @@ export type RootStackParamList = {
     | undefined
     | {
         microDramaAccess?: MicroDramaAccessContext;
+        view?: "ledger";
       };
   CoinPurchase:
     | undefined

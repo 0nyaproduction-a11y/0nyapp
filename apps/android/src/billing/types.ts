@@ -1,5 +1,16 @@
 export type BillingProductKind = "coin_pack" | "subscription";
 
+export type PlusBillingPlan = "weekly" | "monthly" | "yearly";
+
+export interface PlusPlanIdentity {
+  billingPlan: PlusBillingPlan;
+  productCode: string;
+  googleProductId: string;
+  basePlanId: string;
+  offerPurpose: "normal" | "referral_intro";
+  offerTag?: string;
+}
+
 export type BillingHarnessScenario =
   | "PURCHASE_SUCCESS"
   | "USER_CANCELLED"
@@ -18,19 +29,23 @@ export type BillingHarnessScenario =
 
 export type StoreProduct = {
   billingPeriodLabel: string | null;
+  billingPlan?: PlusBillingPlan | null;
   coinAmount: number | null;
   displayName: string;
   googleProductId: string | null;
   kind: BillingProductKind;
   localizedPrice: string | null;
+  offerPurpose?: PlusPlanIdentity["offerPurpose"];
   productCode: string;
   status: "available" | "not_configured" | "unavailable";
+  offerToken?: string | null;
 };
 
 export type BillingPurchaseResult = {
+  billingPlan?: PlusBillingPlan | null;
   googleProductId: string | null;
-  productCode: string;
   kind: BillingProductKind;
+  productCode: string;
   scenario?: BillingHarnessScenario;
   status:
     | "success"
@@ -42,8 +57,13 @@ export type BillingPurchaseResult = {
     | "product_unavailable"
     | "already_processed"
     | "invalid_product"
-    | "not_configured";
+    | "not_configured"
+    | "purchase_received_requires_verification";
   testOnly: boolean;
+  orderId?: string | null;
+  purchaseToken?: string | null;
+  offerToken?: string | null;
+  acknowledged?: boolean;
 };
 
 export type BillingRestoreResult = {

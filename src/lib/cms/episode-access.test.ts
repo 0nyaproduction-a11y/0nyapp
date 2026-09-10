@@ -18,8 +18,12 @@ import assert from "node:assert/strict";
 
 import type { ContentDescriptor, ContentRating } from "@/lib/classification";
 import {
+  EPISODE_ACCESS_MODES,
+  inferEpisodeAccessMode,
+  mapAccessModeToFields,
   validateEpisodeAccessInput,
   type EpisodeAccessInput,
+  type EpisodeAccessMode,
 } from "@/lib/cms/episode-access";
 
 function validInput(overrides: Partial<EpisodeAccessInput> = {}): EpisodeAccessInput {
@@ -56,20 +60,30 @@ test("a fully valid episode access configuration passes clean", () => {
   assert.deepEqual(errors, []);
 });
 
-test("free plus interactive access methods remain a valid combination", () => {
-  const errors = validateEpisodeAccessInput(
-    validInput({
-      isFree: true,
-      coinUnlockEnabled: true,
-      coinPrice: 10,
-      rewardedUnlockEnabled: true,
-      requiredRewardedCompletions: 2,
-      plusAccess: true,
-    }),
+test("HARD EXCLUSIVITY: Free combined with any monetized access is rejected", () => {
+  // Free + Coins
+  const coinErrors = validateEpisodeAccessInput(
+    validInput({ isFree: true, coinUnlockEnabled: true, coinPrice: 10, plusAccess: false }),
   );
-  // Free is allowed alongside other methods; the purchase/entitlement RPCs
-  // short-circuit free episodes to already_accessible, so nothing is invalid.
-  assert.deepEqual(errors, []);
+  assert.ok(fields(coinErrors).includes("isFree"));
+
+  // Free + Plus
+  const plusErrors = validateEpisodeAccessInput(
+    validInput({ isFree: true, coinUnlockEnabled: false, coinPrice: 0, plusAccess: true }),
+  );
+  assert.ok(fields(plusErrors).includes("isFree"));
+
+  // Free + Rewarded
+  const rewardedErrors = validateEpisodeAccessInput(
+    validInput({ isFree: true, coinUnlockEnabled: false, coinPrice: 0, rewardedUnlockEnabled: true, plusAccess: false }),
+  );
+  assert.ok(fields(rewardedErrors).includes("isFree"));
+
+  // Free + mixed monetized mode (Coins or Plus)
+  const mixedErrors = validateEpisodeAccessInput(
+    validInput({ isFree: true, coinUnlockEnabled: true, coinPrice: 10, plusAccess: true }),
+  );
+  assert.ok(fields(mixedErrors).includes("isFree"));
 });
 
 test("episode number must be a positive whole number", () => {
@@ -131,7 +145,15 @@ test("rewarded required completions below 1 or above 2 are rejected", () => {
 test("rewarded required completions 1 and 2 pass", () => {
   for (const good of [1, 2]) {
     assert.deepEqual(
-      validateEpisodeAccessInput(validInput({ rewardedUnlockEnabled: true, requiredRewardedCompletions: good })),
+      validateEpisodeAccessInput(
+        validInput({
+          coinUnlockEnabled: false,
+          coinPrice: 0,
+          rewardedUnlockEnabled: true,
+          requiredRewardedCompletions: good,
+          plusAccess: true,
+        }),
+      ),
       [],
     );
   }
@@ -267,7 +289,7 @@ test("non-free episode with no unlock method is rejected (combination guard)", (
   );
 });
 
-test("non-free episode with exactly one unlock method is accepted", () => {
+test("non-free episode with valid locked product modes is accepted", () => {
   const base = {
     isFree: false,
     coinPrice: 0,
@@ -276,19 +298,24 @@ test("non-free episode with exactly one unlock method is accepted", () => {
     plusAccess: false,
   };
 
-  // coin unlock only
+  // COINS mode
   assert.deepEqual(
     validateEpisodeAccessInput(validInput({ ...base, coinUnlockEnabled: true, coinPrice: 10 })),
     [],
   );
-  // rewarded unlock only
-  assert.deepEqual(
-    validateEpisodeAccessInput(validInput({ ...base, rewardedUnlockEnabled: true })),
-    [],
-  );
-  // Plus only
+  // PLUS mode
   assert.deepEqual(
     validateEpisodeAccessInput(validInput({ ...base, plusAccess: true })),
+    [],
+  );
+  // COINS_OR_PLUS mode
+  assert.deepEqual(
+    validateEpisodeAccessInput(validInput({ ...base, coinUnlockEnabled: true, coinPrice: 10, plusAccess: true })),
+    [],
+  );
+  // REWARDED_OR_PLUS mode
+  assert.deepEqual(
+    validateEpisodeAccessInput(validInput({ ...base, rewardedUnlockEnabled: true, requiredRewardedCompletions: 1, plusAccess: true })),
     [],
   );
 });
@@ -304,4 +331,283 @@ test("free episode with no unlock methods is accepted (always accessible)", () =
     }),
   );
   assert.deepEqual(errors, []);
+});
+
+// ---------------------------------------------------------------------------
+// ACCESS MODE — mode -> field mapping for all 5 locked product modes
+// ---------------------------------------------------------------------------
+
+test("mode -> field mapping produces exact canonical fields for all 5 modes", () => {
+  // 1. FREE
+  const freeFields = mapAccessModeToFields("FREE", { coinPrice: 20 });
+  assert.deepEqual(freeFields, {
+    isFree: true,
+    coinUnlockEnabled: false,
+    coinPrice: 0,
+    rewardedUnlockEnabled: false,
+    requiredRewardedCompletions: 1,
+    plusAccess: false,
+  });
+
+  // 2. COINS
+  const coinsFields = mapAccessModeToFields("COINS", { coinPrice: 15 });
+  assert.deepEqual(coinsFields, {
+    isFree: false,
+    coinUnlockEnabled: true,
+    coinPrice: 15,
+    rewardedUnlockEnabled: false,
+    requiredRewardedCompletions: 1,
+    plusAccess: false,
+  });
+
+  // 3. PLUS
+  const plusFields = mapAccessModeToFields("PLUS", { coinPrice: 10 });
+  assert.deepEqual(plusFields, {
+    isFree: false,
+    coinUnlockEnabled: false,
+    coinPrice: 0,
+    rewardedUnlockEnabled: false,
+    requiredRewardedCompletions: 1,
+    plusAccess: true,
+  });
+
+  // 4. COINS_OR_PLUS
+  const coinsPlusFields = mapAccessModeToFields("COINS_OR_PLUS", { coinPrice: 25 });
+  assert.deepEqual(coinsPlusFields, {
+    isFree: false,
+    coinUnlockEnabled: true,
+    coinPrice: 25,
+    rewardedUnlockEnabled: false,
+    requiredRewardedCompletions: 1,
+    plusAccess: true,
+  });
+
+  // 5. REWARDED_OR_PLUS
+  const rewardedFields = mapAccessModeToFields("REWARDED_OR_PLUS", { requiredRewardedCompletions: 2 });
+  assert.deepEqual(rewardedFields, {
+    isFree: false,
+    coinUnlockEnabled: false,
+    coinPrice: 0,
+    rewardedUnlockEnabled: true,
+    requiredRewardedCompletions: 2,
+    plusAccess: true,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INVALID-STATE REJECTION — Save must fail for invalid combinations
+// ---------------------------------------------------------------------------
+
+test("save fails for is_free=true + coin enabled", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: true,
+      coinUnlockEnabled: true,
+      coinPrice: 10,
+      rewardedUnlockEnabled: false,
+      plusAccess: false,
+    }),
+  );
+  assert.ok(fields(errors).includes("isFree"));
+});
+
+test("save fails for is_free=true + plus_access=true", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: true,
+      coinUnlockEnabled: false,
+      coinPrice: 0,
+      rewardedUnlockEnabled: false,
+      plusAccess: true,
+    }),
+  );
+  assert.ok(fields(errors).includes("isFree"));
+});
+
+test("save fails for is_free=true + rewarded enabled", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: true,
+      coinUnlockEnabled: false,
+      coinPrice: 0,
+      rewardedUnlockEnabled: true,
+      plusAccess: false,
+    }),
+  );
+  assert.ok(fields(errors).includes("isFree"));
+});
+
+test("save fails for Coins mode with coin_price <= 0", () => {
+  const zeroPrice = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: true,
+      coinPrice: 0,
+      rewardedUnlockEnabled: false,
+      plusAccess: false,
+    }),
+  );
+  assert.ok(fields(zeroPrice).includes("coinPrice"));
+
+  const negativePrice = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: true,
+      coinPrice: -5,
+      rewardedUnlockEnabled: false,
+      plusAccess: false,
+    }),
+  );
+  assert.ok(fields(negativePrice).includes("coinPrice"));
+});
+
+test("save fails for Rewarded mode with required completions < 1", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: false,
+      coinPrice: 0,
+      rewardedUnlockEnabled: true,
+      requiredRewardedCompletions: 0,
+      plusAccess: true,
+    }),
+  );
+  assert.ok(fields(errors).includes("requiredRewardedCompletions"));
+});
+
+test("save fails for unsupported combination: coin + rewarded enabled together", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: true,
+      coinPrice: 10,
+      rewardedUnlockEnabled: true,
+      requiredRewardedCompletions: 1,
+      plusAccess: true,
+    }),
+  );
+  assert.ok(fields(errors).includes("access"));
+  assert.match(errors.find((e) => e.field === "access")!.message, /both coin unlock and rewarded unlock/);
+});
+
+test("save fails for unsupported combination: rewarded enabled without plus_access", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: false,
+      coinPrice: 0,
+      rewardedUnlockEnabled: true,
+      requiredRewardedCompletions: 1,
+      plusAccess: false,
+    }),
+  );
+  assert.ok(fields(errors).includes("plusAccess"));
+});
+
+test("save fails for coin_price > 0 when coin unlock is disabled", () => {
+  const errors = validateEpisodeAccessInput(
+    validInput({
+      isFree: false,
+      coinUnlockEnabled: false,
+      coinPrice: 15,
+      rewardedUnlockEnabled: false,
+      plusAccess: true,
+    }),
+  );
+  assert.ok(fields(errors).includes("coinPrice"));
+});
+
+// ---------------------------------------------------------------------------
+// INFERENCE — edit existing episode classification & ambiguity detection
+// ---------------------------------------------------------------------------
+
+test("inferEpisodeAccessMode identifies all 5 canonical modes", () => {
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: true, coinUnlockEnabled: false, rewardedUnlockEnabled: false, plusAccess: false }),
+    "FREE",
+  );
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: true, coinPrice: 10, rewardedUnlockEnabled: false, plusAccess: false }),
+    "COINS",
+  );
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: false, rewardedUnlockEnabled: false, plusAccess: true }),
+    "PLUS",
+  );
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: true, coinPrice: 12, rewardedUnlockEnabled: false, plusAccess: true }),
+    "COINS_OR_PLUS",
+  );
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: false, rewardedUnlockEnabled: true, plusAccess: true }),
+    "REWARDED_OR_PLUS",
+  );
+});
+
+test("inferEpisodeAccessMode detects ambiguous rows as null", () => {
+  // Chaadar EP11 / EP12 pattern: coins + rewarded + plus
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: true, rewardedUnlockEnabled: true, plusAccess: true }),
+    null,
+  );
+  // Chaadar EP5 / EP7 pattern: rewarded without plus
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: false, rewardedUnlockEnabled: true, plusAccess: false }),
+    null,
+  );
+  // Chaadar EP6 / EP8 pattern: coins + rewarded without plus
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: true, rewardedUnlockEnabled: true, plusAccess: false }),
+    null,
+  );
+  // is_free=true combined with plus
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: true, coinUnlockEnabled: false, rewardedUnlockEnabled: false, plusAccess: true }),
+    null,
+  );
+  // is_free=false with no access methods
+  assert.equal(
+    inferEpisodeAccessMode({ isFree: false, coinUnlockEnabled: false, rewardedUnlockEnabled: false, plusAccess: false }),
+    null,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// MODE SWITCHING & ROUND-TRIP
+// ---------------------------------------------------------------------------
+
+test("switch Free -> monetized clears is_free and derives valid monetized fields", () => {
+  for (const mode of ["COINS", "PLUS", "COINS_OR_PLUS", "REWARDED_OR_PLUS"] as const) {
+    const fields = mapAccessModeToFields(mode, { coinPrice: 10, requiredRewardedCompletions: 1 });
+    assert.equal(fields.isFree, false);
+    const errors = validateEpisodeAccessInput(validInput(fields));
+    assert.deepEqual(errors, []);
+    assert.equal(inferEpisodeAccessMode(fields), mode);
+  }
+});
+
+test("switch monetized -> Free clears all monetized methods and sets isFree=true", () => {
+  const fields = mapAccessModeToFields("FREE", { coinPrice: 15, requiredRewardedCompletions: 2 });
+  assert.equal(fields.isFree, true);
+  assert.equal(fields.coinUnlockEnabled, false);
+  assert.equal(fields.coinPrice, 0);
+  assert.equal(fields.rewardedUnlockEnabled, false);
+  assert.equal(fields.plusAccess, false);
+
+  const errors = validateEpisodeAccessInput(validInput(fields));
+  assert.deepEqual(errors, []);
+  assert.equal(inferEpisodeAccessMode(fields), "FREE");
+});
+
+test("persisted values round-trip correctly for all 5 locked product modes", () => {
+  const modes: EpisodeAccessMode[] = ["FREE", "COINS", "PLUS", "COINS_OR_PLUS", "REWARDED_OR_PLUS"];
+
+  for (const mode of modes) {
+    const fields = mapAccessModeToFields(mode, { coinPrice: 12, requiredRewardedCompletions: 2 });
+    const errors = validateEpisodeAccessInput(validInput(fields));
+    assert.deepEqual(errors, [], `Mode ${mode} should produce 0 validation errors`);
+
+    const inferred = inferEpisodeAccessMode(fields);
+    assert.equal(inferred, mode, `Mode ${mode} must round-trip through inference`);
+  }
 });

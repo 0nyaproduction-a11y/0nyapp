@@ -16,8 +16,9 @@ UNVERIFIED.
   legacy fallback `SUPABASE_SERVICE_ROLE_KEY`); `server.ts` is the cookie
   session client; `client.ts` is browser; `proxy.ts` shared.
 - Next.js 16, React 19. Lint via `npm run lint` (eslint config
-  `eslint.config.mjs`). No test runner configured in root `package.json`
-  (unit tests exist as untracked `*.test.ts` files — see Tests).
+  `eslint.config.mjs`). Root `package.json` has a `test` script
+  (`npx tsx --test ...`); current tree runs 346 pass / 2 fail / 12 skip.
+  Unit tests (`*.test.ts`) exist (tracked + untracked).
 
 ## CMS routes/features (verified)
 
@@ -147,7 +148,7 @@ CMS is server-rendered (`src/app/admin/*`) and calls Supabase directly via
   short-film watch progress (017), home rows (019), CMS admin (020 + repair),
   series publish cascade (022), home spotlight (023), launch coin packs (024),
   chai launch amounts (025), row items title (026), rewarded multi-completion
-  (027, untracked/in-progress).
+   (027, tracked/committed in source; not proven applied to remote QA).
 - Admin client is used solely server-side. RLS is defined in the migrations
   and was designed to keep shared/resource rows server-managed; do not alter
   RLS without authority change approval.
@@ -175,13 +176,13 @@ CMS is server-rendered (`src/app/admin/*`) and calls Supabase directly via
 ## Partial/pending
 
 - Home spotlight editorial phase + `show_title` row items — uncommitted.
-- Rewarded multi-completion (027 migration + rewarded-config/tests +
-  monetization events route) — uncommitted.
-- Monetization observation events (M1.x, `src/lib/monetization/`) — new,
-  untracked; bridge types only, no DB writes yet (events route is the
-  rewarded-events boundary).
-- Unit tests (`src/lib/rewarded-*.test.ts`, `src/lib/monetization/events.test.ts`)
-  — untracked; no root test runner wired.
+- Rewarded multi-completion (027 migration tracked/committed + `monetization`
+  events route + `src/lib/monetization/events.ts` tracked/committed,
+  commit `5126208`; real AdMob SSV device E2E + session-mode-trap remediation
+  IN PROGRESS / unproven on remote QA).
+- Unit tests (`src/lib/rewarded-*.test.ts`, `src/lib/monetization/events.test.ts`,
+  `src/lib/notification-qa-verification.test.ts`) exist (tracked + untracked);
+  root `package.json` `test` script is wired (current tree: 346 pass / 2 fail).
 
 ## Known issues
 

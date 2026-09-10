@@ -9,7 +9,8 @@ import {
   type PanResponderGestureState,
   View,
 } from "react-native";
-import { colors, radii, typography } from "../theme/tokens";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors, radii } from "../theme/tokens";
 import { TOP_DOWN_SCRIM_GRADIENT_URI } from "./gradientAssets";
 
 type PlayerControlsProps = {
@@ -34,7 +35,7 @@ type PlayerControlsProps = {
 const DRAG_THRESHOLD = 6;
 const THUMB_HOLD_RADIUS = 24;
 // Keeps the effective touch target >= ~48dp for a ~38dp visible icon backing.
-const ICON_HIT_SLOP = { top: 5, bottom: 5, left: 5, right: 5 };
+const ICON_HIT_SLOP = { top: 6, bottom: 6, left: 6, right: 6 };
 
 type TrackMeasurement = {
   pageX: number;
@@ -59,6 +60,7 @@ export function PlayerControls({
   subtitle,
   title,
 }: PlayerControlsProps) {
+  const insets = useSafeAreaInsets();
   const [trackWidth, setTrackWidth] = useState(1);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubPosition, setScrubPosition] = useState(0);
@@ -212,6 +214,7 @@ export function PlayerControls({
 
   return (
     <View pointerEvents="box-none" style={styles.container}>
+      {/* Readability scrims */}
       <View pointerEvents="none" style={styles.topScrim}>
         <Image resizeMode="stretch" source={{ uri: TOP_DOWN_SCRIM_GRADIENT_URI }} style={styles.scrimImage} />
       </View>
@@ -219,7 +222,8 @@ export function PlayerControls({
         <Image resizeMode="stretch" source={{ uri: TOP_DOWN_SCRIM_GRADIENT_URI }} style={styles.scrimImage} />
       </View>
 
-      <View style={styles.topBar}>
+      {/* Top bar: Back · Title & Subtitle · Actions (Share & Settings) */}
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top + 6, 16) }]}>
         <Pressable
           accessibilityLabel="Back"
           accessibilityRole="button"
@@ -227,7 +231,7 @@ export function PlayerControls({
           onPress={onBack}
           style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
         >
-          <Text style={styles.backGlyph}>{"\u2039"}</Text>
+          <BackChevronGlyph />
         </Pressable>
 
         <View style={styles.topBarTitleColumn}>
@@ -249,7 +253,7 @@ export function PlayerControls({
             onPress={onShare}
             style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
           >
-            <ShareGlyph color="#F4FFFD" />
+            <ShareGlyph color="#FEFDFD" />
           </Pressable>
 
           {onOpenMore ? (
@@ -260,12 +264,13 @@ export function PlayerControls({
               onPress={onOpenMore}
               style={({ pressed }) => [styles.topIconButton, pressed && styles.pressed]}
             >
-              <Text style={styles.gearGlyph}>{"\u2699"}</Text>
+              <SettingsGearGlyph color="#FEFDFD" />
             </Pressable>
           ) : null}
         </View>
       </View>
 
+      {/* Center play / pause / replay button */}
       <View style={styles.center}>
         {isFastPlayActive ? null : (
           <Pressable
@@ -288,19 +293,24 @@ export function PlayerControls({
         )}
       </View>
 
-      <View style={styles.bottomBar}>
+      {/* Bottom bar: Timestamps · Scrubber · Episodes Pill */}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom + 12, 26) }]}>
         <View style={styles.timeRow}>
-          <Text style={styles.timeText}>{formatTime(displayTime)}</Text>
+          <Text style={[styles.timeText, isScrubbing && styles.timeTextActive]}>
+            {formatTime(displayTime)}
+          </Text>
           <Text style={styles.timeText}>{formatTime(duration)}</Text>
         </View>
+
         <View
           {...scrubberPanResponder.panHandlers}
           accessibilityLabel="Seek video"
           accessibilityRole="adjustable"
           onLayout={handleTrackLayout}
           ref={trackRef}
-          style={styles.track}
+          style={styles.trackContainer}
         >
+          <View pointerEvents="none" style={styles.trackBackground} />
           <View
             pointerEvents="none"
             style={[styles.bufferedTrack, { width: `${bufferedProgress * 100}%` }]}
@@ -328,7 +338,7 @@ export function PlayerControls({
               onPress={onOpenEpisodes}
               style={({ pressed }) => [styles.episodesButton, pressed && styles.pressed]}
             >
-              <EpisodesGlyph color="#A8B9B6" />
+              <EpisodesGlyph color={colors.accent} />
               <Text style={styles.actionLabel}>Episodes</Text>
             </Pressable>
           </View>
@@ -338,7 +348,96 @@ export function PlayerControls({
   );
 }
 
-function EpisodesGlyph({ color }: { color: string }) {
+function BackChevronGlyph({
+  color = "#FEFDFD",
+  size = 18,
+}: {
+  color?: string;
+  size?: number;
+}) {
+  return (
+    <View style={{ alignItems: "center", height: size, justifyContent: "center", width: size }}>
+      <View
+        style={{
+          borderColor: color,
+          borderBottomWidth: 2.2,
+          borderLeftWidth: 2.2,
+          borderRadius: 1,
+          height: 9,
+          marginLeft: 3,
+          transform: [{ rotate: "45deg" }],
+          width: 9,
+        }}
+      />
+    </View>
+  );
+}
+
+function SettingsGearGlyph({
+  color = "#FEFDFD",
+  size = 18,
+}: {
+  color?: string;
+  size?: number;
+}) {
+  const barWidth = size;
+  const barHeight = 3.6;
+  const outerSize = size - 3;
+  return (
+    <View style={{ alignItems: "center", height: size, justifyContent: "center", width: size }}>
+      <View
+        style={{
+          backgroundColor: color,
+          borderRadius: 1.5,
+          height: barHeight,
+          position: "absolute",
+          width: barWidth,
+        }}
+      />
+      <View
+        style={{
+          backgroundColor: color,
+          borderRadius: 1.5,
+          height: barHeight,
+          position: "absolute",
+          transform: [{ rotate: "60deg" }],
+          width: barWidth,
+        }}
+      />
+      <View
+        style={{
+          backgroundColor: color,
+          borderRadius: 1.5,
+          height: barHeight,
+          position: "absolute",
+          transform: [{ rotate: "120deg" }],
+          width: barWidth,
+        }}
+      />
+      <View
+        style={{
+          alignItems: "center",
+          backgroundColor: color,
+          borderRadius: outerSize / 2,
+          height: outerSize,
+          justifyContent: "center",
+          width: outerSize,
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: "#050505",
+            borderRadius: 3,
+            height: 6,
+            width: 6,
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
+function EpisodesGlyph({ color = "#A8B9B6" }: { color?: string }) {
   return (
     <View style={styles.episodesGlyphBox}>
       <View style={[styles.episodesGlyphDot, styles.episodesGlyphDotTop, { backgroundColor: color }]} />
@@ -369,7 +468,7 @@ function EpisodesGlyph({ color }: { color: string }) {
   );
 }
 
-function ShareGlyph({ color }: { color: string }) {
+function ShareGlyph({ color = "#FEFDFD" }: { color?: string }) {
   return (
     <View style={styles.shareGlyphBox}>
       <View style={[styles.shareGlyphLine, styles.shareGlyphLineTop, { backgroundColor: color }]} />
@@ -439,7 +538,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   topScrim: {
-    height: 120,
+    height: 140,
     left: 0,
     position: "absolute",
     right: 0,
@@ -447,7 +546,7 @@ const styles = StyleSheet.create({
   },
   bottomScrim: {
     bottom: 0,
-    height: 150,
+    height: 180,
     left: 0,
     position: "absolute",
     right: 0,
@@ -462,9 +561,8 @@ const styles = StyleSheet.create({
   topBar: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10,
+    gap: 12,
     paddingHorizontal: 18,
-    paddingTop: 20,
   },
   topBarTitleColumn: {
     flex: 1,
@@ -473,30 +571,29 @@ const styles = StyleSheet.create({
   topBarActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 6,
+    gap: 8,
   },
   topIconButton: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 5, 4, 0.45)",
-    borderRadius: radii.pill,
+    backgroundColor: "rgba(5, 5, 5, 0.65)",
+    borderColor: "rgba(254, 253, 253, 0.12)",
+    borderRadius: 9999,
+    borderWidth: 1,
     height: 38,
     justifyContent: "center",
     width: 38,
   },
-  backGlyph: {
-    color: colors.text,
-    fontSize: 21,
-    fontWeight: "700",
-  },
   title: {
-    color: colors.text,
-    fontSize: 20,
+    color: "#FEFDFD",
+    fontSize: 18,
     fontWeight: "700",
+    letterSpacing: 0.2,
   },
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
+    color: "rgba(254, 253, 253, 0.65)",
+    fontSize: 12.5,
     fontWeight: "500",
+    letterSpacing: 0.2,
   },
   center: {
     alignItems: "center",
@@ -504,11 +601,13 @@ const styles = StyleSheet.create({
   },
   playButton: {
     alignItems: "center",
-    backgroundColor: "rgba(3, 5, 4, 0.55)",
-    borderRadius: 26,
-    height: 52,
+    backgroundColor: "rgba(5, 5, 5, 0.65)",
+    borderColor: "rgba(254, 253, 253, 0.16)",
+    borderRadius: 30,
+    borderWidth: 1,
+    height: 60,
     justifyContent: "center",
-    width: 52,
+    width: 60,
   },
   pressed: {
     opacity: 0.78,
@@ -516,88 +615,106 @@ const styles = StyleSheet.create({
   playGlyph: {
     backgroundColor: "transparent",
     borderBottomColor: "transparent",
-    borderBottomWidth: 14,
-    borderLeftColor: colors.text,
-    borderLeftWidth: 22,
+    borderBottomWidth: 11,
+    borderLeftColor: "#FEFDFD",
+    borderLeftWidth: 19,
     borderTopColor: "transparent",
-    borderTopWidth: 14,
+    borderTopWidth: 11,
     height: 0,
     marginLeft: 4,
     width: 0,
   },
   pauseGlyph: {
     flexDirection: "row",
-    gap: 7,
+    gap: 6,
   },
   pauseBar: {
-    backgroundColor: colors.text,
-    borderRadius: 1,
-    height: 26,
-    width: 7,
+    backgroundColor: "#FEFDFD",
+    borderRadius: 2,
+    height: 20,
+    width: 4.5,
   },
   replayGlyph: {
-    color: colors.text,
-    fontSize: 26,
+    color: "#FEFDFD",
+    fontSize: 28,
     fontWeight: "700",
   },
   bottomBar: {
-    gap: 12,
-    paddingBottom: 30,
+    gap: 8,
     paddingHorizontal: 18,
   },
   timeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginBottom: -2,
+    paddingHorizontal: 2,
   },
   timeText: {
-    color: colors.textSecondary,
+    color: "rgba(254, 253, 253, 0.72)",
     fontSize: 12,
+    fontVariant: ["tabular-nums"],
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  timeTextActive: {
+    color: colors.accent,
     fontWeight: "700",
   },
-  track: {
-    borderRadius: radii.pill,
-    height: 48,
+  trackContainer: {
+    height: 32,
     justifyContent: "center",
   },
+  trackBackground: {
+    backgroundColor: "rgba(254, 253, 253, 0.15)",
+    borderRadius: 2,
+    height: 4,
+    width: "100%",
+  },
   bufferedTrack: {
-    borderRadius: radii.pill,
-    backgroundColor: "rgba(254, 253, 253, 0.22)",
-    height: 3,
+    backgroundColor: "rgba(254, 253, 253, 0.30)",
+    borderRadius: 2,
+    height: 4,
     position: "absolute",
   },
   progressTrack: {
-    borderRadius: radii.pill,
     backgroundColor: colors.accent,
-    height: 3,
+    borderRadius: 2,
+    height: 4,
     position: "absolute",
   },
   thumb: {
-    backgroundColor: colors.text,
+    backgroundColor: "#FEFDFD",
     borderColor: colors.accent,
-    borderRadius: 5,
-    borderWidth: 2,
-    height: 10,
-    marginLeft: -5,
+    borderRadius: 6.5,
+    borderWidth: 1.5,
+    height: 13,
+    marginLeft: -6.5,
     position: "absolute",
-    width: 10,
+    width: 13,
   },
   thumbActive: {
-    borderRadius: radii.sm,
-    height: 16,
-    marginLeft: -8,
-    width: 16,
+    borderRadius: 8.5,
+    borderWidth: 2,
+    height: 17,
+    marginLeft: -8.5,
+    width: 17,
   },
   actionRow: {
     alignItems: "center",
     flexDirection: "row",
+    marginTop: 4,
   },
   episodesButton: {
     alignItems: "center",
+    backgroundColor: "rgba(5, 5, 5, 0.65)",
+    borderColor: "rgba(254, 253, 253, 0.14)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 8,
-    minHeight: 44,
-    paddingHorizontal: 4,
-    paddingVertical: 8,
+    minHeight: 38,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
   },
   episodesGlyphBox: {
     height: 14,
@@ -636,32 +753,29 @@ const styles = StyleSheet.create({
     top: 10,
   },
   actionLabel: {
-    color: colors.textSecondary,
+    color: "#FEFDFD",
     fontSize: 13,
     fontWeight: "600",
-  },
-  gearGlyph: {
-    color: colors.text,
-    fontSize: 21,
+    letterSpacing: 0.2,
   },
   shareGlyphBox: {
-    height: 22,
-    width: 22,
+    height: 20,
+    width: 20,
   },
   shareGlyphLine: {
     height: 1.6,
     position: "absolute",
-    width: 15.65,
+    width: 14,
   },
   shareGlyphLineTop: {
-    left: 3.18,
-    top: 6.7,
-    transform: [{ rotate: "-26.565deg" }],
+    left: 3,
+    top: 6,
+    transform: [{ rotate: "-26.5deg" }],
   },
   shareGlyphLineBottom: {
-    left: 3.18,
-    top: 13.7,
-    transform: [{ rotate: "26.565deg" }],
+    left: 3,
+    top: 12.5,
+    transform: [{ rotate: "26.5deg" }],
   },
   shareGlyphNode: {
     backgroundColor: "transparent",
@@ -672,15 +786,15 @@ const styles = StyleSheet.create({
     width: 6,
   },
   shareGlyphNodeLeft: {
-    left: 1,
-    top: 8,
+    left: 0.5,
+    top: 7,
   },
   shareGlyphNodeTopRight: {
-    left: 15,
+    left: 13.5,
     top: 1,
   },
   shareGlyphNodeBottomRight: {
-    left: 15,
-    top: 15,
+    left: 13.5,
+    top: 13,
   },
 });

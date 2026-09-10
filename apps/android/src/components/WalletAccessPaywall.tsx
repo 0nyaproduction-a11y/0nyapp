@@ -2,12 +2,7 @@ import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/n
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  CoinDiscIcon,
-  PlayTriangleIcon,
-  PlusVectorIcon,
-  TealCircleBadge,
-} from "./ui";
+import { PlayTriangleIcon, PlusVectorIcon } from "./ui";
 import {
   ApiError,
   getMe,
@@ -259,10 +254,10 @@ export function WalletAccessPaywall({
   }, [navigation]);
 
   useEffect(() => {
-    if (isPlusActive && episode?.plusAccess && isFocused) {
+    if (isPlusActive && isFocused) {
       void handleSuccess();
     }
-  }, [isPlusActive, episode?.plusAccess, isFocused, handleSuccess]);
+  }, [isPlusActive, isFocused, handleSuccess]);
 
   const hasInsufficientCoins = Boolean(
     coinUnlockEnabled && token && wallet !== null && wallet.balance < episode.coinPrice,
@@ -274,12 +269,14 @@ export function WalletAccessPaywall({
   return (
     <View style={[styles.cardContainer, isPlayerVariant ? styles.cardContainerPlayer : styles.cardContainerCard]}>
       {/* Header */}
-      <Text style={styles.cardEyebrow}>EPISODE ACCESS</Text>
-      <Text style={styles.contentPrimaryTitle}>
-        {microDramaAccess.seriesTitle || episode.title}
-      </Text>
-      <Text style={styles.contentSecondaryMeta}>{`Episode ${episode.number}`}</Text>
-      <Text style={styles.chooseUnlockPrompt}>Choose how to unlock</Text>
+      <View style={styles.headerBlock}>
+        <Text style={styles.cardEyebrow}>EPISODE ACCESS</Text>
+        <Text numberOfLines={1} style={styles.contentPrimaryTitle}>
+          {microDramaAccess.seriesTitle || episode.title}
+        </Text>
+        <Text style={styles.contentSecondaryMeta}>{`Episode ${episode.number}`}</Text>
+        <Text style={styles.chooseUnlockPrompt}>Choose how to unlock</Text>
+      </View>
 
       {/* Access Methods List */}
       <View style={styles.accessMethodsList}>
@@ -298,7 +295,9 @@ export function WalletAccessPaywall({
             ]}
           >
             <View style={styles.accessMethodLeft}>
-              <CoinDiscIcon size={16} />
+              <View style={styles.coinGlyphWrap}>
+                <Text style={styles.coinGlyphText}>C</Text>
+              </View>
               <View style={styles.accessMethodTextCol}>
                 <Text style={styles.accessMethodTitle}>{`Coin — ${episode.coinPrice} Coins`}</Text>
                 <Text style={styles.accessMethodSubtitle}>
@@ -315,8 +314,8 @@ export function WalletAccessPaywall({
                 <Text style={styles.insufficientBadgeText}>Need more coins</Text>
               </View>
             ) : (
-              <View style={styles.unlockActionPill}>
-                <Text style={styles.unlockActionPillText}>
+              <View style={styles.primaryActionPill}>
+                <Text style={styles.primaryActionPillText}>
                   {isUnlockingEpisode ? "Unlocking..." : !token ? "Sign In" : "Unlock"}
                 </Text>
               </View>
@@ -343,9 +342,17 @@ export function WalletAccessPaywall({
             ]}
           >
             <View style={styles.accessMethodLeft}>
-              <TealCircleBadge size={20}>
-                <PlayTriangleIcon color="#030504" size={8} />
-              </TealCircleBadge>
+              <View
+                style={[
+                  styles.rewardedGlyphWrap,
+                  !rewardedUnlock.rewardedAdsReady && styles.rewardedGlyphWrapDisabled,
+                ]}
+              >
+                <PlayTriangleIcon
+                  color={rewardedUnlock.rewardedAdsReady ? colors.accent : "rgba(254, 253, 253, 0.35)"}
+                  size={8}
+                />
+              </View>
               <View style={styles.accessMethodTextCol}>
                 <Text style={styles.accessMethodTitle}>
                   {rewardedUnlock.rewardedPartial
@@ -358,13 +365,25 @@ export function WalletAccessPaywall({
                   {rewardedUnlock.rewardedPartial
                     ? `${rewardedUnlock.rewardedPartial.verifiedProgress} of ${rewardedUnlock.rewardedPartial.requiredCompletions} watched`
                     : !rewardedUnlock.rewardedAdsReady
-                      ? "Rewarded ads currently unavailable"
+                      ? "Currently unavailable"
                       : "Free episode unlock"}
                 </Text>
               </View>
             </View>
-            <View style={styles.unlockActionPill}>
-              <Text style={styles.unlockActionPillText}>
+            <View
+              style={[
+                styles.secondaryActionPill,
+                (!rewardedUnlock.rewardedAdsReady || rewardedUnlock.isRewardedBusy) &&
+                  styles.secondaryActionPillDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.secondaryActionPillText,
+                  (!rewardedUnlock.rewardedAdsReady || rewardedUnlock.isRewardedBusy) &&
+                    styles.secondaryActionPillTextDisabled,
+                ]}
+              >
                 {rewardedUnlock.isRewardedBusy ? "Loading..." : "Watch Ad"}
               </Text>
             </View>
@@ -384,22 +403,22 @@ export function WalletAccessPaywall({
             ]}
           >
             <View style={styles.accessMethodLeft}>
-              <TealCircleBadge size={20}>
-                <PlusVectorIcon color="#030504" size={9} />
-              </TealCircleBadge>
+              <View style={styles.addCoinsGlyphWrap}>
+                <PlusVectorIcon color={colors.accent} size={9} />
+              </View>
               <View style={styles.accessMethodTextCol}>
                 <Text style={styles.accessMethodTitle}>Add Coins</Text>
-                <Text style={styles.accessMethodSubtitle}>Top up your balance to unlock this episode</Text>
+                <Text style={styles.accessMethodSubtitle}>Top up balance to unlock this episode</Text>
               </View>
             </View>
             <Text style={styles.addCoinsCtaText}>Buy Coins ›</Text>
           </Pressable>
         ) : null}
 
-        {/* 4. ONYA+ (when eligible and not already subscriber) */}
+        {/* 4. 0NYA PLUS (when eligible and not already subscriber) */}
         {plusAccessEnabled ? (
           <Pressable
-            accessibilityLabel="Unlock with 0nya+"
+            accessibilityLabel="Unlock with 0nya Plus"
             accessibilityRole="button"
             onPress={handleOpenPlus}
             style={({ pressed }) => [
@@ -409,21 +428,21 @@ export function WalletAccessPaywall({
             ]}
           >
             <View style={styles.accessMethodLeft}>
-              <Text accessibilityLabel="0nya+" style={styles.plusMethodWordmark}>
-                <Text style={styles.brand0}>0</Text>
-                <Text style={styles.brandNya}>nya</Text>
-                <Text style={styles.brandPlus}>+</Text>
-              </Text>
+              <View style={styles.plusBrandBadge}>
+                <Text style={styles.plusBrandBadge0}>0</Text>
+                <Text style={styles.plusBrandBadgePlus}>+</Text>
+              </View>
               <View style={styles.accessMethodTextCol}>
-                <Text style={styles.accessMethodTitle}>0nya+ — Unlimited Access</Text>
+                <Text style={styles.accessMethodTitle}>0nya Plus — Unlimited Access</Text>
                 <Text style={styles.accessMethodSubtitle}>Included with unlimited membership</Text>
               </View>
             </View>
-            <Text style={styles.explorePlusCtaText}>
-              {"Explore "}
-              <Text style={styles.explorePlusText}>+</Text>
-              {" ›"}
-            </Text>
+            <View style={styles.seePlansCta}>
+              <Text style={styles.seePlansCtaText}>
+                {"See plans"}
+                <Text style={styles.seePlansChevron}>{" ›"}</Text>
+              </Text>
+            </View>
           </Pressable>
         ) : null}
       </View>
@@ -461,36 +480,46 @@ export function WalletAccessPaywall({
 
 const styles = StyleSheet.create({
   cardContainer: {
-    gap: 3,
+    gap: 4,
   },
   cardContainerPlayer: {
-    backgroundColor: "rgba(16, 19, 18, 0.94)",
+    backgroundColor: "#0C0F0E",
     borderColor: "rgba(254, 253, 253, 0.12)",
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    maxWidth: 400,
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 8,
+    maxWidth: 380,
+    paddingBottom: 14,
     paddingHorizontal: 18,
-    paddingVertical: 18,
+    paddingTop: 18,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
     width: "100%",
   },
   cardContainerCard: {
     backgroundColor: surfaces.s2,
-    borderColor: "rgba(254, 253, 253, 0.06)",
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: 20,
+    borderWidth: 1,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 15,
+  },
+  headerBlock: {
+    gap: 2,
+    marginBottom: 4,
   },
   cardEyebrow: {
     color: "rgba(254, 253, 253, 0.45)",
     fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.0,
+    fontWeight: "600",
+    letterSpacing: 1.2,
     textTransform: "uppercase",
   },
   contentPrimaryTitle: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.2,
   },
@@ -503,57 +532,56 @@ const styles = StyleSheet.create({
   chooseUnlockPrompt: {
     color: "rgba(254, 253, 253, 0.45)",
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "400",
     lineHeight: 16,
     marginTop: 4,
-    marginBottom: 4,
   },
   accessMethodsList: {
-    gap: 8,
-    marginTop: 4,
+    gap: 7,
+    marginTop: 6,
   },
   accessMethodRow: {
     alignItems: "center",
     backgroundColor: "rgba(254, 253, 253, 0.03)",
     borderColor: "rgba(254, 253, 253, 0.08)",
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     minHeight: 52,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
   },
   accessMethodRowActive: {
-    borderColor: "rgba(43, 126, 125, 0.28)",
+    borderColor: "rgba(43, 126, 125, 0.26)",
   },
   accessMethodRowDisabled: {
-    opacity: 0.55,
+    opacity: 0.65,
   },
   accessMethodRowPressed: {
     backgroundColor: "rgba(254, 253, 253, 0.06)",
-    opacity: 0.9,
   },
   addCoinsMethodRow: {
     borderColor: "rgba(43, 126, 125, 0.35)",
   },
   plusMethodRow: {
-    borderColor: "rgba(254, 253, 253, 0.12)",
+    borderColor: "rgba(43, 126, 125, 0.22)",
   },
   accessMethodLeft: {
     alignItems: "center",
     flex: 1,
     flexDirection: "row",
     gap: 10,
+    paddingRight: 8,
   },
   accessMethodTextCol: {
     flex: 1,
-    gap: 1,
+    gap: 1.5,
   },
   accessMethodTitle: {
     color: colors.text,
-    fontSize: 13.5,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
     letterSpacing: -0.1,
   },
   accessMethodSubtitle: {
@@ -562,24 +590,107 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     lineHeight: 15,
   },
-  unlockActionPill: {
+  coinGlyphWrap: {
     alignItems: "center",
-    backgroundColor: "#121212",
-    borderColor: "rgba(254, 253, 253, 0.14)",
+    backgroundColor: "rgba(229, 169, 60, 0.12)",
+    borderColor: "rgba(229, 169, 60, 0.36)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  coinGlyphText: {
+    color: "#E5A93C",
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 14,
+    marginTop: -0.5,
+  },
+  rewardedGlyphWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.16)",
+    borderColor: "rgba(43, 126, 125, 0.32)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  rewardedGlyphWrapDisabled: {
+    backgroundColor: "rgba(254, 253, 253, 0.04)",
+    borderColor: "rgba(254, 253, 253, 0.08)",
+  },
+  addCoinsGlyphWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.16)",
+    borderColor: "rgba(43, 126, 125, 0.32)",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  plusBrandBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.14)",
+    borderColor: "rgba(43, 126, 125, 0.28)",
+    borderRadius: 7,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 24,
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  plusBrandBadge0: {
+    color: colors.accent,
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  plusBrandBadgePlus: {
+    color: colors.text,
+    fontSize: 11.5,
+    fontWeight: "600",
+  },
+  primaryActionPill: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
     justifyContent: "center",
     minHeight: 28,
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
-  unlockActionPillText: {
-    color: "#FEFDFD",
+  primaryActionPillText: {
+    color: colors.accentOnPrimary,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
+  },
+  secondaryActionPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    borderColor: "rgba(254, 253, 253, 0.16)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 28,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  secondaryActionPillDisabled: {
+    backgroundColor: "rgba(254, 253, 253, 0.03)",
+    borderColor: "rgba(254, 253, 253, 0.07)",
+  },
+  secondaryActionPillText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  secondaryActionPillTextDisabled: {
+    color: "rgba(254, 253, 253, 0.30)",
   },
   insufficientBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 4,
   },
   insufficientBadgeText: {
@@ -589,46 +700,40 @@ const styles = StyleSheet.create({
   },
   addCoinsCtaText: {
     color: colors.accent,
-    fontSize: 12.5,
-    fontWeight: "700",
-  },
-  plusMethodWordmark: {
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: -0.2,
-  },
-  brand0: {
-    color: colors.accent,
-  },
-  brandNya: {
-    color: colors.text,
-  },
-  brandPlus: {
-    color: colors.plusRed,
-  },
-  explorePlusCtaText: {
-    color: colors.text,
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: "600",
   },
-  explorePlusText: {
-    color: colors.plusRed,
+  seePlansCta: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  seePlansCtaText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  seePlansChevron: {
+    color: colors.accent,
+    fontSize: 13,
     fontWeight: "700",
   },
   inlineError: {
     color: "#ff8d76",
-    fontSize: 12.5,
-    fontWeight: "600",
-    lineHeight: 17,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 16,
     marginTop: 4,
+    textAlign: "center",
   },
   retryBtn: {
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: "#121212",
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
     borderColor: "rgba(254, 253, 253, 0.14)",
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     marginTop: 6,
     paddingHorizontal: 16,
     paddingVertical: 6,
@@ -636,21 +741,22 @@ const styles = StyleSheet.create({
   retryBtnText: {
     color: colors.accent,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
   },
   notNowBtn: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    minHeight: 44,
+    marginTop: 8,
     paddingVertical: 8,
   },
   notNowBtnPressed: {
-    opacity: 0.6,
+    opacity: 0.65,
   },
   notNowText: {
-    color: "rgba(254, 253, 253, 0.55)",
+    color: "rgba(254, 253, 253, 0.45)",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
     letterSpacing: 0.1,
   },
 });

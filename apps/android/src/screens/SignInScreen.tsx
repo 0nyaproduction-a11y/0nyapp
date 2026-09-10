@@ -1,13 +1,24 @@
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Screen } from "../components/Screen";
 import { BrandWordmark, Button, ErrorText } from "../components/ui";
 import { useAuth } from "../lib/authContext";
 import { useAppLanguage } from "../lib/appLanguage";
+import { buildPrivacyUrl, buildTermsUrl } from "../lib/content-links";
 import { supabase } from "../lib/supabase";
 import type { RootStackScreenProps } from "../navigation/types";
-import { borders, colors, radii, spacing, typography } from "../theme/tokens";
+import { borders, colors, radii, spacing, surfaces, typography } from "../theme/tokens";
 
 const INDIA_PHONE_PREFIX = "+91";
 const OTP_LENGTH = 6;
@@ -63,6 +74,15 @@ export function SignInScreen() {
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [isDevSigningIn, setIsDevSigningIn] = useState(false);
   const [resendSecondsRemaining, setResendSecondsRemaining] = useState(0);
+  const [isPhoneFocused, setIsPhoneFocused] = useState(false);
+  const [showDevPanel, setShowDevPanel] = useState(false);
+
+  // Ensure no header right element is shown
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => null,
+    });
+  }, [navigation]);
 
   const canSendCode = phoneDigits.length === PHONE_LENGTH && !isSendingCode && !isVerifyingCode;
   const canVerifyCode = otp.length === OTP_LENGTH && !isSendingCode && !isVerifyingCode;
@@ -106,7 +126,6 @@ export function SignInScreen() {
       const { error: otpError } = await supabase.auth.signInWithOtp({
         phone,
       });
-
       if (otpError) {
         setError(getSafeAuthErrorMessage(otpError, "send"));
         return;
@@ -194,235 +213,386 @@ export function SignInScreen() {
     void sendCode(phoneDigits);
   }
 
+  async function handleOpenLink(url: string | null) {
+    if (!url) return;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      // Graceful fallback
+    }
+  }
+
   return (
-    <Screen>
-      <View style={styles.header}>
-        <BrandWordmark style={styles.brand} />
-      </View>
-
-      {step === "phone" ? (
-        <View style={styles.content}>
-          <Text style={styles.title}>{t("signin.header", "Enter your mobile number")}</Text>
-          <Text style={styles.subtitle}>
-            {t("signin.subtitle", "We'll send a 6-digit verification code to sign in or create your account.")}
-          </Text>
-
-          <View style={styles.phoneInputContainer}>
-            <Text style={styles.phonePrefix}>{INDIA_PHONE_PREFIX}</Text>
-            <View style={styles.phoneDivider} />
-            <TextInput
-              accessibilityLabel={t("signin.phone_label", "Mobile number")}
-              autoCapitalize="none"
-              autoComplete="tel"
-              keyboardType="phone-pad"
-              maxLength={PHONE_LENGTH}
-              onChangeText={(value) => setPhoneDigits(normalizeDigits(value))}
-              placeholder={t("signin.phone_placeholder", "10-digit number")}
-              placeholderTextColor="#6e6d68"
-              style={styles.phoneInput}
-              textContentType="telephoneNumber"
-              value={phoneDigits}
-            />
-          </View>
-
-          {message ? <Text style={styles.messageText}>{message}</Text> : null}
-          {error ? <ErrorText>{error}</ErrorText> : null}
-
-          <Button
-            accessibilityLabel={t("signin.get_otp", "Send OTP")}
-            disabled={!canSendCode}
-            onPress={() => void sendCode()}
-            style={styles.primaryButton}
-            variant="primary"
-          >
-            {isSendingCode ? "Sending..." : t("signin.get_otp", "Send OTP")}
-          </Button>
-
-          <Text style={styles.disclaimerText}>
-            {t("signin.help_text", "Your number is used to verify your 0nya account.")}
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.content}>
-          <Text style={styles.title}>{t("signin.enter_code", "Enter OTP")}</Text>
-          <Text style={styles.subtitle}>
-            {`We've sent a 6-digit code to ${maskedPhone}`}
-          </Text>
-
-          <View style={styles.otpInputWrap}>
-            <View pointerEvents="none" style={styles.otpBoxes}>
-              {Array.from({ length: OTP_LENGTH }).map((_, index) => (
-                <View
-                  key={`otp-box-${index}`}
-                  style={[styles.otpBox, otp[index] ? styles.otpBoxFilled : null]}
-                >
-                  <Text style={styles.otpBoxText}>{otp[index] ?? ""}</Text>
-                </View>
-              ))}
-            </View>
-            <TextInput
-              accessibilityLabel="Verification code"
-              autoComplete="one-time-code"
-              autoCapitalize="none"
-              keyboardType="number-pad"
-              maxLength={OTP_LENGTH}
-              onChangeText={(value) => setOtp(normalizeDigits(value))}
-              style={styles.otpInputOverlay}
-              textContentType="oneTimeCode"
-              value={otp}
-            />
-          </View>
-
-          {message ? <Text style={styles.messageText}>{message}</Text> : null}
-          {error ? <ErrorText>{error}</ErrorText> : null}
-
-          <Button
-            accessibilityLabel={t("signin.continue", "Verify & Continue")}
-            disabled={!canVerifyCode}
-            onPress={() => void verifyCode()}
-            style={styles.primaryButton}
-            variant="primary"
-          >
-            {isVerifyingCode ? "Verifying..." : t("signin.continue", "Verify & Continue")}
-          </Button>
-
-          <View style={styles.otpActionRow}>
-            <Pressable
-              accessibilityLabel={resendAvailable ? t("signin.resend_code", "Resend code") : `Resend in ${resendSecondsRemaining} seconds`}
-              accessibilityRole="button"
-              disabled={!resendAvailable}
-              onPress={handleResend}
-              style={({ pressed }) => [
-                styles.linkAction,
-                !resendAvailable && styles.linkActionDisabled,
-                pressed && resendAvailable && styles.linkActionPressed,
-              ]}
-            >
-              <Text style={styles.linkActionText}>
-                {resendAvailable ? t("signin.resend_code", "Resend code") : `Resend in ${resendSecondsRemaining}s`}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityLabel="Change mobile number"
-              accessibilityRole="button"
-              onPress={() => {
-                setStep("phone");
-                setOtp("");
-                setError(null);
-                setMessage(null);
-              }}
-              style={({ pressed }) => [styles.linkAction, pressed && styles.linkActionPressed]}
-            >
-              <Text style={styles.linkActionText}>Change number</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      {__DEV__ ? (
-        <View style={styles.devSection}>
-        <Text style={styles.devHeading}>Development Sign-In</Text>
-        <Text style={styles.devHelper}>Sign in with a Supabase developer or test account.</Text>
-        <TextInput
-          accessibilityLabel="Development email"
-          autoCapitalize="none"
-          autoComplete="email"
-          keyboardType="email-address"
-          onChangeText={setDevEmail}
-          placeholder="Email"
-          placeholderTextColor="#6e6d68"
-          style={styles.devInput}
-          textContentType="emailAddress"
-          value={devEmail}
-        />
-        <TextInput
-          accessibilityLabel="Development password"
-          autoCapitalize="none"
-          autoComplete="password"
-          onChangeText={setDevPassword}
-          placeholder="Password"
-          placeholderTextColor="#6e6d68"
-          secureTextEntry
-          style={styles.devInput}
-          textContentType="password"
-          value={devPassword}
-        />
-        <Button
-          accessibilityLabel="Development sign-in"
-          disabled={isDevSigningIn}
-          onPress={() => void signInWithDevAccount()}
-          style={styles.devButton}
-          variant="secondary"
+    <Screen scroll={false}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardContainer}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {isDevSigningIn ? "Signing in..." : "Development sign-in"}
-        </Button>
-      </View>
-      ) : null}
+          {/* Main content */}
+          <View style={styles.mainContent}>
+            <View style={styles.brandRow}>
+              <BrandWordmark style={styles.brand} />
+            </View>
+
+            {step === "phone" ? (
+              <View style={styles.formContent}>
+                <Text style={styles.title}>{t("signin.header", "Enter your mobile number")}</Text>
+                <Text style={styles.subtitle}>
+                  {t(
+                    "signin.subtitle",
+                    "We'll send a 6-digit verification code to sign in or create your account."
+                  )}
+                </Text>
+
+                <View
+                  style={[
+                    styles.phoneInputContainer,
+                    isPhoneFocused && styles.phoneInputContainerFocused,
+                  ]}
+                >
+                  <Text style={styles.phonePrefix}>{INDIA_PHONE_PREFIX}</Text>
+                  <View style={styles.phoneDivider} />
+                  <TextInput
+                    accessibilityLabel={t("signin.phone_label", "Mobile number")}
+                    autoCapitalize="none"
+                    autoComplete="tel"
+                    keyboardType="phone-pad"
+                    maxLength={PHONE_LENGTH}
+                    onBlur={() => setIsPhoneFocused(false)}
+                    onChangeText={(value) => setPhoneDigits(normalizeDigits(value))}
+                    onFocus={() => setIsPhoneFocused(true)}
+                    placeholder={t("signin.phone_placeholder", "10-digit number")}
+                    placeholderTextColor={colors.textDisabled}
+                    style={styles.phoneInput}
+                    textContentType="telephoneNumber"
+                    value={phoneDigits}
+                  />
+                </View>
+
+                {message ? <Text style={styles.messageText}>{message}</Text> : null}
+                {error ? <ErrorText>{error}</ErrorText> : null}
+
+                <Pressable
+                  accessibilityLabel={t("signin.get_otp", "Send OTP")}
+                  accessibilityRole="button"
+                  disabled={!canSendCode}
+                  onPress={() => void sendCode()}
+                  style={({ pressed }) => [
+                    styles.ctaButton,
+                    canSendCode ? styles.ctaButtonActive : styles.ctaButtonResting,
+                    pressed && canSendCode && styles.ctaButtonPressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.ctaButtonText,
+                      canSendCode ? styles.ctaButtonTextActive : styles.ctaButtonTextResting,
+                    ]}
+                  >
+                    {isSendingCode ? "Sending..." : t("signin.get_otp", "Send OTP")}
+                  </Text>
+                </Pressable>
+
+                <Text style={styles.disclaimerText}>
+                  {t("signin.help_text", "Your number is used to verify your 0nya account.")}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.formContent}>
+                <Text style={styles.title}>{t("signin.enter_code", "Enter OTP")}</Text>
+                <Text style={styles.subtitle}>
+                  {`We've sent a 6-digit code to ${maskedPhone}`}
+                </Text>
+
+                <View style={styles.otpInputWrap}>
+                  <View pointerEvents="none" style={styles.otpBoxes}>
+                    {Array.from({ length: OTP_LENGTH }).map((_, index) => (
+                      <View
+                        key={`otp-box-${index}`}
+                        style={[
+                          styles.otpBox,
+                          otp[index] ? styles.otpBoxFilled : null,
+                          otp.length === index ? styles.otpBoxActive : null,
+                        ]}
+                      >
+                        <Text style={styles.otpBoxText}>{otp[index] ?? ""}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <TextInput
+                    accessibilityLabel="Verification code"
+                    autoCapitalize="none"
+                    autoComplete="one-time-code"
+                    keyboardType="number-pad"
+                    maxLength={OTP_LENGTH}
+                    onChangeText={(value) => setOtp(normalizeDigits(value))}
+                    style={styles.otpInputOverlay}
+                    textContentType="oneTimeCode"
+                    value={otp}
+                  />
+                </View>
+
+                {message ? <Text style={styles.messageText}>{message}</Text> : null}
+                {error ? <ErrorText>{error}</ErrorText> : null}
+
+                <Pressable
+                  accessibilityLabel={t("signin.continue", "Verify & Continue")}
+                  accessibilityRole="button"
+                  disabled={!canVerifyCode}
+                  onPress={() => void verifyCode()}
+                  style={({ pressed }) => [
+                    styles.ctaButton,
+                    canVerifyCode ? styles.ctaButtonActive : styles.ctaButtonResting,
+                    pressed && canVerifyCode && styles.ctaButtonPressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.ctaButtonText,
+                      canVerifyCode ? styles.ctaButtonTextActive : styles.ctaButtonTextResting,
+                    ]}
+                  >
+                    {isVerifyingCode ? "Verifying..." : t("signin.continue", "Verify & Continue")}
+                  </Text>
+                </Pressable>
+
+                <View style={styles.otpActionRow}>
+                  <Pressable
+                    accessibilityLabel={
+                      resendAvailable
+                        ? t("signin.resend_code", "Resend code")
+                        : `Resend in ${resendSecondsRemaining} seconds`
+                    }
+                    accessibilityRole="button"
+                    disabled={!resendAvailable}
+                    onPress={handleResend}
+                    style={({ pressed }) => [
+                      styles.linkAction,
+                      !resendAvailable && styles.linkActionDisabled,
+                      pressed && resendAvailable && styles.linkActionPressed,
+                    ]}
+                  >
+                    <Text style={styles.linkActionText}>
+                      {resendAvailable
+                        ? t("signin.resend_code", "Resend code")
+                        : `Resend in ${resendSecondsRemaining}s`}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    accessibilityLabel="Change mobile number"
+                    accessibilityRole="button"
+                    onPress={handleChangeNumber}
+                    style={({ pressed }) => [styles.linkAction, pressed && styles.linkActionPressed]}
+                  >
+                    <Text style={styles.linkActionText}>Change number</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Bottom section */}
+          <View style={styles.bottomSection}>
+            <View style={styles.legalRow}>
+              <Pressable
+                accessibilityLabel={t("settings.terms", "Terms")}
+                accessibilityRole="link"
+                onPress={() => void handleOpenLink(buildTermsUrl())}
+                style={({ pressed }) => [styles.legalLink, pressed && styles.legalLinkPressed]}
+              >
+                <Text style={styles.legalLinkText}>
+                  {t("settings.terms", "Terms")}
+                </Text>
+              </Pressable>
+              <Text style={styles.legalDot}>{"\u2022"}</Text>
+              <Pressable
+                accessibilityLabel={t("settings.privacy_policy", "Privacy")}
+                accessibilityRole="link"
+                onPress={() => void handleOpenLink(buildPrivacyUrl())}
+                style={({ pressed }) => [styles.legalLink, pressed && styles.legalLinkPressed]}
+              >
+                <Text style={styles.legalLinkText}>
+                  {t("settings.privacy_policy", "Privacy")}
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Dev sign-in section: collapsible and dev-only */}
+            {__DEV__ ? (
+              <View style={styles.devWrapper}>
+                <Pressable
+                  accessibilityLabel="Toggle developer sign-in options"
+                  accessibilityRole="button"
+                  onPress={() => setShowDevPanel((prev) => !prev)}
+                  style={styles.devToggle}
+                >
+                  <Text style={styles.devToggleText}>
+                    {showDevPanel ? "\u25B2 Hide Development Sign-In" : "\u25BC Development Sign-In"}
+                  </Text>
+                </Pressable>
+
+                {showDevPanel ? (
+                  <View style={styles.devSection}>
+                    <Text style={styles.devHeading}>Development Sign-In</Text>
+                    <Text style={styles.devHelper}>
+                      Sign in with a Supabase developer or test account.
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="Development email"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      keyboardType="email-address"
+                      onChangeText={setDevEmail}
+                      placeholder="Email"
+                      placeholderTextColor={colors.textDisabled}
+                      style={styles.devInput}
+                      textContentType="emailAddress"
+                      value={devEmail}
+                    />
+                    <TextInput
+                      accessibilityLabel="Development password"
+                      autoCapitalize="none"
+                      autoComplete="password"
+                      onChangeText={setDevPassword}
+                      placeholder="Password"
+                      placeholderTextColor={colors.textDisabled}
+                      secureTextEntry
+                      style={styles.devInput}
+                      textContentType="password"
+                      value={devPassword}
+                    />
+                    <Button
+                      accessibilityLabel="Development sign-in"
+                      disabled={isDevSigningIn}
+                      onPress={() => void signInWithDevAccount()}
+                      style={styles.devButton}
+                      variant="secondary"
+                    >
+                      {isDevSigningIn ? "Signing in..." : "Development sign-in"}
+                    </Button>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingTop: 4,
-    paddingBottom: 8,
+  keyboardContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "space-between",
+    paddingBottom: spacing.sm,
+  },
+  mainContent: {
+    paddingTop: spacing.xs,
+  },
+  brandRow: {
+    paddingBottom: spacing.base,
   },
   brand: {
-    fontSize: 18,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 24,
   },
-  content: {
-    gap: 12,
+  formContent: {
+    gap: spacing.md,
   },
   title: {
     ...typography.h2,
     color: colors.text,
+    fontSize: 24,
+    lineHeight: 30,
   },
   subtitle: {
     ...typography.body,
-    color: colors.muted,
+    color: colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
   },
   phoneInputContainer: {
     alignItems: "center",
-    backgroundColor: colors.bgElevated,
+    backgroundColor: surfaces.s2,
     borderColor: colors.borderSubtle,
     borderRadius: radii.md,
-    borderWidth: 1,
+    borderWidth: borders.width,
     flexDirection: "row",
-    height: 50,
-    marginTop: 6,
-    paddingHorizontal: 14,
+    height: 52,
+    marginTop: spacing.xs,
+    paddingHorizontal: 16,
+  },
+  phoneInputContainerFocused: {
+    backgroundColor: "rgba(43, 126, 125, 0.06)",
+    borderColor: colors.accent,
   },
   phonePrefix: {
     ...typography.body,
     color: colors.text,
     fontFamily: typography.label.fontFamily,
+    fontSize: 15,
     fontWeight: "600",
   },
   phoneDivider: {
     backgroundColor: colors.borderSubtle,
-    height: 20,
-    marginHorizontal: 12,
+    height: 22,
+    marginHorizontal: 14,
     width: 1,
   },
   phoneInput: {
     ...typography.body,
     color: colors.text,
     flex: 1,
+    fontSize: 16,
+    letterSpacing: 0.6,
     paddingVertical: 0,
   },
-  primaryButton: {
-    borderRadius: radii.md,
-    minHeight: 50,
-    marginTop: 4,
+  ctaButton: {
+    alignItems: "center",
+    borderRadius: radii.cta,
+    height: 48,
+    justifyContent: "center",
+    marginTop: spacing.xs,
+  },
+  ctaButtonResting: {
+    backgroundColor: "rgba(43, 126, 125, 0.16)",
+    borderColor: "rgba(43, 126, 125, 0.28)",
+    borderWidth: 1,
+  },
+  ctaButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: "transparent",
+    borderWidth: 0,
+  },
+  ctaButtonPressed: {
+    opacity: 0.86,
+  },
+  ctaButtonText: {
+    ...typography.label,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  ctaButtonTextResting: {
+    color: "rgba(254, 253, 253, 0.45)",
+  },
+  ctaButtonTextActive: {
+    color: colors.accentOnPrimary,
   },
   disclaimerText: {
     ...typography.caption,
     color: colors.textMuted,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 18,
     textAlign: "center",
   },
   messageText: {
@@ -432,7 +602,7 @@ const styles = StyleSheet.create({
   },
   otpInputWrap: {
     minHeight: 52,
-    marginTop: 6,
+    marginTop: spacing.xs,
   },
   otpBoxes: {
     flexDirection: "row",
@@ -441,17 +611,20 @@ const styles = StyleSheet.create({
   },
   otpBox: {
     alignItems: "center",
-    backgroundColor: colors.bgElevated,
+    backgroundColor: surfaces.s2,
     borderColor: colors.borderSubtle,
     borderRadius: radii.md,
-    borderWidth: 1,
+    borderWidth: borders.width,
     flex: 1,
     height: 52,
     justifyContent: "center",
   },
   otpBoxFilled: {
-    backgroundColor: "rgba(13, 209, 188, 0.06)",
+    backgroundColor: "rgba(43, 126, 125, 0.12)",
     borderColor: colors.accent,
+  },
+  otpBoxActive: {
+    borderColor: colors.accentHighlight,
   },
   otpBoxText: {
     ...typography.h2,
@@ -469,11 +642,11 @@ const styles = StyleSheet.create({
   otpActionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   linkAction: {
     justifyContent: "center",
-    minHeight: 40,
+    minHeight: 44,
     paddingVertical: 8,
   },
   linkActionDisabled: {
@@ -488,12 +661,61 @@ const styles = StyleSheet.create({
     fontFamily: typography.label.fontFamily,
     fontWeight: "600",
   },
+  bottomSection: {
+    gap: 12,
+    marginTop: spacing.lg,
+  },
+  legalRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    paddingVertical: spacing.xs,
+  },
+  legalLink: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 8,
+  },
+  legalLinkPressed: {
+    opacity: 0.6,
+  },
+  legalLinkText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  legalDot: {
+    color: colors.textDisabled,
+    fontSize: 12,
+    marginHorizontal: 4,
+  },
+  devWrapper: {
+    alignItems: "center",
+    marginTop: spacing.xs,
+    width: "100%",
+  },
+  devToggle: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  devToggleText: {
+    ...typography.caption,
+    color: colors.textDisabled,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
   devSection: {
     borderTopColor: colors.borderSubtle,
     borderTopWidth: StyleSheet.hairlineWidth,
     gap: 10,
-    marginTop: 28,
-    paddingTop: 20,
+    marginTop: spacing.sm,
+    paddingTop: spacing.base,
+    width: "100%",
   },
   devHeading: {
     color: colors.textMuted,
@@ -508,10 +730,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   devInput: {
-    backgroundColor: colors.bgElevated,
+    backgroundColor: surfaces.s2,
     borderColor: colors.borderSubtle,
     borderRadius: radii.md,
-    borderWidth: 1,
+    borderWidth: borders.width,
     color: colors.text,
     height: 48,
     paddingHorizontal: 14,

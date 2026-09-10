@@ -19,6 +19,8 @@ import {
 } from "@/lib/cms/constants";
 import { cleanupMediaAssetsAfterContentDeletion } from "@/lib/cms/media";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isMediaAssetReady } from "@/lib/catalog-rules";
+import { validateEpisodeAccessInput } from "@/lib/cms/episode-access";
 
 export type { EpisodeRow, EpisodeStatus, RewardedAccessMode };
 export { EPISODE_STATUSES, REWARDED_ACCESS_MODES };
@@ -96,71 +98,96 @@ function isUniqueViolation(error: { code?: string } | null) {
   return error?.code === "23505";
 }
 
+// COMPATIBILITY_REFERENCE_SAFETY: preview_media_asset_id is retained as legacy schema compat.
+
 export function validateEpisodeInput(input: EpisodeInput): EpisodeValidationError[] {
+  return validateEpisodeAccessInput(input);
+}
+
+export async function verifyEpisodePublishIntegrity(
+  episode: EpisodeRow,
+  supabase = getAdminClient(),
+): Promise<EpisodeValidationError[]> {
   const errors: EpisodeValidationError[] = [];
 
-  if (!Number.isInteger(input.episodeNumber) || input.episodeNumber <= 0) {
-    errors.push({ field: "episodeNumber", message: "Episode number must be a positive whole number." });
-  }
+  if (!episode.media_asset_id) {
+    errors.push({ field: "mediaAsset", message: "A ready media asset must be assigned before publishing." });
+  } else {
+    const { data: mediaAsset } = await supabase
+      .from("media_assets")
+      .select("status,provider_playback_reference")
+      .eq("id", episode.media_asset_id)
+      .maybeSingle();
 
-  if (!Number.isInteger(input.durationSeconds) || input.durationSeconds < 0) {
-    errors.push({ field: "durationSeconds", message: "Duration must be zero or a positive whole number of seconds." });
-  }
-
-  if (!Number.isInteger(input.coinPrice) || input.coinPrice < 0) {
-    errors.push({ field: "coinPrice", message: "Coin price must be zero or a positive whole number." });
-  }
-
-  // Mirrors the DB constraint episodes_coin_unlock_requires_price so the
-  // admin gets an immediate, friendly error instead of a raw DB failure.
-  if (input.coinUnlockEnabled && input.coinPrice <= 0) {
-    errors.push({ field: "coinPrice", message: "Coin price must be greater than zero when coin unlock is enabled." });
-  }
-
-  if (!(REWARDED_ACCESS_MODES as readonly RewardedAccessMode[]).includes(input.rewardedAccessMode)) {
-    errors.push({ field: "rewardedAccessMode", message: "Unsupported rewarded access mode." });
-  }
-
-  if (
-    !Number.isInteger(input.requiredRewardedCompletions) ||
-    input.requiredRewardedCompletions < MIN_REWARDED_REQUIRED_COMPLETIONS ||
-    input.requiredRewardedCompletions > MAX_REWARDED_REQUIRED_COMPLETIONS
-  ) {
-    errors.push({
-      field: "requiredRewardedCompletions",
-      message: `Rewarded ads required must be between ${MIN_REWARDED_REQUIRED_COMPLETIONS} and ${MAX_REWARDED_REQUIRED_COMPLETIONS}.`,
-    });
-  }
-
-  if (
-    !Number.isInteger(input.lockedPreviewSeconds) ||
-    input.lockedPreviewSeconds < MIN_LOCKED_PREVIEW_SECONDS ||
-    input.lockedPreviewSeconds > MAX_LOCKED_PREVIEW_SECONDS
-  ) {
-    errors.push({
-      field: "lockedPreviewSeconds",
-      message: `Locked preview seconds must be between ${MIN_LOCKED_PREVIEW_SECONDS} and ${MAX_LOCKED_PREVIEW_SECONDS}.`,
-    });
-  }
-
-  if (input.contentRatingOverride && !CONTENT_RATINGS.includes(input.contentRatingOverride)) {
-    errors.push({ field: "contentRatingOverride", message: "Unsupported content rating override." });
-  }
-
-  for (const descriptor of input.contentDescriptorsOverride) {
-    if (!CONTENT_DESCRIPTORS.includes(descriptor)) {
-      errors.push({
-        field: "contentDescriptorsOverride",
-        message: `Unsupported content descriptor: ${descriptor}.`,
-      });
-      break;
+    if (!mediaAsset) {
+      errors.push({ field: "mediaAsset", message: "Assigned media asset was not found." });
+    } else if (!isMediaAssetReady(mediaAsset)) {
+      errors.push({ field: "mediaAsset", message: "Playback media is not ready." });
     }
   }
 
   return errors;
 }
 
-export async function listEpisodesForSeries(seriesId: string): Promise<EpisodeRow[]> {
+export type EpisodeListResult = {
+  rows: EpisodeRow[];
+  totalCount: number;
+  filteredCount: number;
+  page: number;
+  pageSize: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
+export async function listEpisodesForSeries(
+  seriesId: string,
+  params: { page?: number; pageSize?: number; search?: string; status?: string } = {},
+): Promise<EpisodeListResult> {
+  const supabase = getAdminClient();
+  const { page = 1, pageSize = 25, search = "", status = "" } = params;
+  const offset = (page - 1) * pageSize;
+
+  const { count: totalCountRaw } = await supabase
+    .from("episodes")
+    .select("*", { count: "exact", head: true })
+    .eq("series_id", seriesId);
+
+  let query = supabase.from("episodes").select("*", { count: "exact" }).eq("series_id", seriesId);
+
+  if (search.trim()) {
+    query = query.or(`episode_number.ilike.%${search.trim()}%,title.ilike.%${search.trim()}%`);
+  }
+  if (status && status !== "all") {
+    query = query.eq("status", status as EpisodeStatus);
+  }
+
+  const { data, error, count: filteredCountRaw } = await query
+    .order("episode_number", { ascending: true })
+    .range(offset, offset + pageSize - 1);
+
+  if (error) {
+    console.warn("Unable to list episodes for CMS.");
+    return { rows: [], totalCount: 0, filteredCount: 0, page: 1, pageSize, hasPrevious: false, hasNext: false };
+  }
+
+  const totalCount = totalCountRaw ?? 0;
+  const filteredCount = filteredCountRaw ?? 0;
+  const safePage = Math.max(1, Math.min(page, Math.max(1, Math.ceil(filteredCount / pageSize))));
+  const start = (safePage - 1) * pageSize;
+  const rows = (data ?? []).slice(0, pageSize);
+
+  return {
+    rows,
+    totalCount,
+    filteredCount,
+    page: safePage,
+    pageSize,
+    hasPrevious: safePage > 1,
+    hasNext: start + pageSize < filteredCount,
+  };
+}
+
+export async function listEpisodesForSeriesLegacy(seriesId: string): Promise<EpisodeRow[]> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("episodes")
@@ -312,6 +339,14 @@ export async function updateEpisodeStatus(
 
   if (!existing) {
     return { success: false, errors: [{ field: "status", message: "Episode not found." }] };
+  }
+
+  // Verify media readiness when transitioning to published
+  if (status === "published") {
+    const mediaErrors = await verifyEpisodePublishIntegrity(existing, supabase);
+    if (mediaErrors.length > 0) {
+      return { success: false, errors: mediaErrors };
+    }
   }
 
   // published_at has no other writer in the schema; set it the first time an

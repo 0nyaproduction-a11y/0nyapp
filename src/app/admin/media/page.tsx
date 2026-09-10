@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { MediaAdminClient } from "@/components/cms/MediaAdminClient";
+import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   createMediaUploadIntent,
@@ -12,7 +12,7 @@ import {
   getMediaViewRows,
 } from "@/lib/cms/media-truth-views";
 import type { MediaViewRow, MediaViewTab } from "@/lib/cms/media-truth-model";
-import { adminPath, mediaListPath } from "@/lib/routes";
+import { mediaListPath } from "@/lib/routes";
 import {
   scanMediaAssetForDeletion,
   type DeleteImpactReport,
@@ -27,8 +27,17 @@ import {
 } from "@/lib/cms/media-delete-executor";
 
 type AdminMediaPageProps = {
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{
+    tab?: string;
+    search?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }>;
 };
+
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTS = [25, 50, 100];
 
 const MEDIA_VIEW_TABS: MediaViewTab[] = ["all", "processing", "problems", "unassigned"];
 
@@ -40,7 +49,7 @@ function parseTab(value: string | undefined): MediaViewTab {
 }
 
 export default async function AdminMediaPage({ searchParams }: AdminMediaPageProps) {
-  const params = await (searchParams ?? Promise.resolve<{ tab?: string }>({}));
+  const params = await (searchParams ?? Promise.resolve<{ tab?: string; search?: string; status?: string; page?: number; pageSize?: number }>({}));
   const context = await requireCmsAdmin(mediaListPath);
 
   if (context.status === "forbidden") {
@@ -54,10 +63,19 @@ export default async function AdminMediaPage({ searchParams }: AdminMediaPagePro
     );
   }
 
-  // Server-side data loading stays in server code. The client component only
-  // receives serializable MediaViewRow[] data (never server-only modules or
-  // provider secrets), plus explicit server-action references.
-  const rows = await getMediaViewRows({}, "all");
+  const tab = parseTab(params.tab);
+  const search = String(params.search ?? "").trim();
+  const status = String(params.status ?? "").trim();
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = PAGE_SIZE_OPTS.includes(Number(params.pageSize)) ? Number(params.pageSize) : DEFAULT_PAGE_SIZE;
+
+  const result = await getMediaViewRows({
+    tab,
+    search,
+    status: status || undefined,
+    page,
+    pageSize,
+  });
 
   async function requestMediaUploadAction(mimeType: string, corsOriginOverride?: string | null) {
     "use server";
@@ -221,23 +239,24 @@ export default async function AdminMediaPage({ searchParams }: AdminMediaPagePro
     return result;
   }
 
+  const breadcrumbs = [
+    { label: "Admin", href: "/admin" },
+    { label: "Media", isCurrent: true },
+  ];
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
+        <CmsBreadcrumb items={breadcrumbs} />
+
         <div>
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
-            0nya CMS
-          </p>
           <h1 className="mt-2 text-2xl font-semibold">Media</h1>
-          <Link href={adminPath} className="mt-1 inline-block text-sm text-teal">
-            ← Back to admin
-          </Link>
         </div>
 
         <MediaAdminClient
-          key={parseTab(params.tab)}
-          initialRows={rows}
-          initialTab={parseTab(params.tab)}
+          key={tab}
+          result={result}
+          initialTab={tab}
           requestUploadAction={requestMediaUploadAction}
           refreshAction={refreshMediaAssetAction}
           loadAssetDetailAction={loadAssetDetailAction}

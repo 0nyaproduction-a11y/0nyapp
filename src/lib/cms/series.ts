@@ -7,14 +7,19 @@ import {
   type ContentRating,
 } from "@/lib/classification";
 import {
+  cleanupArtworkObjectsAfterContentDeletion,
+  extractArtworkObjectPath,
+} from "@/lib/cms/artwork";
+import {
   SERIES_FORMATS,
   SERIES_STATUSES,
   type SeriesFormat,
   type SeriesRow,
   type SeriesStatus,
 } from "@/lib/cms/constants";
-import { cleanupArtworkObjectsAfterContentDeletion } from "@/lib/cms/artwork";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ARTWORK_BUCKET_ID } from "@/lib/supabase/artwork";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 
 export type { SeriesFormat, SeriesRow, SeriesStatus };
 export { SERIES_FORMATS, SERIES_STATUSES };
@@ -101,19 +106,41 @@ function isUniqueViolation(error: { code?: string } | null) {
   return error?.code === "23505";
 }
 
-export async function listSeriesForAdmin(): Promise<SeriesRow[]> {
+export type SeriesListResult = {
+  rows: SeriesRow[];
+  totalCount: number;
+  filteredCount: number;
+};
+
+export async function listSeriesForAdmin(
+  params: { page?: number; pageSize?: number; search?: string; status?: string } = {},
+): Promise<SeriesListResult> {
   const supabase = getAdminClient();
-  const { data, error } = await supabase
-    .from("series")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  const { page = 1, pageSize = 25, search = "", status = "" } = params;
+  const offset = (page - 1) * pageSize;
+
+  let query = supabase.from("series").select("*", { count: "exact" });
+
+  if (search.trim()) {
+    query = query.or(`title.ilike.%${search.trim()}%,slug.ilike.%${search.trim()}%`);
+  }
+  if (status && status !== "all") {
+    query = query.eq("status", status as SeriesStatus);
+  }
+
+  const { data, error, count } = await query
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
 
   if (error) {
     console.warn("Unable to list series for CMS.");
-    return [];
+    return { rows: [], totalCount: 0, filteredCount: 0 };
   }
 
-  return data;
+  const totalCount = count ?? data.length;
+  const filteredCount = search || status ? data.length : totalCount;
+
+  return { rows: data ?? [], totalCount, filteredCount };
 }
 
 export async function getSeriesForAdminById(id: string): Promise<SeriesRow | null> {
@@ -230,6 +257,24 @@ export async function updateSeriesStatus(
   const supabase = getAdminClient();
 
   if (status === "published") {
+    // NEW: Verify poster before publishing
+    const { data: series, error: seriesError } = await supabase.from("series").select("*").eq("id", id).maybeSingle();
+
+    if (seriesError || !series) {
+      return { success: false, errors: [{ field: "status", message: "Series not found." }] };
+    }
+
+    const posterErrors = await verifySeriesPublishIntegrity(series, supabase);
+
+    if (posterErrors.length > 0) {
+      return {
+        success: false,
+        errors: posterErrors,
+        blockers: posterErrors.map((e) => e.message),
+        message: "Resolve the blockers before publishing this series.",
+      };
+    }
+
     const { data: publishData, error: publishError } = await supabase.rpc("publish_series_with_episodes", {
       p_series_id: id,
     });
@@ -295,6 +340,71 @@ export async function persistSeriesArtwork(
   }
 
   return { success: true, series: data };
+}
+
+async function artworkObjectExists(objectPath: string, supabase: ReturnType<typeof getAdminClient>) {
+  const normalizedObjectPath = objectPath.trim().replace(/^\/+/, "");
+  const pathParts = normalizedObjectPath.split("/").filter(Boolean);
+  const fileName = pathParts.at(-1);
+
+  if (!fileName) {
+    return false;
+  }
+
+  const folderPath = pathParts.slice(0, -1).join("/");
+  const { data, error } = await supabase.storage.from(ARTWORK_BUCKET_ID).list(folderPath, {
+    limit: 100,
+    search: fileName,
+  });
+
+  if (error || !data) {
+    return false;
+  }
+
+  return data.some((object) => object.name === fileName);
+}
+
+function extractTrustedArtworkObjectPath(value: string) {
+  const objectPath = extractArtworkObjectPath(value);
+
+  if (!objectPath) {
+    return null;
+  }
+
+  try {
+    const artworkUrl = new URL(value.trim());
+    const expectedOrigin = new URL(getSupabaseEnv().url).origin;
+
+    if (artworkUrl.origin !== expectedOrigin) {
+      return null;
+    }
+  } catch {
+    // Existing server-side artwork helpers also accept stored bucket/path values.
+  }
+
+  return objectPath;
+}
+
+export async function verifySeriesPublishIntegrity(
+  series: SeriesRow,
+  supabase = getAdminClient(),
+): Promise<SeriesValidationError[]> {
+  const errors: SeriesValidationError[] = [];
+
+  if (!series.poster_url || !series.poster_url.trim()) {
+    errors.push({ field: "posterUrl", message: "Poster artwork is required to publish." });
+  } else {
+    const posterObjectPath = extractTrustedArtworkObjectPath(series.poster_url);
+    const hasPosterObject = posterObjectPath
+      ? await artworkObjectExists(posterObjectPath, supabase)
+      : false;
+
+    if (!hasPosterObject) {
+      errors.push({ field: "posterUrl", message: "Poster artwork file is missing or unavailable." });
+    }
+  }
+
+  return errors;
 }
 
 async function inspectSeriesDeletion(id: string): Promise<SeriesDeletePreview> {

@@ -1,6 +1,7 @@
 // COMPONENT PLACEHOLDER - React implementation will be created
 import React from 'react';
 import { MediaAssetRefreshForm } from './MediaAssetRefreshForm';
+import { QuarantineConfirmDialog } from './DangerZoneActionForm';
 import type { MediaAssetFormState } from '@/lib/cms/media';
 import type { MediaViewRow } from '@/lib/cms/media-truth-model';
 import type { DeleteImpactReport } from '@/lib/cms/media-delete-impact';
@@ -382,7 +383,6 @@ function DeleteExecutionPanel({
   };
 }) {
   const [confirmationText, setConfirmationText] = React.useState("");
-  const [reasonText, setReasonText] = React.useState("");
 
   const isSafe = latestReport?.classification === "SAFE" && latestReport.deletionEnabled === true;
   const isQuarantined = action.quarantineStatus === "quarantined";
@@ -411,23 +411,15 @@ function DeleteExecutionPanel({
           </div>
 
           {!isQuarantined && (
-            <div className="flex flex-col gap-2">
-              <input
-                type="text"
-                value={reasonText}
-                onChange={(event) => setReasonText(event.target.value)}
-                placeholder="Reason for quarantine (optional)"
-                className="w-full rounded border border-bone/20 bg-bone/5 px-2 py-1 text-xs text-bone/80"
-              />
-              <button
-                type="button"
-                onClick={() => action.onQuarantine(reasonText || undefined)}
-                disabled={action.quarantineActionState === "working"}
-                className="self-start px-3 py-1.5 rounded bg-amber-900/30 border border-amber-500/30 text-amber-300 text-xs font-medium hover:bg-amber-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {action.quarantineActionState === "working" ? "Working…" : "Quarantine for review"}
-              </button>
-            </div>
+            <QuarantineConfirmDialog
+              assetId={assetId}
+              onConfirm={async (reason) => {
+                await action.onQuarantine(reason);
+              }}
+              onCancel={() => {}}
+              disabled={action.quarantineActionState === "working"}
+              actionState={action.quarantineActionState}
+            />
           )}
 
           {isQuarantined && (

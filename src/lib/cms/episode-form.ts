@@ -5,6 +5,12 @@ import {
   normalizeContentRating,
 } from "@/lib/classification";
 import type { EpisodeInput } from "@/lib/cms/episodes";
+import {
+  EPISODE_ACCESS_MODES,
+  mapAccessModeToFields,
+  type EpisodeAccessFields,
+  type EpisodeAccessMode,
+} from "@/lib/cms/episode-access";
 
 export type EpisodeFormState = {
   errors: Record<string, string>;
@@ -32,22 +38,50 @@ function parseIntField(value: FormDataEntryValue | null, fallback: number) {
  * thumbnail.
  */
 export function parseEpisodeFormData(formData: FormData, currentThumbnailUrl: string | null): EpisodeInput {
+  const rawAccessMode = formData.get("accessMode");
+  const accessMode =
+    typeof rawAccessMode === "string" && (EPISODE_ACCESS_MODES as readonly string[]).includes(rawAccessMode)
+      ? (rawAccessMode as EpisodeAccessMode)
+      : null;
+
+  const rawCoinPrice = parseIntField(formData.get("coinPrice"), 0);
+  const rawRequiredRewardedCompletions = (() => {
+    const raw = parseIntField(formData.get("requiredRewardedCompletions"), 1);
+    return Math.min(2, Math.max(1, Number.isFinite(raw) ? Math.trunc(raw) : 1));
+  })();
+
+  let accessFields: EpisodeAccessFields;
+
+  if (accessMode) {
+    accessFields = mapAccessModeToFields(accessMode, {
+      coinPrice: rawCoinPrice,
+      requiredRewardedCompletions: rawRequiredRewardedCompletions,
+    });
+  } else {
+    // Fallback for direct or compatibility calls without accessMode parameter
+    accessFields = {
+      isFree: formData.get("isFree") === "on",
+      coinUnlockEnabled: formData.get("coinUnlockEnabled") === "on",
+      coinPrice: rawCoinPrice,
+      rewardedUnlockEnabled: formData.get("rewardedUnlockEnabled") === "on",
+      requiredRewardedCompletions: rawRequiredRewardedCompletions,
+      plusAccess: formData.get("plusAccess") === "on",
+    };
+  }
+
   return {
     episodeNumber: parseIntField(formData.get("episodeNumber"), 0),
     title: nullableString(formData.get("title")),
     synopsis: nullableString(formData.get("synopsis")),
     durationSeconds: parseIntField(formData.get("durationSeconds"), 0),
     thumbnailUrl: currentThumbnailUrl,
-    isFree: formData.get("isFree") === "on",
-    coinPrice: parseIntField(formData.get("coinPrice"), 0),
-    coinUnlockEnabled: formData.get("coinUnlockEnabled") === "on",
-    rewardedUnlockEnabled: formData.get("rewardedUnlockEnabled") === "on",
+    isFree: accessFields.isFree,
+    coinPrice: accessFields.coinPrice,
+    coinUnlockEnabled: accessFields.coinUnlockEnabled,
+    rewardedUnlockEnabled: accessFields.rewardedUnlockEnabled,
     rewardedAccessMode: "permanent",
-    requiredRewardedCompletions: (() => {
-      const raw = parseIntField(formData.get("requiredRewardedCompletions"), 1);
-      return Math.min(2, Math.max(1, Number.isFinite(raw) ? Math.trunc(raw) : 1));
-    })(),
-    plusAccess: formData.get("plusAccess") === "on",
+    requiredRewardedCompletions: accessFields.requiredRewardedCompletions,
+    plusAccess: accessFields.plusAccess,
     lockedPreviewSeconds: parseIntField(formData.get("lockedPreviewSeconds"), 0),
     contentRatingOverride: normalizeContentRating(nullableString(formData.get("contentRatingOverride"))),
     contentDescriptorsOverride: normalizeContentDescriptors(

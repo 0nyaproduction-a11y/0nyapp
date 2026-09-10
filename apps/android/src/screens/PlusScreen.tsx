@@ -1,16 +1,14 @@
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
+import { SubscriptionManagementModal } from "../components/SubscriptionManagementModal";
 import {
-  Body,
-  BrandWordmark,
-  Button,
   Card,
   Label,
   LoadingState,
+  PlayTriangleIcon,
   RecoveryState,
-  Title,
 } from "../components/ui";
 import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
@@ -18,13 +16,13 @@ import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import {
   getBillingService,
   PLUS_BILLING_PLANS,
+  createUnconfiguredPlusPlanProducts,
   type BillingHarnessScenario,
-  type PlusBillingPlan,
   type StoreProduct,
 } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse } from "../types/api";
-import { borders, colors, radii } from "../theme/tokens";
+import { borders, colors, radii, surfaces } from "../theme/tokens";
 
 type Props = RootStackScreenProps<"Plus">;
 
@@ -36,6 +34,8 @@ function formatDate(dateString: string) {
   }).format(new Date(dateString));
 }
 
+const APPROVED_PLANS: StoreProduct[] = createUnconfiguredPlusPlanProducts();
+
 export function PlusScreen({ navigation }: Props) {
   const { session } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -44,9 +44,18 @@ export function PlusScreen({ navigation }: Props) {
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [plusPlans, setPlusPlans] = useState<StoreProduct[]>([]);
-  const [selectedBillingPlan, setSelectedBillingPlan] = useState<PlusBillingPlan>("weekly");
+  const [selectedProductCode, setSelectedProductCode] = useState("0nya_plus_weekly");
+  const [isManagementSheetOpen, setIsManagementSheetOpen] = useState(false);
   const token = session?.access_token;
   const billingService = getBillingService();
+
+  // Ensure clean header with standard back navigation
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => null,
+      title: "",
+    });
+  }, [navigation]);
 
   const loadSubscription = useCallback(async () => {
     if (!token) {
@@ -86,18 +95,34 @@ export function PlusScreen({ navigation }: Props) {
     await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "plus" });
   }
 
-  // 0nya Plus is ONE entitlement; weekly/monthly/yearly are its billing
-  // choices. One selection at a time; every choice resolves to the same
-  // entitlement through the billing boundary (server/store verified).
   const isPlus = me?.subscription.status === "active";
+
+  const approvedPlans = APPROVED_PLANS.map((approved) => {
+    const storeMatch = plusPlans.find((product) => product.productCode === approved.productCode);
+    return storeMatch
+      ? {
+          ...approved,
+          ...storeMatch,
+          localizedPrice: storeMatch.localizedPrice || approved.localizedPrice,
+        }
+      : approved;
+  });
+
   const selectedPlan =
-    plusPlans.find((product) => product.billingPlan === selectedBillingPlan) ??
-    plusPlans[0] ??
-    null;
+    approvedPlans.find((product) => product.productCode === selectedProductCode) ??
+    approvedPlans[0];
   const selectedCadence = selectedPlan?.billingPlan ?? "weekly";
+  const canPurchaseSelectedPlan =
+    billingService.isHarness ||
+    (selectedPlan?.status === "available" && Boolean(selectedPlan.googleProductId && selectedPlan.offerToken));
 
   async function handlePlusPurchase(scenario?: BillingHarnessScenario) {
-    if (!token || isPurchasing) {
+    if (!token) {
+      await handleSignIn();
+      return;
+    }
+
+    if (isPurchasing) {
       return;
     }
 
@@ -143,37 +168,62 @@ export function PlusScreen({ navigation }: Props) {
     }
   }
 
-  const membershipHeadline = isPlus ? (me?.subscription.label ?? "0nya Plus") : "0nya Plus";
-  const membershipBody =
-    isPlus && me?.subscription.endsAt ? `Active until ${formatDate(me.subscription.endsAt)}` : null;
-  const membershipStatusText = isPlus ? "Active" : "Unavailable in this build";
+  const expiryText =
+    isPlus && me?.subscription.endsAt
+      ? `Your Plus access is active until ${formatDate(me.subscription.endsAt)}.`
+      : "Your Plus access is active.";
 
   return (
     <Screen>
+      {/* 1. Hero / Brand Block */}
       <View style={styles.hero}>
-        <BrandWordmark plus style={styles.brand} />
-        <Body>Watch more without interruption.</Body>
+        <View style={styles.brandRow}>
+          <Text accessibilityLabel="0nya Plus" style={styles.brandTitle}>
+            <Text style={styles.brand0}>0</Text>
+            <Text style={styles.brandNya}>nya</Text>
+            <Text style={styles.brandPlus}> Plus</Text>
+          </Text>
+        </View>
+        <Text style={styles.heroTagline}>More story. Less interruption.</Text>
       </View>
 
-      <View style={styles.benefits}>
-        <BenefitRow
-          title="Access Plus-enabled Micro Drama episodes"
-          body="Watch released micro-drama episodes included when they are enabled for 0nya Plus access."
-        />
-        <BenefitRow
-          title="Ad-free Short Films"
-          body="Enjoy Short Films without mid-roll or post-roll ads when you are an active Plus member."
-        />
-        <BenefitRow
-          title="Higher-quality playback"
-          body="A premium viewing experience is part of the approved Plus experience direction."
-        />
-        <BenefitRow
-          title="Coins remain separate"
-          body="Coins stay in the wallet and remain independent from the Plus membership."
-        />
+      {/* 2. What You Get (Consolidated Benefits Card) */}
+      <View style={styles.section}>
+        <Text style={styles.sectionEyebrow}>WHAT YOU GET</Text>
+        <View style={styles.benefitsCard}>
+          <BenefitRow
+            helper="Stay with the story a little longer."
+            icon={<MiniPlayIcon color={colors.accent} />}
+            title="More Micro Drama access"
+          />
+          <View style={styles.benefitDivider} />
+          <BenefitRow
+            helper="Let the film play without breaking the mood."
+            icon={<MiniFilmIcon color={colors.accent} />}
+            title="Ad-free Short Films"
+          />
+          <View style={styles.benefitDivider} />
+          <BenefitRow
+            helper="See every frame with more depth and clarity."
+            icon={<MiniQualityIcon color={colors.accent} />}
+            title="Up to 2K playback"
+          />
+          <View style={styles.benefitDivider} />
+          <BenefitRow
+            helper="Let the story follow you beyond the player."
+            icon={<MiniPipIcon color={colors.accent} />}
+            title="Picture in Picture"
+          />
+          <View style={styles.benefitDivider} />
+          <BenefitRow
+            helper="Your Coins remain yours, separate from Plus."
+            icon={<MiniCoinsIcon color={colors.accent} />}
+            title="Coins stay yours"
+          />
+        </View>
       </View>
 
+      {/* Loading / Error States */}
       {isLoading && !me && !error ? <LoadingState /> : null}
       {error ? (
         <RecoveryState
@@ -183,68 +233,91 @@ export function PlusScreen({ navigation }: Props) {
           title="We couldn't load this right now."
         />
       ) : null}
-      {token ? (
-        me ? (
-          <>
-            <View style={styles.membership}>
-              <Label>Membership</Label>
-              <Text style={styles.membershipHeadline}>{membershipHeadline}</Text>
-              {membershipBody ? <Body>{membershipBody}</Body> : null}
-              <View
-                accessibilityLabel={membershipStatusText}
-                accessibilityRole="text"
-                style={[styles.statusPill, isPlus ? styles.statusPillActive : null]}
-              >
-                <View style={[styles.statusDot, isPlus ? styles.statusDotActive : null]} />
-                <Text style={[styles.statusText, isPlus ? styles.statusTextActive : null]}>
-                  {membershipStatusText}
-                </Text>
-              </View>
-            </View>
-            {!isPlus && plusPlans.length > 0 ? (
-              <View style={styles.plansSection}>
-                <Label>Choose your plan</Label>
-                <View style={styles.planList}>
-                  {plusPlans.map((plan) => (
-                    <PlanRow
-                      key={plan.billingPlan ?? plan.productCode}
-                      onPress={() =>
-                        plan.billingPlan ? setSelectedBillingPlan(plan.billingPlan) : undefined
-                      }
-                      plan={plan}
-                      selected={plan.billingPlan === selectedCadence}
-                    />
-                  ))}
-                </View>
-                <View style={styles.disclosure}>
-                  <Body>Auto-renews {selectedCadence} until cancelled.</Body>
-                  <Body>Cancel anytime in Google Play.</Body>
-                </View>
-                <Body>Purchasing needs Google Play product configuration before production use.</Body>
-                <Button
-                  accessibilityLabel="Continue with 0nya Plus"
-                  disabled={isPurchasing || !selectedPlan}
-                  onPress={() => void handlePlusPurchase()}
-                >
-                  Continue
-                </Button>
-              </View>
+
+      {/* 3. Membership Section */}
+      {isPlus ? (
+        <View style={styles.membershipCard}>
+          <Text style={styles.sectionEyebrow}>MEMBERSHIP</Text>
+          <View style={styles.membershipTitleRow}>
+            <Text accessibilityLabel="0nya Plus · ACTIVE" style={styles.membershipHeadline}>
+              <Text style={styles.brand0}>0</Text>
+              <Text style={styles.brandNya}>nya</Text>
+              <Text style={styles.brandPlus}> Plus</Text>
+              <Text style={styles.membershipDot}> · </Text>
+              <Text style={styles.membershipActiveText}>ACTIVE</Text>
+            </Text>
+          </View>
+          <Text style={styles.membershipExpiry}>{expiryText}</Text>
+          <Pressable
+            accessibilityLabel="Manage subscription"
+            accessibilityRole="button"
+            onPress={() => setIsManagementSheetOpen(true)}
+            style={({ pressed }) => [
+              styles.manageSubscriptionRow,
+              pressed && styles.manageSubscriptionRowPressed,
+            ]}
+          >
+            <Text style={styles.manageSubscriptionText}>Manage subscription</Text>
+            <Text style={styles.manageSubscriptionChevron}>›</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.membershipSection}>
+          <Text style={styles.sectionEyebrow}>MEMBERSHIP</Text>
+          <Text style={styles.membershipOfferTitle}>Choose your Plus plan</Text>
+          <View style={styles.planList}>
+            {approvedPlans.map((plan) => (
+              <PlanRow
+                key={plan.productCode}
+                onPress={() => setSelectedProductCode(plan.productCode)}
+                plan={plan}
+                selected={plan.productCode === selectedPlan?.productCode}
+              />
+            ))}
+          </View>
+
+          <Pressable
+            accessibilityLabel="Subscribe to Plus"
+            accessibilityRole="button"
+            disabled={isPurchasing || !canPurchaseSelectedPlan}
+            onPress={() => void handlePlusPurchase()}
+            style={({ pressed }) => [
+              styles.payButton,
+              (isPurchasing || !canPurchaseSelectedPlan) && styles.payButtonDisabled,
+              pressed && !isPurchasing && styles.payButtonPressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.payButtonText,
+                (isPurchasing || !canPurchaseSelectedPlan) && styles.payButtonTextDisabled,
+              ]}
+            >
+              {isPurchasing ? "Processing..." : "Subscribe to Plus"}
+            </Text>
+          </Pressable>
+
+          <View style={styles.renewalDisclosure}>
+            <Text style={styles.renewalDisclosureText}>
+              Auto-renews {selectedCadence} until cancelled.
+            </Text>
+            {selectedPlan?.offerPurpose === "referral_intro" ? (
+              <Text style={styles.renewalDisclosureText}>
+                Referral introductory price applies for the first month; standard monthly store price applies after.
+              </Text>
             ) : null}
-          </>
-        ) : null
-      ) : (        <Card>
-          <Label>Guest</Label>
-          <Title>Sign in to view 0nya Plus</Title>
-          <Body>Sign in first, then return here to view your membership state.</Body>
-          <Button accessibilityLabel="Sign in to view Plus" onPress={handleSignIn}>
-            Sign in
-          </Button>
-        </Card>
+            <Text style={styles.renewalDisclosureText}>Cancel anytime in Google Play.</Text>
+          </View>
+
+          <Text style={styles.launchStatusText}>Payments are awaiting launch.</Text>
+        </View>
       )}
+
+      {/* 4. Development Harness */}
       {__DEV__ && token && billingService.isHarness ? (
         <Card>
           <Label>Development billing harness</Label>
-          <Body>Exercise Plus billing outcomes without Google UI or production entitlement changes.</Body>
+          <Text style={styles.harnessBody}>Exercise Plus billing outcomes without Google UI or production entitlement changes.</Text>
           <View style={styles.harnessGrid}>
             {plusHarnessScenarios.map((scenario) => (
               <Pressable
@@ -265,12 +338,27 @@ export function PlusScreen({ navigation }: Props) {
           </View>
         </Card>
       ) : null}
+
+      {/* Billing Status */}
       {billingMessage ? (
         <Card>
           <Label>Billing status</Label>
-          <Body>{billingMessage}</Body>
+          <Text style={styles.harnessBody}>{billingMessage}</Text>
         </Card>
       ) : null}
+
+      <SubscriptionManagementModal
+        endsAt={me?.subscription.endsAt}
+        onClose={() => setIsManagementSheetOpen(false)}
+        onNavigateToRestoreSync={() =>
+          navigation.navigate("MainTabs", {
+            screen: "Profile",
+            params: { screen: "RestoreSync" },
+          })
+        }
+        status={me?.subscription.status}
+        visible={isManagementSheetOpen}
+      />
     </Screen>
   );
 }
@@ -291,21 +379,134 @@ const plusHarnessScenarios: BillingHarnessScenario[] = [
 ];
 
 type BenefitRowProps = {
-  body: ReactNode;
+  helper: string;
+  icon: ReactNode;
   title: string;
 };
 
-function BenefitRow({ body, title }: BenefitRowProps) {
+function BenefitRow({ helper, icon, title }: BenefitRowProps) {
   return (
     <View style={styles.benefitRow}>
-      <View style={styles.benefitMarker} />
+      <View style={styles.benefitIconWrap}>{icon}</View>
       <View style={styles.benefitCopy}>
         <Text style={styles.benefitTitle}>{title}</Text>
-        <Body>{body}</Body>
+        <Text style={styles.benefitHelper}>{helper}</Text>
       </View>
     </View>
   );
 }
+
+function MiniPlayIcon({ color }: { color: string }) {
+  return (
+    <View style={glyphStyles.iconContainer}>
+      <PlayTriangleIcon color={color} size={8} />
+    </View>
+  );
+}
+
+function MiniFilmIcon({ color }: { color: string }) {
+  return (
+    <View style={glyphStyles.filmWrap}>
+      <View style={[glyphStyles.filmFrame, { borderColor: color }]}>
+        <View style={[glyphStyles.filmBar, { backgroundColor: color }]} />
+      </View>
+    </View>
+  );
+}
+
+function MiniQualityIcon({ color }: { color: string }) {
+  return (
+    <View style={glyphStyles.sparkleWrap}>
+      <View style={[glyphStyles.sparkleDiamond, { borderColor: color }]} />
+    </View>
+  );
+}
+
+function MiniPipIcon({ color }: { color: string }) {
+  return (
+    <View style={glyphStyles.pipWrap}>
+      <View style={[glyphStyles.pipFrame, { borderColor: color }]}>
+        <View style={[glyphStyles.pipWindow, { backgroundColor: color }]} />
+      </View>
+    </View>
+  );
+}
+
+function MiniCoinsIcon({ color }: { color: string }) {
+  return (
+    <View style={[glyphStyles.coinCircle, { borderColor: color }]}>
+      <Text style={[glyphStyles.coinText, { color }]}>C</Text>
+    </View>
+  );
+}
+
+const glyphStyles = StyleSheet.create({
+  iconContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filmWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filmFrame: {
+    alignItems: "center",
+    borderRadius: 2,
+    borderWidth: 1.2,
+    height: 12,
+    justifyContent: "center",
+    width: 15,
+  },
+  filmBar: {
+    height: 1.2,
+    width: 9,
+  },
+  sparkleWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sparkleDiamond: {
+    borderRadius: 2,
+    borderWidth: 1.2,
+    height: 11,
+    transform: [{ rotate: "45deg" }],
+    width: 11,
+  },
+  pipWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pipFrame: {
+    borderRadius: 2,
+    borderWidth: 1.2,
+    height: 12,
+    position: "relative",
+    width: 15,
+  },
+  pipWindow: {
+    borderRadius: 1,
+    bottom: 1.5,
+    height: 4.5,
+    position: "absolute",
+    right: 1.5,
+    width: 5.5,
+  },
+  coinCircle: {
+    alignItems: "center",
+    borderRadius: 7,
+    borderWidth: 1.2,
+    height: 14,
+    justifyContent: "center",
+    width: 14,
+  },
+  coinText: {
+    fontSize: 8.5,
+    fontWeight: "800",
+    lineHeight: 10,
+    marginTop: -0.5,
+  },
+});
+
 function cadenceNounFor(plan: StoreProduct) {
   return (
     PLUS_BILLING_PLANS.find((entry) => entry.billingPlan === plan.billingPlan)?.cadenceNoun ?? null
@@ -313,12 +514,28 @@ function cadenceNounFor(plan: StoreProduct) {
 }
 
 function planTitle(plan: StoreProduct) {
+  if (plan.offerPurpose === "referral_intro") {
+    return "Referral Monthly";
+  }
   if (!plan.billingPlan) {
     return plan.displayName;
   }
 
   const cadence = plan.billingPlan;
   return `${cadence.charAt(0).toUpperCase()}${cadence.slice(1)}`;
+}
+
+function formatPlanPriceText(plan: StoreProduct): string {
+  const noun = plan.billingPlan === "weekly" ? "week" : cadenceNounFor(plan);
+
+  const price = plan.localizedPrice;
+  if (price && noun) {
+    return `${price} / ${noun}`;
+  }
+  if (price) {
+    return price;
+  }
+  return "Price not configured";
 }
 
 type PlanRowProps = {
@@ -328,16 +545,12 @@ type PlanRowProps = {
 };
 
 function PlanRow({ onPress, plan, selected }: PlanRowProps) {
-  const noun = cadenceNounFor(plan);
-  const priceText = plan.localizedPrice
-    ? noun
-      ? `${plan.localizedPrice} / ${noun}`
-      : plan.localizedPrice
-    : "Price not configured";
+  const priceText = formatPlanPriceText(plan);
+  const title = planTitle(plan);
 
   return (
     <Pressable
-      accessibilityLabel={`${planTitle(plan)}. ${priceText}`}
+      accessibilityLabel={`${title}. ${priceText}`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
@@ -347,37 +560,87 @@ function PlanRow({ onPress, plan, selected }: PlanRowProps) {
         selected && styles.planRowSelected,
       ]}
     >
-      <Text style={styles.planName}>{planTitle(plan)}</Text>
-      <Text style={[styles.planPrice, selected ? styles.planPriceSelected : null]}>{priceText}</Text>
+      <View style={styles.planRowContent}>
+        <View style={[styles.planRadio, selected && styles.planRadioSelected]}>
+          {selected ? <View style={styles.planRadioDot} /> : null}
+        </View>
+        <Text style={[styles.planName, selected && styles.planNameSelected]}>{title}</Text>
+      </View>
+      <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>{priceText}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   hero: {
+    gap: 4,
+    marginTop: -14,
+    paddingTop: 0,
+    paddingBottom: 2,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+  },
+  brand0: {
+    color: "#2B7E7D",
+  },
+  brandNya: {
+    color: "#FEFDFD",
+  },
+  brandPlus: {
+    color: "#955E61",
+    fontWeight: "500",
+  },
+  heroTagline: {
+    color: colors.textSecondary,
+    fontSize: 14.5,
+    fontWeight: "400",
+    lineHeight: 21,
+  },
+  section: {
     gap: 8,
   },
-  brand: {
-    fontSize: 34,
-    lineHeight: 38,
+  sectionEyebrow: {
+    color: "rgba(254, 253, 253, 0.45)",
+    fontSize: 10.5,
+    fontWeight: "600",
+    letterSpacing: 1.1,
+    textTransform: "uppercase",
   },
-  benefits: {
-    gap: 14,
-  },
-  disclosure: {
-    gap: 2,
+  benefitsCard: {
+    backgroundColor: "rgba(254, 253, 253, 0.02)",
+    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   benefitRow: {
     alignItems: "flex-start",
     flexDirection: "row",
     gap: 12,
+    paddingVertical: 8,
   },
-  benefitMarker: {
-    backgroundColor: colors.accent,
-    borderRadius: radii.none,
-    height: 6,
-    marginTop: 7,
-    width: 6,
+  benefitDivider: {
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
+    height: 1,
+  },
+  benefitIconWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.12)",
+    borderColor: "rgba(43, 126, 125, 0.28)",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 28,
+    justifyContent: "center",
+    marginTop: 1,
+    width: 28,
   },
   benefitCopy: {
     flex: 1,
@@ -385,92 +648,196 @@ const styles = StyleSheet.create({
   },
   benefitTitle: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 13.5,
+    fontWeight: "600",
+    letterSpacing: -0.1,
+  },
+  benefitHelper: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "400",
+    lineHeight: 16.5,
+  },
+  membershipSection: {
+    gap: 8,
+    paddingBottom: 24,
+  },
+  membershipOfferTitle: {
+    color: colors.text,
+    fontSize: 16,
     fontWeight: "600",
   },
-  inlineBrandAccent: {
-    color: colors.accent,
-  },
-  inlineBrandText: {
-    color: colors.text,
-  },
-  membership: {
+  membershipCard: {
+    backgroundColor: surfaces.s2,
+    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: 16,
+    borderWidth: 1,
     gap: 6,
+    padding: 16,
+    marginBottom: 20,
   },
-  plansSection: {
-    gap: 10,
-  },
-  planList: {
-    gap: 8,
-  },
-  planRow: {
+  membershipTitleRow: {
     alignItems: "center",
-    borderColor: borders.color,
-    borderWidth: borders.width,
     flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    minHeight: 54,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  planRowPressed: {
-    backgroundColor: "rgba(43, 126, 125, 0.12)",
-  },
-  planRowSelected: {
-    borderColor: colors.accent,
-  },
-  planName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  planPrice: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  planPriceSelected: {
-    color: colors.text,
   },
   membershipHeadline: {
     color: colors.text,
     fontSize: 17,
     fontWeight: "700",
+    letterSpacing: -0.2,
   },
-  statusPill: {
+  membershipDot: {
+    color: "rgba(254, 253, 253, 0.35)",
+    fontSize: 13,
+    fontWeight: "400",
+  },
+  membershipActiveText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  membershipExpiry: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "400",
+    lineHeight: 18,
+  },
+  manageSubscriptionRow: {
     alignItems: "center",
-    alignSelf: "flex-start",
-    borderColor: borders.color,
-    borderRadius: 999,
-    borderWidth: borders.width,
+    borderTopColor: "rgba(254, 253, 253, 0.06)",
+    borderTopWidth: 1,
     flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: "space-between",
+    marginTop: 6,
+    paddingTop: 10,
   },
-  statusPillActive: {
+  manageSubscriptionRowPressed: {
+    opacity: 0.7,
+  },
+  manageSubscriptionText: {
+    color: colors.text,
+    fontSize: 13.5,
+    fontWeight: "500",
+  },
+  manageSubscriptionChevron: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  planList: {
+    gap: 6,
+  },
+  planRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.02)",
+    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  planRowPressed: {
+    backgroundColor: "rgba(254, 253, 253, 0.05)",
+  },
+  planRowSelected: {
+    backgroundColor: "rgba(43, 126, 125, 0.08)",
     borderColor: colors.accent,
   },
-  statusDot: {
-    backgroundColor: colors.muted,
+  planRowContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  planRadio: {
+    alignItems: "center",
+    borderColor: "rgba(254, 253, 253, 0.25)",
     borderRadius: 999,
-    height: 6,
-    width: 6,
+    borderWidth: 1,
+    height: 16,
+    justifyContent: "center",
+    width: 16,
   },
-  statusDotActive: {
+  planRadioSelected: {
+    borderColor: colors.accent,
+  },
+  planRadioDot: {
     backgroundColor: colors.accent,
+    borderRadius: 999,
+    height: 8,
+    width: 8,
   },
-  statusText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
-  },
-  statusTextActive: {
+  planName: {
     color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  planNameSelected: {
+    color: colors.text,
+  },
+  planPrice: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  planPriceSelected: {
+    color: colors.text,
+    fontWeight: "600",
+  },
+  payButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.12)",
+    borderColor: "rgba(43, 126, 125, 0.38)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  payButtonDisabled: {
+    backgroundColor: "rgba(254, 253, 253, 0.03)",
+    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderWidth: 1,
+  },
+  payButtonPressed: {
+    backgroundColor: "rgba(43, 126, 125, 0.20)",
+    opacity: 0.88,
+  },
+  payButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
+  payButtonTextDisabled: {
+    color: "rgba(254, 253, 253, 0.32)",
+  },
+  launchStatusText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "400",
+    lineHeight: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  renewalDisclosure: {
+    gap: 2,
+  },
+  renewalDisclosureText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  harnessBody: {
+    color: colors.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginBottom: 8,
   },
   harnessGrid: {
     flexDirection: "row",
@@ -479,10 +846,11 @@ const styles = StyleSheet.create({
   },
   harnessChip: {
     borderColor: "rgba(43, 126, 125, 0.24)",
+    borderRadius: 6,
     borderWidth: borders.width,
-    minHeight: 38,
+    minHeight: 36,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   harnessChipPressed: {
     backgroundColor: "rgba(43, 126, 125, 0.14)",
@@ -493,6 +861,6 @@ const styles = StyleSheet.create({
   harnessChipText: {
     color: colors.text,
     fontSize: 11,
-    fontWeight: "800",
+    fontWeight: "700",
   },
 });

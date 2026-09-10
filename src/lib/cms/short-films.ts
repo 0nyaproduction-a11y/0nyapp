@@ -192,18 +192,41 @@ export function validateShortFilmInput(input: ShortFilmInput): ShortFilmValidati
   return errors;
 }
 
-export async function listShortFilmsForAdmin(): Promise<ShortFilmRow[]> {
-  const supabase = getAdminClient();
-  const { data, error } = await supabase
-    .from("short_films")
-    .select("*")
-    .order("updated_at", { ascending: false });
+export type ShortFilmListResult = {
+  rows: ShortFilmRow[];
+  totalCount: number;
+  filteredCount: number;
+};
 
-  if (error || !data) {
-    return [];
+export async function listShortFilmsForAdmin(
+  params: { page?: number; pageSize?: number; search?: string; status?: string } = {},
+): Promise<ShortFilmListResult> {
+  const supabase = getAdminClient();
+  const { page = 1, pageSize = 25, search = "", status = "" } = params;
+  const offset = (page - 1) * pageSize;
+
+  let query = supabase.from("short_films").select("*", { count: "exact" });
+
+  if (search.trim()) {
+    query = query.or(`title.ilike.%${search.trim()}%,slug.ilike.%${search.trim()}%`);
+  }
+  if (status && status !== "all") {
+    query = query.eq("status", status as ShortFilmStatus);
   }
 
-  return data;
+  const { data, error, count } = await query
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  if (error) {
+    console.warn("Unable to list short films for CMS.");
+    return { rows: [], totalCount: 0, filteredCount: 0 };
+  }
+
+  const totalCount = count ?? data.length;
+  const filteredCount = search || status ? data.length : totalCount;
+
+  return { rows: data ?? [], totalCount, filteredCount };
 }
 
 export async function getShortFilmForAdminById(id: string): Promise<ShortFilmRow | null> {

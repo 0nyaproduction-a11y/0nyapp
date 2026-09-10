@@ -76,7 +76,7 @@ const DEFAULT_DEFAULTS: BulkEpisodeDefaults = {
   rewardedUnlockEnabled: false,
   rewardedAccessMode: "permanent",
   requiredRewardedCompletions: 1,
-  plusAccess: true,
+  plusAccess: false,
   lockedPreviewSeconds: 0,
   contentRatingOverride: null,
   contentDescriptorsOverride: [],

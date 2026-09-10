@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { BehaviorImpression } from "../components/BehaviorImpression";
-import { Button, RecoveryState } from "../components/ui";
+import { Button, DetailInfoButton, RecoveryState } from "../components/ui";
 import {
   ApiError,
   authorizePlayback,
@@ -374,7 +374,7 @@ function SpotlightPosterItem({
 }) {
   return (
     <Pressable
-      accessibilityLabel={`Open details for ${spotlight.title}`}
+      accessibilityLabel={`Watch ${spotlight.title}`}
       accessibilityRole="button"
       onPress={onTap}
       style={({ pressed }) => [
@@ -822,7 +822,6 @@ export function HomeScreen({ navigation }: Props) {
     [spotlights, spotlightItemStride],
   );
 
-  const hasEverWatched = progress.length > 0;
   const isVirginCatalog =
     hasHydrated &&
     catalog.length === 0 &&
@@ -838,6 +837,26 @@ export function HomeScreen({ navigation }: Props) {
     "Staff Picks",
   ] as const;
 
+  function openSpotlightInfo(target: HomeSpotlight) {
+    if (resolvingKey) {
+      return;
+    }
+
+    perfMark("CONTENT_TAP", {
+      content_type: target.contentType,
+      source: "HOME_SPOTLIGHT_INFO",
+    });
+
+    const position = spotlights.findIndex((item) => item.id === target.id) + 1;
+    const searchContext: DiscoveryContext = { contentId: target.id, contentSlug: target.slug, contentType: target.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", position, rowId: spotlightRowId, sourceSurface: "home", rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" };
+    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: target.id, contentType: searchContext.contentType, sourceSurface: "home", rowId: spotlightRowId, position, rankingDecisionId: searchContext.rankingDecisionId, recommendationReason: searchContext.recommendationReason });
+    if (target.contentType === "short_film") {
+      navigation.navigate("ShortFilm", { searchContext, slug: target.slug });
+    } else {
+      navigation.navigate("Series", { searchContext, slug: target.slug });
+    }
+  }
+
   async function openSpotlight(target: HomeSpotlight) {
     const key = `spotlight-${target.contentType}-${target.slug}`;
 
@@ -849,12 +868,12 @@ export function HomeScreen({ navigation }: Props) {
       content_type: target.contentType,
       source: "HOME_SPOTLIGHT",
     });
-    setResolvingKey(key);
     const position = spotlights.findIndex((item) => item.id === target.id) + 1;
     const searchContext: DiscoveryContext = { contentId: target.id, contentSlug: target.slug, contentType: target.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", position, rowId: spotlightRowId, sourceSurface: "home", rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" };
     emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: target.id, contentType: searchContext.contentType, sourceSurface: "home", rowId: spotlightRowId, position, rankingDecisionId: searchContext.rankingDecisionId, recommendationReason: searchContext.recommendationReason });
 
     if (target.contentType === "short_film") {
+      setResolvingKey(key);
       const match = progress.find(
         (item) => item.contentType === "short_film" && item.shortFilmSlug === target.slug,
       );
@@ -881,27 +900,6 @@ export function HomeScreen({ navigation }: Props) {
     }
     setResolvingKey(null);
   }
-
-  function openSpotlightInfo(target: HomeSpotlight) {
-    if (resolvingKey) {
-      return;
-    }
-
-    perfMark("CONTENT_TAP", {
-      content_type: target.contentType,
-      source: "HOME_SPOTLIGHT_INFO",
-    });
-
-    const position = spotlights.findIndex((item) => item.id === target.id) + 1;
-    const searchContext: DiscoveryContext = { contentId: target.id, contentSlug: target.slug, contentType: target.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", position, rowId: spotlightRowId, sourceSurface: "home", rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" };
-    emitBehaviorEvidence(accessToken, { eventType: "content_open", contentId: target.id, contentType: searchContext.contentType, sourceSurface: "home", rowId: spotlightRowId, position, rankingDecisionId: searchContext.rankingDecisionId, recommendationReason: searchContext.recommendationReason });
-    if (target.contentType === "short_film") {
-      navigation.navigate("ShortFilm", { searchContext, slug: target.slug });
-    } else {
-      navigation.navigate("Series", { searchContext, slug: target.slug });
-    }
-  }
-
 
   async function openContinueWatching(entry: ContinueWatchingEntry) {
     const key =
@@ -1100,7 +1098,7 @@ export function HomeScreen({ navigation }: Props) {
                 evidence={{ contentId: item.id, contentType: item.contentType === "series" ? "MICRO_DRAMA" : "SHORT_FILM", sourceSurface: "home", rowId: spotlightRowId, position: index + 1, rankingDecisionId: homeState?.spotlightRankingDecisionId ?? null, recommendationReason: "EDITORIAL" }}
                 scrollSignal={viewportSignal}
               >
-                <SpotlightPosterItem spotlight={item} spotlightWidth={spotlightWidth} spotlightHeight={spotlightHeight} onTap={() => openSpotlightInfo(item)} />
+                <SpotlightPosterItem spotlight={item} spotlightWidth={spotlightWidth} spotlightHeight={spotlightHeight} onTap={() => void openSpotlight(item)} />
               </BehaviorImpression>
             ))}
           </ScrollView>
@@ -1127,8 +1125,11 @@ export function HomeScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {/* 3. Continue Watching / History State */}
-      {!hasEverWatched && resource.historyStatus === "resolved" ? (
+      {/* 3. Continue Watching / History State. The no-history copy keys on
+          resumable entries (Product Bible §10: "no resume history"), not raw
+          watch-progress rows, and renders only once history has resolved so it
+          never appears during loading/hydration. */}
+      {visibleContinueWatching.length === 0 && resource.historyStatus === "resolved" ? (
         <View style={styles.noHistoryState}>
           <Text style={styles.noHistoryText}>{t("home.no_history", "Start watching to continue here.")}</Text>
         </View>
@@ -1203,7 +1204,7 @@ export function HomeScreen({ navigation }: Props) {
                         scrollSignal={viewportSignal}
                       >
                       <CinematicPressable
-                        accessibilityLabel={`Open details for ${item.title}`}
+                        accessibilityLabel={`Watch ${item.title}`}
                         accessibilityRole="button"
                         disabled={isBusy}
                         onPress={() => {
@@ -1215,7 +1216,12 @@ export function HomeScreen({ navigation }: Props) {
                             series_slug: item.slug,
                             source: "HOME",
                           });
-                          navigation.navigate("Series", { searchContext, slug: item.slug });
+                          const series = catalog.find((candidate) => candidate.slug === item.slug);
+                          if (series) {
+                            void openSeriesPlayback(series, searchContext);
+                          } else {
+                            navigation.navigate("Series", { searchContext, slug: item.slug });
+                          }
                         }}
                         style={[
                           styles.posterCard,
@@ -1223,30 +1229,49 @@ export function HomeScreen({ navigation }: Props) {
                           isBusy && styles.cardPressableBusy,
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.coverWrap,
-                            { width: discoveryPosterWidth, height: discoveryPosterHeight },
-                          ]}
-                        >
-                          {posterSource ? (
-                            <Image
-                              accessibilityLabel={`${item.title} poster`}
-                              accessible
-                              alt=""
-                              fadeDuration={180}
-                              source={{ uri: posterSource }}
-                              style={styles.coverImage}
-                              resizeMode="cover"
+                         <View
+                           style={[
+                             styles.coverWrap,
+                             { width: discoveryPosterWidth, height: discoveryPosterHeight },
+                           ]}
+                         >
+                           {posterSource ? (
+                             <Image
+                               accessibilityLabel={`${item.title} poster`}
+                               accessible
+                               alt=""
+                               fadeDuration={180}
+                               source={{ uri: posterSource }}
+                               style={styles.coverImage}
+                               resizeMode="cover"
+                             />
+                           ) : (
+                             <View style={styles.coverFallback}>
+                               <Text style={styles.coverTitle} numberOfLines={2}>
+                                 {item.title}
+                               </Text>
+                             </View>
+                           )}
+                           <Pressable
+                             accessibilityLabel={`More information about ${item.title}`}
+                             onPress={() => {
+                               const recommendationReason = getHomeRowRecommendationReason(row);
+                               const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "MICRO_DRAMA", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                               navigation.navigate("Series", { searchContext, slug: item.slug });
+                             }}
+                             style={styles.infoButton}
+                           >
+                             <Text style={styles.infoButtonText}>i</Text>
+                           </Pressable>
+                           <DetailInfoButton
+                              accessibilityLabel={`More information about ${item.title}`}
+                              onPress={() => {
+                                const recommendationReason = getHomeRowRecommendationReason(row);
+                                const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "MICRO_DRAMA", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                                navigation.navigate("Series", { searchContext, slug: item.slug });
+                              }}
                             />
-                          ) : (
-                            <View style={styles.coverFallback}>
-                              <Text style={styles.coverTitle} numberOfLines={2}>
-                                {item.title}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
+                         </View>
                         {item.showTitle !== false ? (
                           <View style={styles.cardInfo}>
                             <Text style={styles.cardTitle} numberOfLines={1}>
@@ -1271,7 +1296,7 @@ export function HomeScreen({ navigation }: Props) {
                       scrollSignal={viewportSignal}
                     >
                     <CinematicPressable
-                      accessibilityLabel={`Open details for ${item.title}`}
+                      accessibilityLabel={`Watch ${item.title}`}
                       accessibilityRole="button"
                       disabled={isBusy}
                       onPress={() => {
@@ -1283,7 +1308,7 @@ export function HomeScreen({ navigation }: Props) {
                           short_film_slug: item.slug,
                           source: "HOME",
                         });
-                        navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                        navigation.navigate("ShortFilmPlayback", { searchContext, slug: item.slug });
                       }}
                       style={[
                         styles.posterCard,
@@ -1291,30 +1316,49 @@ export function HomeScreen({ navigation }: Props) {
                         isBusy && styles.cardPressableBusy,
                       ]}
                     >
-                      <View
-                        style={[
-                          styles.coverWrap,
-                          { width: discoveryPosterWidth, height: discoveryPosterHeight },
-                        ]}
-                      >
-                        {posterSource ? (
-                          <Image
-                            accessibilityLabel={`${item.title} poster`}
-                            accessible
-                            alt=""
-                            fadeDuration={180}
-                            source={{ uri: posterSource }}
-                            style={styles.coverImage}
-                            resizeMode="cover"
+                       <View
+                         style={[
+                           styles.coverWrap,
+                           { width: discoveryPosterWidth, height: discoveryPosterHeight },
+                         ]}
+                       >
+                         {posterSource ? (
+                           <Image
+                             accessibilityLabel={`${item.title} poster`}
+                             accessible
+                             alt=""
+                             fadeDuration={180}
+                             source={{ uri: posterSource }}
+                             style={styles.coverImage}
+                             resizeMode="cover"
+                           />
+                         ) : (
+                           <View style={styles.coverFallback}>
+                             <Text style={styles.coverTitle} numberOfLines={2}>
+                               {item.title}
+                             </Text>
+                           </View>
+                         )}
+                         <Pressable
+                           accessibilityLabel={`More information about ${item.title}`}
+                           onPress={() => {
+                             const recommendationReason = getHomeRowRecommendationReason(row);
+                             const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "SHORT_FILM", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                             navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                           }}
+                           style={styles.infoButton}
+                         >
+                           <Text style={styles.infoButtonText}>i</Text>
+                         </Pressable>
+                         <DetailInfoButton
+                            accessibilityLabel={`More information about ${item.title}`}
+                            onPress={() => {
+                              const recommendationReason = getHomeRowRecommendationReason(row);
+                              const searchContext: DiscoveryContext = { contentId: item.id, contentSlug: item.slug, contentType: "SHORT_FILM", position: index + 1, rowId: row.id, sourceSurface: "home", rankingDecisionId: row.rankingDecisionId, recommendationReason };
+                              navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                            }}
                           />
-                        ) : (
-                          <View style={styles.coverFallback}>
-                            <Text style={styles.coverTitle} numberOfLines={2}>
-                              {item.title}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
+                       </View>
                       {item.showTitle !== false ? (
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitle} numberOfLines={1}>
@@ -1601,5 +1645,24 @@ const styles = StyleSheet.create({
     top: 3,
     width: 12,
     borderRadius: 2,
+  },
+  infoButton: {
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoButtonText: {
+    color: "rgba(232, 228, 218, 0.75)",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 14,
   },
 });

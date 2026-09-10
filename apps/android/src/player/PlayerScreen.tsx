@@ -4,7 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { StatusBar } from "expo-status-bar";
 import { VideoView } from "expo-video";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Modal, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import { BackHandler, Modal, AppState, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FacetedLoader } from "../components/FacetedLoader";
 import { TransientFeedback } from "../components/ui";
@@ -28,7 +28,11 @@ import {
   getPlaybackSpeedPreference,
   setPlaybackSpeedPreference,
 } from "../lib/playbackSpeed";
-import { getAutoplayNextPreference } from "../lib/settingsPreferences";
+import {
+  getAutoplayNextPreference,
+  getPictureInPicturePreference,
+  setPictureInPicturePreference,
+} from "../lib/settingsPreferences";
 import {
   getSubtitlePreference,
   getSubtitleTrackLabel,
@@ -39,6 +43,7 @@ import {
 } from "../lib/subtitles";
 import { useAutoHideControls } from "./useAutoHideControls";
 import { usePlaybackController } from "./usePlaybackController";
+import { usePlusMembership } from "./usePlusMembership";
 import { usePlayTogetherPlaybackSync, type PlayTogetherPlaybackTarget } from "./usePlayTogetherPlaybackSync";
 import { useWatchProgressSync } from "./useWatchProgressSync";
 import { getResumePositionSeconds } from "./resumePosition";
@@ -94,6 +99,9 @@ const HOLD_RATE = 1.5;
 const TERMINAL_VISUAL_GUARD_SECONDS = 0.05;
 const CHAI_REVEAL_FINAL_SECONDS = 45;
 const CHAI_SUCCESS_FEEDBACK_MS = 2600;
+// Grace period after PiP exit for the activity to regain window focus when the
+// user expands back to fullscreen; dismissal keeps the app backgrounded.
+const PIP_DISMISS_CHECK_DELAY_MS = 600;
 
 function isInChaiRevealWindow(duration: number, currentTime: number) {
   if (
@@ -249,12 +257,16 @@ export function PlayerScreen({
   const [hasSentChai, setHasSentChai] = useState(false);
   const [chaiFeedback, setChaiFeedback] = useState<{ id: number; message: string } | null>(null);
   const [autoplayNextEnabled, setAutoplayNextEnabled] = useState(true);
+  const [pictureInPictureEnabled, setPictureInPictureEnabled] = useState(true);
   const [subtitlePreference, setSubtitlePreferenceState] = useState<SubtitlePreference>({
     enabled: false,
     preferredLanguageCode: null,
   });
   const selectedPlaybackRateRef = useRef(1);
   const temporaryPlaybackRateRestoreRef = useRef<number | null>(null);
+  // PIP01: current PiP eligibility, read by the controller's AppState handler
+  // at the moment the app backgrounds so the pause decision never races a render.
+  const pipEligibleRef = useRef(false);
 
   /* eslint-disable react-hooks/immutability -- expo-video subtitle selection requires mutating the player property. */
   useEffect(() => {
@@ -352,7 +364,9 @@ export function PlayerScreen({
     onEnded: handlePlaybackEnded,
     playbackLimitSeconds: isPreviewMode ? previewSeconds ?? null : null,
     source: source.source,
+    allowBackgroundForPiPRef: pipEligibleRef,
   });
+  const isPlusActive = usePlusMembership(session?.access_token);
   useEffect(() => {
     if (isPreviewMode || !controller.isPlaying) {
       behaviorLastTimeRef.current = controller.currentTime;
@@ -588,6 +602,38 @@ export function PlayerScreen({
     !controller.isPlaying &&
     controller.duration > 0 &&
     controller.currentTime >= Math.max(0, controller.duration - TERMINAL_VISUAL_GUARD_SECONDS);
+  // PIP01: single fail-closed PiP eligibility value. Plus-only benefit; any
+  // preview, loading, error, ended, transition, or terminal state — or a
+  // missing server-authorized source — keeps this false, so native auto-PiP
+  // can never engage outside confirmed active-Plus full playback.
+  const pipEligible =
+    isPlusActive &&
+    pictureInPictureEnabled &&
+    playbackMode !== "preview" &&
+    Boolean(source.playbackUri) &&
+    controller.isPlaying &&
+    !controller.hasEnded &&
+    controller.status !== "error" &&
+    !controller.error &&
+    !shouldShowTransitionCover &&
+    !shouldShowTerminalGuard;
+
+  useEffect(() => {
+    pipEligibleRef.current = pipEligible;
+  }, [pipEligible]);
+
+  // PiP callbacks track lifecycle only; they never authorize playback.
+  const handlePipStop = useCallback(() => {
+    perfMark("PIP_STOP");
+    // A dismissed PiP window leaves the app backgrounded; expanding back to
+    // fullscreen regains focus first. The deferred check pauses only the
+    // dismissal path so returning to the app never double pauses or seeks.
+    setTimeout(() => {
+      if (AppState.currentState !== "active") {
+        controller.pause();
+      }
+    }, PIP_DISMISS_CHECK_DELAY_MS);
+  }, [controller.pause]);
   const [isEpisodeListOpen, setIsEpisodeListOpen] = useState(false);
   const wasPlayingBeforeSheetRef = useRef(false);
   // Single truthful source: derived from expo-video's actual selected subtitleTrack.
@@ -603,8 +649,12 @@ export function PlayerScreen({
   useEffect(() => {
     let active = true;
 
-    void Promise.all([getPlaybackSpeedPreference(), getAutoplayNextPreference()])
-      .then(([preferredPlaybackRate, nextAutoplayEnabled]) => {
+    void Promise.all([
+      getPlaybackSpeedPreference(),
+      getAutoplayNextPreference(),
+      getPictureInPicturePreference(),
+    ])
+      .then(([preferredPlaybackRate, nextAutoplayEnabled, nextPipEnabled]) => {
         if (!active) {
           return;
         }
@@ -612,6 +662,7 @@ export function PlayerScreen({
         selectedPlaybackRateRef.current = preferredPlaybackRate;
         setPlaybackRate(preferredPlaybackRate);
         setAutoplayNextEnabled(nextAutoplayEnabled);
+        setPictureInPictureEnabled(nextPipEnabled);
       })
       .catch(() => {
         console.warn("Unable to load playback preferences.");
@@ -621,6 +672,11 @@ export function PlayerScreen({
       active = false;
     };
   }, [setPlaybackRate]);
+
+  const handleTogglePictureInPicture = useCallback(async (enabled: boolean) => {
+    setPictureInPictureEnabled(enabled);
+    await setPictureInPicturePreference(enabled);
+  }, []);
 
   const progressSync = useWatchProgressSync({
     context,
@@ -1197,7 +1253,12 @@ export function PlayerScreen({
           ) : (
             <>
               <VideoView
-                allowsPictureInPicture={false}
+                allowsPictureInPicture={pipEligible}
+                startsPictureInPictureAutomatically={pipEligible}
+                onPictureInPictureStart={() => {
+                  perfMark("PIP_START");
+                }}
+                onPictureInPictureStop={handlePipStop}
                 contentFit="cover"
                 nativeControls={false}
                 player={controller.player}
@@ -1426,11 +1487,21 @@ export function PlayerScreen({
                       isSubtitlesEnabled && subtitleTrack ? getSubtitleTrackLabel(subtitleTrack) : "Off"
                     }
                     currentPlaybackRate={playbackRate}
+                    isGuest={!session}
+                    isPlus={isPlusActive}
                     onClose={() => setIsMoreSheetOpen(false)}
+                    onNavigateToPlus={() => {
+                      setIsMoreSheetOpen(false);
+                      navigation.navigate("Plus");
+                    }}
                     onOpenCaptions={handleOpenSubtitles}
                     onSelectPlaybackRate={(rate) => {
                       void handleSelectPlaybackRate(rate);
                     }}
+                    onTogglePictureInPicture={(enabled) => {
+                      void handleTogglePictureInPicture(enabled);
+                    }}
+                    pictureInPictureEnabled={pictureInPictureEnabled}
                   />
                 ) : null}
 
@@ -1532,6 +1603,8 @@ export function PlayerScreen({
                     currentEpisodeNumber={context.episodeNumber}
                     episodeAccess={episodeAccess}
                     episodes={episodes}
+                    isGuest={!session}
+                    isPlus={isPlusActive}
                     onClose={handleCloseEpisodeList}
                     onSelectEpisode={handleSelectEpisode}
                     seriesTitle={context.seriesTitle}

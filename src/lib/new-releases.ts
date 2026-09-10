@@ -13,6 +13,27 @@ type SeriesRow = Database["public"]["Tables"]["series"]["Row"];
 type ShortFilmRow = Database["public"]["Tables"]["short_films"]["Row"];
 type HomeRowItemRow = Database["public"]["Tables"]["home_row_items"]["Row"];
 
+/**
+ * Deterministic publication timestamp helper.
+ *
+ * Returns the canonical publication timestamp for a series or short film row.
+ * - Series: uses series.published_at (stamped on first publish by the RPC).
+ * - Short films: uses short_films.publish_at (editor-set).
+ *
+ * created_at is never substituted. Callers that need a non-null "effective"
+ * timestamp for ordering must handle null explicitly (nulls-last).
+ */
+export function getNewReleaseTimestamp(row: SeriesRow | ShortFilmRow): string | null {
+  if ("published_at" in row && typeof row.published_at === "string") {
+    return row.published_at;
+  }
+
+  // Short films use publish_at; cast is safe because the field is a subset of
+  // ShortFilmRow and we've already ruled out SeriesRow above.
+  const sf = row as ShortFilmRow;
+  return sf.publish_at ?? null;
+}
+
 export type HybridNewReleaseItem = {
   contentType: "series" | "short_film";
   seriesId: string | null;
@@ -35,7 +56,7 @@ async function fetchAutoSeries(supabase: SupabaseClient<Database>): Promise<Seri
       .select("*")
       .eq("status", "published")
       .not("published_at", "is", null)
-      .order("published_at", { ascending: false })
+      .order("published_at", { ascending: false, nullsFirst: false })
       .limit(NEW_RELEASES_LIMIT * 3)
   );
   if (error) {
@@ -324,13 +345,25 @@ export async function getHybridNewReleases(
     seenIds.add(key);
   }
 
-  // Sort: editorial (0) first, then auto (1) by publishedAt descending
-  items.sort((a, b) => {
-    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-    const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-    return bTime - aTime;
-  });
+// Deterministic publication timestamp comparison: DESC nulls-last.
+// - Editorial items (sortOrder 0) always precede auto items (sortOrder 1).
+// - Within a tier, items are ordered by publishedAt DESC, with null timestamps
+//   sorted after every non-null timestamp (nulls-last).
+// - created_at is NEVER used as a publication-time fallback — items with no
+//   publication timestamp are effectively deprioritized within their tier.
+function compareNewReleasePublication(a: HybridNewReleaseItem, b: HybridNewReleaseItem) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  const aTime = a.publishedAt ? new Date(a.publishedAt).getTime() : null;
+  const bTime = b.publishedAt ? new Date(b.publishedAt).getTime() : null;
+
+  if (aTime === null && bTime === null) return 0;
+  if (aTime === null) return 1;
+  if (bTime === null) return -1;
+  return bTime - aTime;
+}
+
+  // Sort: editorial (0) first, then auto (1) by publishedAt DESC, nulls-last.
+  items.sort(compareNewReleasePublication);
 
   return items.slice(0, NEW_RELEASES_LIMIT);
 }

@@ -6,6 +6,7 @@ import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CONTENT_DESCRIPTORS, CONTENT_RATINGS } from "@/lib/classification";
 import type { ShortFilmRow } from "@/lib/cms/short-films";
 import type { ShortFilmFormState } from "@/lib/cms/short-film-form";
+import { FormWrapper } from "@/lib/cms/form-wrapper";
 
 const inputClassName =
   "w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal [color-scheme:dark]";
@@ -37,17 +38,44 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
   const [state, formAction, pending] = useActionState(action, { errors: {} });
   const errors = state.errors;
 
+  const initialValues = {
+    title: shortFilm?.title ?? "",
+    slug: shortFilm?.slug ?? "",
+    synopsis: shortFilm?.synopsis ?? "",
+    durationSeconds: shortFilm?.duration_seconds ?? 0,
+    language: shortFilm?.language ?? "",
+    creatorReference: shortFilm?.creator_reference ?? "",
+    status: shortFilm?.status ?? "draft",
+    publishAt: toDateTimeLocalValue(shortFilm?.publish_at ?? null),
+    chaiEnabled: shortFilm?.chai_enabled ?? false,
+    contentRating: shortFilm?.content_rating ?? "",
+    contentDescriptors: shortFilm?.content_descriptors ?? [],
+    midrollEnabled: shortFilm?.midroll_enabled ?? false,
+    midrollTimecodes: shortFilm?.midroll_timecodes?.join(", ") ?? "",
+    postrollEnabled: shortFilm?.postroll_enabled ?? false,
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    formAction(new FormData(e.currentTarget));
+  };
+
   return (
-    <form action={formAction} className="space-y-5">
+    <FormWrapper
+      formId="short-film-metadata"
+      initialValues={initialValues}
+      onSubmit={handleSubmit}
+      className="space-y-5"
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Title" error={errors.title}>
-          <input className={inputClassName} name="title" defaultValue={shortFilm?.title ?? ""} required />
+          <input className={inputClassName} name="title" defaultValue={initialValues.title} required />
         </Field>
         <Field label="Slug" error={errors.slug}>
           <input
             className={inputClassName}
             name="slug"
-            defaultValue={shortFilm?.slug ?? ""}
+            defaultValue={initialValues.slug}
             placeholder="my-short-film"
             required
           />
@@ -59,7 +87,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
           className={inputClassName}
           name="synopsis"
           rows={3}
-          defaultValue={shortFilm?.synopsis ?? ""}
+          defaultValue={initialValues.synopsis}
         />
       </Field>
 
@@ -70,17 +98,17 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
             type="number"
             name="durationSeconds"
             min={0}
-            defaultValue={shortFilm?.duration_seconds ?? 0}
+            defaultValue={initialValues.durationSeconds}
           />
         </Field>
         <Field label="Language" error={errors.language}>
-          <input className={inputClassName} name="language" defaultValue={shortFilm?.language ?? ""} />
+          <input className={inputClassName} name="language" defaultValue={initialValues.language} />
         </Field>
         <Field label="Creator reference" error={errors.creatorReference}>
           <input
             className={inputClassName}
             name="creatorReference"
-            defaultValue={shortFilm?.creator_reference ?? ""}
+            defaultValue={initialValues.creatorReference}
           />
         </Field>
       </div>
@@ -90,7 +118,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
           <CmsSelect
             className={inputClassName}
             name="status"
-            defaultValue={shortFilm?.status ?? "draft"}
+            defaultValue={initialValues.status}
             options={[
               { label: "Draft", value: "draft" },
               { label: "Published", value: "published" },
@@ -103,14 +131,14 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
             className={inputClassName}
             type="datetime-local"
             name="publishAt"
-            defaultValue={toDateTimeLocalValue(shortFilm?.publish_at ?? null)}
+            defaultValue={initialValues.publishAt}
           />
         </Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm text-bone/80">
           <input
             type="checkbox"
             name="chaiEnabled"
-            defaultChecked={shortFilm?.chai_enabled ?? false}
+            defaultChecked={initialValues.chaiEnabled}
             className={checkboxClassName}
           />
           Chai enabled
@@ -124,7 +152,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
             <CmsSelect
               className={inputClassName}
               name="contentRating"
-              defaultValue={shortFilm?.content_rating ?? ""}
+              defaultValue={initialValues.contentRating}
               placeholderLabel="Unrated"
               options={[
                 { label: "Unrated", value: "" },
@@ -143,7 +171,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
                   type="checkbox"
                   name="contentDescriptors"
                   value={descriptor}
-                  defaultChecked={shortFilm?.content_descriptors?.includes(descriptor) ?? false}
+                  defaultChecked={initialValues.contentDescriptors.includes(descriptor)}
                   className={checkboxClassName}
                 />
                 {descriptor}
@@ -162,7 +190,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
           <input
             type="checkbox"
             name="midrollEnabled"
-            defaultChecked={shortFilm?.midroll_enabled ?? false}
+            defaultChecked={initialValues.midrollEnabled}
             className={checkboxClassName}
           />
           Mid-roll enabled
@@ -171,7 +199,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
           <input
             className={inputClassName}
             name="midrollTimecodes"
-            defaultValue={shortFilm?.midroll_timecodes?.join(", ") ?? ""}
+            defaultValue={initialValues.midrollTimecodes}
             placeholder="30, 75, 120"
           />
         </Field>
@@ -179,7 +207,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
           <input
             type="checkbox"
             name="postrollEnabled"
-            defaultChecked={shortFilm?.postroll_enabled ?? false}
+            defaultChecked={initialValues.postrollEnabled}
             className={checkboxClassName}
           />
           Post-roll enabled
@@ -191,7 +219,7 @@ export function ShortFilmMetadataForm({ action, shortFilm, submitLabel }: ShortF
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : submitLabel}
       </Button>
-    </form>
+    </FormWrapper>
   );
 }
 

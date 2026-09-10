@@ -13,6 +13,19 @@ emulator and physical device per `docs/qa/` tracker and root `emulator_*.png`
 evidence (Build 15 era). Large uncommitted work is present in the working
 tree (see "Git state" below).
 
+## 2026-09-10 UI Foundation Solidification & Reconciliation
+
+- Cleaned up obsolete files: deleted untracked dead `HeaderUtilities.tsx` and obsolete prototype harness `devSources.ts`.
+- Removed dead `OnyaPlusBrandMark` export and unused import from `components/ui.tsx`.
+- Refactored untyped navigation in `PlusScreen.tsx` and `CoinPurchaseScreen.tsx` to type-safe nested navigation (`MainTabs -> Profile -> RestoreSync`).
+- Consolidated route serialization imports in `routeSerialization.ts`.
+- TypeScript typecheck (`tsc --noEmit` in `apps/android`): PASS (0 errors).
+- ESLint on modified UI files: PASS (0 errors, 0 warnings).
+- Android test suite (`apps/android/src/**/*.test.ts` & `*.contract.test.ts`): 225 PASS, 0 FAIL.
+- Emulator runtime testing on `emulator-5554`: Verified 7 journeys (Home/tabs, Series -> episode -> player, locked preview -> paywall modal, Plus -> Restore Purchases, Coin Purchase -> Restore Purchases, Sign In screen + back key, Deep link & back navigation).
+- Physical-device acceptance (OnePlus 13R) remains pending under the Locked Final Acceptance Protocol.
+
+
 ## App architecture
 
 - Entry: `apps/android/App.tsx` → `AdMobProvider` → `AuthProvider` →
@@ -24,9 +37,9 @@ tree (see "Git state" below).
   persistence, `src/lib/secureStorage.ts`).
 - API facade: `src/lib/api.ts` — Bearer-token requests, 401 refresh retry,
   catalog/series TTL cache.
-- TypeScript typecheck script: `npm run typecheck` in `apps/android`; no
-  dedicated Android unit tests found in repo. `expo-doctor` =
-  `npm run doctor`.
+- TypeScript typecheck script: `npm run typecheck` in `apps/android`.
+  Unit and contract tests executed via `npx tsx --test` (225 passing tests).
+  `expo-doctor` = `npm run doctor`.
 
 ## Navigation (verified routes)
 
@@ -207,7 +220,9 @@ never values.
   HomeScreen): in-progress working tree — PARTIAL.
 - Rewarded multi-completion (2-ad unlocks, progress endpoint): in-progress —
   PARTIAL.
-- Dedicated Android unit tests: not found in repo — UNVERIFIED.
+- Dedicated Android unit tests: 225 unit and contract tests exist under
+  `apps/android/src/**/*.test.ts` and `apps/android/src/**/*.contract.test.ts`
+  and are directly runnable via `npx tsx --test`; 225 PASS, 0 FAIL — COMPLETE (CURRENT-TIP VERIFIED).
 
 ## Known issues
 

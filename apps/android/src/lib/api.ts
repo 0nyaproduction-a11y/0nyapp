@@ -483,6 +483,27 @@ export function getMe(accessToken: string) {
   return requestApi<MeResponse>("/api/v1/me", { accessToken });
 }
 
+// Development-only. Cloud Run authorizes the signed-in email against its QA
+// allowlist; the client never writes subscription state directly.
+export async function resetDeveloperAccountState(accessToken: string) {
+  const result = await requestApi<{ reset: boolean }>("/api/dev/account-reset", {
+    accessToken,
+    method: "POST",
+  });
+  invalidateAccessCache();
+  return result;
+}
+
+export async function setDeveloperPlusState(accessToken: string, active: boolean) {
+  const result = await requestApi<{ active: boolean }>("/api/dev/account-plus", {
+    accessToken,
+    body: { active },
+    method: "POST",
+  });
+  invalidateAccessCache();
+  return result;
+}
+
 export function getWallet(accessToken: string) {
   return requestApi<WalletResponse>("/api/v1/wallet", { accessToken });
 }

@@ -1,3 +1,5 @@
+import type { NavigationState, PartialState } from "@react-navigation/native";
+
 export function isValidEpisodeAccessRouteParams(params: Record<string, unknown>) {
   const seriesSlug = typeof params.seriesSlug === "string" ? params.seriesSlug.trim() : "";
   const episodeNumber =
@@ -122,4 +124,3 @@ export function stripNonUrlRouteParams<T extends UrlNavigationState>(state: T): 
 
   return sanitizedState as T;
 }
-import type { NavigationState, PartialState } from "@react-navigation/native";

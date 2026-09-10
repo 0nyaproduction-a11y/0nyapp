@@ -1,20 +1,34 @@
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
-import { Body, Button, Label, LoadingState, RecoveryState, Title } from "../components/ui";
+import {
+  CheckmarkVectorIcon,
+  CompactPillButton,
+  DetailInfoButton,
+  LoadingState,
+  PlayTriangleIcon,
+  PlusVectorIcon,
+  RecoveryState,
+  TealCircleBadge,
+  Title,
+  VectorChevron,
+} from "../components/ui";
 import { SeriesEpisodeTray } from "./SeriesEpisodeTray";
-import { getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
+import { getCatalog, getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
 import { resolveMediaUrl } from "../lib/media";
 import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { perfMark } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
+import { useAppLanguage } from "../lib/appLanguage";
+import { getEpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
 import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
+import { usePlusMembership } from "../player/usePlusMembership";
 import type { RootStackParamList } from "../navigation/types";
-import type { ApiEpisode, SeriesResponse, WatchProgressItem } from "../types/api";
-import { colors } from "../theme/tokens";
+import type { ApiEpisode, ApiSeries, SeriesResponse, WatchProgressItem } from "../types/api";
+import { borders, colors, radii, spacing, surfaces, typography } from "../theme/tokens";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Series">;
 
@@ -42,17 +56,29 @@ export function SeriesScreen(props: Props) {
 
 function SeriesScreenContent({ navigation, route }: Props) {
   const { session } = useAuth();
+  const { t } = useAppLanguage();
   const accessToken = session?.access_token;
+  const isPlus = usePlusMembership(accessToken);
   const [accessRevision, setAccessRevision] = useState(0);
   const normalizedSlug = typeof route.params.slug === "string" ? route.params.slug.trim() : "";
   const hasValidSlug = normalizedSlug.length > 0;
   const confirmedInitialSeriesAccess = hasValidSlug ? getConfirmedSeriesAccess(normalizedSlug) : null;
   const [data, setData] = useState<SeriesResponse | null>(confirmedInitialSeriesAccess);
   const [progress, setProgress] = useState<WatchProgressItem[]>([]);
+  const [relatedSeries, setRelatedSeries] = useState<ApiSeries[]>([]);
   const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(() => !confirmedInitialSeriesAccess);
   const [isEpisodeTrayOpen, setIsEpisodeTrayOpen] = useState(false);
+  const [isMyList, setIsMyList] = useState(false);
   const hasHydratedRef = useRef(Boolean(confirmedInitialSeriesAccess));
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => null,
+      title: "",
+    });
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
   /* eslint-disable react-hooks/set-state-in-effect -- invalid route params hydrate the existing recovery state. */
   useEffect(() => {
@@ -187,6 +213,36 @@ function SeriesScreenContent({ navigation, route }: Props) {
     };
   }, [session]);
 
+  // Load related series for "More like this"
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!hasValidSlug) {
+      setRelatedSeries([]);
+      return undefined;
+    }
+
+    void getCatalog(accessToken)
+      .then((catalog) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setRelatedSeries(
+          catalog.catalog.filter((item) => item.slug !== normalizedSlug).slice(0, 6),
+        );
+      })
+      .catch(() => {
+        if (isMounted) {
+          setRelatedSeries([]);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, hasValidSlug, normalizedSlug]);
+
   const resumeEpisode = useMemo(() => {
     if (!data) {
       return undefined;
@@ -217,12 +273,18 @@ function SeriesScreenContent({ navigation, route }: Props) {
 
   const ctaEpisode = resumeEpisode ?? startEpisode;
   const ctaAccess = ctaEpisode && data ? data.episodeAccess[String(ctaEpisode.number)] : undefined;
-  const ctaEnabled = Boolean(ctaEpisode && ctaAccess);
+  const ctaAccessDisplay =
+    ctaEpisode ? getEpisodeAccessDisplay(ctaEpisode, ctaAccess, { isGuest: !session }) : null;
+  const ctaEnabled = Boolean(
+    ctaEpisode && ctaAccessDisplay && ctaAccessDisplay.stateKind !== "unavailable",
+  );
   const ctaLabel = resumeEpisode
     ? `Resume Episode ${resumeEpisode.number}`
-    : ctaAccess?.canWatch
-      ? "Start Watching"
-      : "Unlock options";
+    : ctaAccessDisplay?.stateKind === "coin_required"
+      ? `Unlock Episode ${ctaEpisode?.number ?? 1}`
+      : ctaAccessDisplay?.stateKind === "preview"
+        ? `Preview Episode ${ctaEpisode?.number ?? 1}`
+        : "Start Watching";
 
   const handleSelectEpisode = useCallback(
     (episode: ApiEpisode) => {
@@ -318,6 +380,17 @@ function SeriesScreenContent({ navigation, route }: Props) {
   return (
     <>
       <Screen>
+        {/* BACK ACTION */}
+        <Pressable
+          accessibilityLabel="Back"
+          accessibilityRole="button"
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Text style={styles.backArrow}>←</Text>
+        </Pressable>
+
+        {/* HERO SECTION (Compact 9:16 poster + details) */}
         <View style={styles.heroLayout}>
           <View style={styles.posterWrap}>
             {hasValidPoster(data.series.poster) ? (
@@ -337,25 +410,49 @@ function SeriesScreenContent({ navigation, route }: Props) {
           </View>
 
           <View style={styles.detailsBlock}>
+            <Text style={styles.categoryEyebrow}>
+              {formatLabel ? formatLabel.toUpperCase() : "MICRO DRAMA"}
+            </Text>
             <Title numberOfLines={2} style={styles.titleText}>{data.series.title}</Title>
-            {formatLabel ? <Label style={styles.metaLabel}>{formatLabel}</Label> : null}
-            {genreLabel ? <Body numberOfLines={2} style={styles.genreText}>{genreLabel}</Body> : null}
-            {data.series.contentRating ? (
-              <Body style={styles.classificationText}>
-                {formatClassification(data.series.contentRating, data.series.contentDescriptors)}
-              </Body>
+            <Text style={styles.metaLine}>
+              {`${languageLabel ?? "Hindi"} · ${episodeCountLabel}`}
+            </Text>
+            {genreLabel ? (
+              <View style={styles.genreRow}>
+                <Text style={styles.genrePrefix}>GENRE</Text>
+                <Text numberOfLines={1} style={styles.genreValue}>{genreLabel}</Text>
+              </View>
             ) : null}
-            <View style={styles.supportingMeta}>
-              {languageLabel ? <Body style={styles.supportingMetaText}>{languageLabel}</Body> : null}
-              <Body style={styles.supportingMetaText}>{episodeCountLabel}</Body>
-            </View>
+            {data.series.contentRating ? (
+              <Text style={styles.classificationText}>
+                {formatClassification(data.series.contentRating, data.series.contentDescriptors)}
+              </Text>
+            ) : null}
           </View>
         </View>
 
+        {/* SHORT SYNOPSIS */}
+        {/* SHORT SYNOPSIS (integrated into one editorial flow) */}
+        {data.series.synopsis ? (
+          <View style={styles.synopsisBlock}>
+            <Text numberOfLines={4} style={styles.synopsisText}>
+              {data.series.synopsis}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* PRIMARY CTA & MY LIST */}
         <View style={styles.actionBlock}>
-          <Button
+          <CompactPillButton
             accessibilityLabel={ctaEnabled ? ctaLabel : `${data.series.title} is locked`}
             disabled={!ctaEnabled}
+            icon={
+              ctaEnabled ? (
+                <TealCircleBadge size={20}>
+                  <PlayTriangleIcon color="#FEFDFD" size={8} />
+                </TealCircleBadge>
+              ) : undefined
+            }
             onPress={() => {
               if (!ctaEnabled || !ctaEpisode || !ctaAccess) {
                 return;
@@ -374,34 +471,126 @@ function SeriesScreenContent({ navigation, route }: Props) {
                 searchContext: route.params.searchContext,
               });
             }}
+            style={styles.primaryActionPill}
+            variant="primary"
           >
-            {ctaEnabled ? ctaLabel : "Locked"}
-          </Button>
+            <View style={styles.primaryCtaContent}>
+              <Text style={[styles.playIcon, !ctaEnabled && styles.ctaTextDisabled]}>▶</Text>
+              <Text numberOfLines={1} style={[styles.primaryCtaText, !ctaEnabled && styles.ctaTextDisabled]}>
+                {ctaEnabled ? ctaLabel : "Locked"}
+              </Text>
+            </View>
+          </CompactPillButton>
 
-          <Pressable
-            accessibilityLabel="Browse episodes"
-            accessibilityRole="button"
-            onPress={() => {
-              perfMark("CONTENT_TAP", {
-                content_type: "series_episode",
-                source: "SERIES_EPISODES_CTA",
-                series_slug: data.series.slug,
-              });
-
-              setIsEpisodeTrayOpen(true);
-            }}
-            style={styles.episodesAction}
+          <CompactPillButton
+            accessibilityLabel={isMyList ? "In My List" : "Add to My List"}
+            icon={
+              isMyList ? (
+                <CheckmarkVectorIcon color={colors.accent} size={12} />
+              ) : (
+                <PlusVectorIcon color="rgba(254, 253, 253, 0.70)" size={11} />
+              )
+            }
+            onPress={() => setIsMyList((prev) => !prev)}
+            style={styles.secondaryActionPill}
+            variant="secondary"
           >
-            <Body style={styles.episodesActionText}>Episodes</Body>
-            <Body style={styles.episodesActionChevron}>›</Body>
-          </Pressable>
+            <Text style={[styles.myListButtonText, isMyList && styles.myListButtonTextActive]}>
+              {isMyList ? "✓ My List" : "+ My List"}
+            </Text>
+          </CompactPillButton>
         </View>
 
-        <View style={styles.synopsisBlock}>
-          <Body numberOfLines={5} style={styles.synopsisText}>
-            {data.series.synopsis}
-          </Body>
-        </View>
+        {/* EPISODES NAVIGATION ROW */}
+        <Pressable
+          accessibilityLabel={`Browse all ${episodeCountLabel}`}
+          accessibilityRole="button"
+          onPress={() => {
+            perfMark("CONTENT_TAP", {
+              content_type: "series_episode",
+              source: "SERIES_EPISODES_CTA",
+              series_slug: data.series.slug,
+            });
+
+            setIsEpisodeTrayOpen(true);
+          }}
+          style={({ pressed }) => [
+            styles.episodesRow,
+            pressed && styles.episodesRowPressed,
+          ]}
+        >
+          <View style={styles.episodesRowLeft}>
+            <Text style={styles.episodesRowTitle}>Episodes</Text>
+            <View style={styles.episodesCountBadge}>
+              <Text style={styles.episodesCountText}>
+                {data.series.episodeCount > 0 ? data.series.episodeCount : data.series.episodes.length}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.episodesRowRight}>
+            <Text style={styles.episodesRowBrowseText}>Browse</Text>
+            <Text style={styles.episodesRowChevron}>›</Text>
+            <VectorChevron color={colors.accent} size={6} />
+          </View>
+        </Pressable>
+
+        {/* MORE LIKE THIS RECOMMENDATIONS */}
+        {relatedSeries.length > 0 ? (
+          <View style={styles.relatedSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeading}>{t("series.more_like_this", "More Like This")}</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.relatedRow}>
+                {relatedSeries.map((item) => {
+                  const posterUri = hasValidPoster(item.poster)
+                    ? resolveMediaUrl(item.poster)
+                    : null;
+
+                  return (
+                    <View key={item.slug} style={styles.relatedCard}>
+                      <Pressable
+                        accessibilityLabel={`Open details for ${item.title}`}
+                        accessibilityRole="button"
+                        onPress={() => navigation.push("Series", { slug: item.slug })}
+                        style={({ pressed }) => [
+                          styles.relatedCardInner,
+                          pressed && styles.relatedCardPressed,
+                        ]}
+                      >
+                        <View style={styles.relatedPosterWrap}>
+                          {posterUri ? (
+                            <Image
+                              accessibilityLabel={`${item.title} poster`}
+                              accessible
+                              alt=""
+                              source={{ uri: posterUri }}
+                              style={styles.relatedPoster}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.relatedPosterFallback}>
+                              <Text style={styles.relatedPosterTitle} numberOfLines={2}>
+                                {item.title}
+                              </Text>
+                            </View>
+                          )}
+                          <DetailInfoButton
+                            accessibilityLabel={`More information about ${item.title}`}
+                            onPress={() => navigation.push("Series", { slug: item.slug })}
+                          />
+                        </View>
+                        <Text style={styles.relatedTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        ) : null}
       </Screen>
 
       {isEpisodeTrayOpen ? (
@@ -409,6 +598,8 @@ function SeriesScreenContent({ navigation, route }: Props) {
           currentEpisodeNumber={ctaEpisode?.number}
           episodeAccess={data.episodeAccess}
           episodes={data.series.episodes}
+          isGuest={!session}
+          isPlus={isPlus}
           onClose={() => setIsEpisodeTrayOpen(false)}
           onSelectEpisode={handleSelectEpisode}
           seriesTitle={data.series.title}
@@ -419,51 +610,85 @@ function SeriesScreenContent({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  backButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    minHeight: 40,
+    minWidth: 40,
+    marginBottom: 4,
+  },
+  backArrow: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 24,
+  },
   heroLayout: {
     flexDirection: "row",
-    gap: 16,
+    gap: 14,
     marginBottom: 8,
   },
   detailsBlock: {
     flex: 1,
-    gap: 8,
+    gap: 4,
     justifyContent: "flex-end",
-    paddingBottom: 4,
+    paddingBottom: 2,
+  },
+  categoryEyebrow: {
+    ...typography.micro,
+    color: colors.accent,
+    letterSpacing: 1.0,
+    textTransform: "uppercase",
+    fontWeight: "600",
+    marginBottom: 2,
   },
   titleText: {
-    fontSize: 24,
-    lineHeight: 30,
+    ...typography.h2,
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "600",
+    lineHeight: 28,
   },
-  metaLabel: {
-    fontSize: 11,
-    letterSpacing: 0.5,
-  },
-  genreText: {
+  metaLine: {
+    ...typography.caption,
     color: colors.textSecondary,
     fontSize: 13,
-    lineHeight: 18,
+    fontWeight: "500",
+  },
+  genreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 1,
+  },
+  genrePrefix: {
+    ...typography.micro,
+    color: colors.textMuted,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    fontWeight: "600",
+  },
+  genreValue: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
   },
   classificationText: {
-    fontSize: 13,
-  },
-  supportingMeta: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  supportingMetaText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
+    ...typography.caption,
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 1,
   },
   posterWrap: {
     aspectRatio: 9 / 16,
     backgroundColor: colors.surface,
-    borderColor: "rgba(232, 228, 218, 0.08)",
-    borderWidth: 1,
-    borderRadius: 8,
+    borderColor: colors.borderSubtle,
+    borderWidth: borders.width,
+    borderRadius: radii.poster,
     overflow: "hidden",
-    width: "36%",
+    width: "35%",
   },
   posterImage: {
     width: "100%",
@@ -475,32 +700,202 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 8,
   },
-  actionBlock: {
-    gap: 12,
-    marginTop: 4,
-  },
-  episodesAction: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: 6,
-    paddingVertical: 8,
-  },
-  episodesActionText: {
-    color: colors.accent,
-    fontWeight: "700",
-  },
-  episodesActionChevron: {
-    color: colors.accent,
-    fontSize: 20,
-    marginTop: -2,
-  },
   synopsisBlock: {
-    marginTop: 4,
+    marginTop: spacing.sm,
   },
   synopsisText: {
+    ...typography.body,
     fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,
+  },
+  actionBlock: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginTop: spacing.md,
+  },
+  primaryCtaButton: {
+    alignItems: "center",
+    backgroundColor: surfaces.s2,
+    borderColor: "rgba(43, 126, 125, 0.40)",
+    borderRadius: radii.sm,
+    borderWidth: borders.width,
+  },
+  primaryActionPill: {
+    flex: 1,
+    height: 48,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    minHeight: 46,
+  },
+  primaryCtaContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  playIcon: {
+    color: colors.text,
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  primaryCtaText: {
+    ...typography.label,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  ctaButtonDisabled: {
+    backgroundColor: colors.surfacePressed,
+    borderColor: colors.borderSubtle,
+    opacity: 0.6,
+  },
+  ctaTextDisabled: {
+    color: colors.textDisabled,
+  },
+  myListButton: {
+    alignItems: "center",
+    backgroundColor: surfaces.s2,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.sm,
+    borderWidth: borders.width,
+    height: 48,
+    justifyContent: "center",
+  },
+  secondaryActionPill: {
+    minHeight: 46,
+    paddingHorizontal: 16,
+  },
+  myListButtonActive: {
+    backgroundColor: "rgba(43, 126, 125, 0.14)",
+    borderColor: "rgba(43, 126, 125, 0.35)",
+  },
+  myListButtonText: {
+    ...typography.label,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  myListButtonTextActive: {
+    color: colors.accent,
+    fontWeight: "600",
+  },
+  btnPressed: {
+    opacity: 0.82,
+  },
+  episodesRow: {
+    alignItems: "center",
+    backgroundColor: surfaces.s1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.sm,
+    borderWidth: borders.width,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  episodesRowPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  episodesRowLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  episodesRowTitle: {
+    ...typography.label,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  episodesCountBadge: {
+    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: radii.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+  },
+  episodesCountText: {
+    ...typography.micro,
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  episodesRowRight: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  episodesRowBrowseText: {
+    ...typography.label,
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  episodesRowChevron: {
+    color: colors.accent,
+    fontSize: 18,
+    lineHeight: 18,
+  },
+  relatedSection: {
+    marginTop: spacing.xl,
+    paddingBottom: spacing.lg,
+  },
+  sectionHeaderRow: {
+    marginBottom: spacing.sm,
+  },
+  sectionHeading: {
+    ...typography.h3,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  relatedRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  relatedCard: {
+    width: 104,
+  },
+  relatedCardInner: {
+    width: "100%",
+  },
+  relatedCardPressed: {
+    opacity: 0.82,
+  },
+  relatedPosterWrap: {
+    aspectRatio: 9 / 16,
+    backgroundColor: surfaces.s1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.poster,
+    borderWidth: borders.width,
+    overflow: "hidden",
+    width: 104,
+    marginBottom: spacing.xs,
+  },
+  relatedPoster: {
+    height: "100%",
+    width: "100%",
+  },
+  relatedPosterFallback: {
+    alignItems: "center",
+    backgroundColor: surfaces.s1,
+    flex: 1,
+    justifyContent: "center",
+    padding: 8,
+  },
+  relatedPosterTitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: "center",
+  },
+  relatedTitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 4,
   },
 });

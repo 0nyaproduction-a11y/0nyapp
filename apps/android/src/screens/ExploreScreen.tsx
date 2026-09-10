@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { BehaviorImpression } from "../components/BehaviorImpression";
-import { LoadingState, RecoveryState } from "../components/ui";
+import { DetailInfoButton, LoadingState, RecoveryState } from "../components/ui";
 import { resolveMediaUrl } from "../lib/media";
 import { useDiscoveryCatalog } from "../lib/useDiscoveryCatalog";
 import { isContinueWatchingProgress } from "../lib/playbackCompletion";
@@ -39,7 +39,7 @@ import {
   runRankingDecisionEvidenceFailOpen,
 } from "../lib/rankingDecisionEvidence";
 import { findStartEpisode } from "../lib/seriesPlayback";
-import type { ExploreFormat, MainTabScreenProps } from "../navigation/types";
+import type { DiscoveryContext, ExploreFormat, MainTabScreenProps } from "../navigation/types";
 import type { ApiSeries, ApiShortFilm } from "../types/api";
 import { borders, colors, radii, typography } from "../theme/tokens";
 import { useAppLanguage } from "../lib/appLanguage";
@@ -195,7 +195,7 @@ export function ExploreScreen({ navigation }: Props) {
   const cardWidth =
     (width - GRID_HORIZONTAL_PADDING * 2 - GRID_GAP * (columns - 1)) / columns;
 
-  async function openSeriesPlayback(series: ApiSeries) {
+  async function openSeriesPlayback(series: ApiSeries, searchContext?: DiscoveryContext) {
     const key = `series-${series.slug}`;
 
     if (resolvingKey) {
@@ -230,6 +230,7 @@ export function ExploreScreen({ navigation }: Props) {
           episodeNumber: targetEpisode.number,
           resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
           seriesSlug: series.slug,
+          searchContext,
         });
         return;
       }
@@ -239,7 +240,7 @@ export function ExploreScreen({ navigation }: Props) {
       setResolvingKey(null);
     }
 
-    navigation.navigate("Series", { slug: series.slug });
+    navigation.navigate("Series", { searchContext, slug: series.slug });
   }
 
   const submitSearch = useCallback(() => {
@@ -458,7 +459,7 @@ export function ExploreScreen({ navigation }: Props) {
                 style={{ width: cardWidth }}
               >
                 <Pressable
-                  accessibilityLabel={`Open details for ${item.title}`}
+                  accessibilityLabel={`Watch ${item.title}`}
                   accessibilityRole="button"
                   disabled={isBusy}
                   onPress={() => {
@@ -470,9 +471,14 @@ export function ExploreScreen({ navigation }: Props) {
                       source: "EXPLORE",
                     });
                     if (isSeries) {
-                      navigation.navigate("Series", { searchContext, slug: item.slug });
+                      const series = catalog.find((candidate) => candidate.slug === item.slug);
+                      if (series) {
+                        void openSeriesPlayback(series, searchContext);
+                      } else {
+                        navigation.navigate("Series", { searchContext, slug: item.slug });
+                      }
                     } else {
-                      navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                      navigation.navigate("ShortFilmPlayback", { searchContext, slug: item.slug });
                     }
                   }}
                   style={({ pressed }) => [
@@ -499,6 +505,19 @@ export function ExploreScreen({ navigation }: Props) {
                         </Text>
                       </View>
                     )}
+                    <DetailInfoButton
+                      accessibilityLabel={`More information about ${item.title}`}
+                      onPress={() => {
+                        const searchContext = { contentId, contentSlug: item.slug, contentType: entry.contentType, position: index + 1, rowId: null, sourceSurface: "explore" as const, rankingDecisionId: rankingDecision.rankingDecisionId, recommendationReason };
+                        if (isSeries) {
+                          navigation.navigate("Series", { searchContext, slug: item.slug });
+                        } else {
+                          navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                        }
+                      }}
+                      style={styles.infoButton}
+                    >
+                    </DetailInfoButton>
                   </View>
                   <View style={styles.cardInfo}>
                     <Text style={styles.cardTitle} numberOfLines={2}>
@@ -884,5 +903,24 @@ const styles = StyleSheet.create({
   modalItemTextSelected: {
     color: colors.accent,
     fontWeight: "600",
+  },
+  infoButton: {
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoButtonText: {
+    color: "rgba(232, 228, 218, 0.75)",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 14,
   },
 });

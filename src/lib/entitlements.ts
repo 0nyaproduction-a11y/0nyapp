@@ -237,12 +237,9 @@ export async function getEpisodeAccessStates(
       continue;
     }
 
-    // Plus authorization must fail closed: it applies only when the resolved
-    // episode explicitly has plusAccess === true. A missing/undefined runtime
-    // field must never be treated as Plus-enabled (the DB migration's
-    // DEFAULT true is a stored-data compatibility value, not a fallback for
-    // authorization when the field itself is absent at runtime).
-    if (hasSubscription && episode.plusAccess === true) {
+    // Active Plus subscribers receive full catalog access to all published episodes,
+    // overriding coin, rewarded, and per-episode plusAccess configuration.
+    if (hasSubscription) {
       accessByEpisodeNumber.set(episode.number, {
         canWatch: true,
         kind: "subscription",
@@ -280,9 +277,9 @@ export async function canUserWatchEpisode({
     return true;
   }
 
-  // Plus authorization must fail closed: only an explicit plusAccess === true
-  // is treated as Plus-enabled. Missing/undefined never grants Plus access.
-  if (episode.plusAccess === true && (await hasActiveSubscription(userId, supabase))) {
+  // Active Plus subscribers receive full catalog access to all published episodes,
+  // overriding coin, rewarded, and per-episode plusAccess configuration.
+  if (await hasActiveSubscription(userId, supabase)) {
     return true;
   }
 

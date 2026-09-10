@@ -37,6 +37,11 @@ export interface MediaViewOptions {
   sortOrder?: MediaViewSortOrder;
   classificationFilter?: MediaTruthClassification[];
   flagFilter?: MediaTruthFlag[];
+  search?: string;
+  status?: string;
+  tab?: MediaViewTab;
+  page?: number;
+  pageSize?: number;
 }
 
 // Deterministic tab filter shared by the server view and the client (which
@@ -198,27 +203,28 @@ function muxOnlyToViewRow(
   };
 }
 
+export type MediaViewListResult = {
+  rows: MediaViewRow[];
+  totalCount: number;
+  filteredCount: number;
+  page: number;
+  pageSize: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
 export async function getMediaViewRows(
   options: MediaViewOptions = {},
-  tab: MediaViewTab = "all",
-): Promise<MediaViewRow[]> {
-  // ONE bounded provider inventory workflow: a single getMuxProviderInventory()
-  // listing is the primary live provider-truth input for every stored asset.
-  // There are no per-row Mux requests on page load.
+): Promise<MediaViewListResult> {
+  const { search, page = 1, pageSize = 25, tab = "all" } = options;
   const providerInventory = await getMuxProviderInventory();
-
-  // Single truth build (stored rows, all tabs share the same data).
   const truths = await buildMediaTruth(undefined, {
     providerInventory,
     assetIds: options.assetIds,
   });
-
   const rows: MediaViewRow[] = truths.map((truth) =>
     truthToViewRow(truth, providerInventory),
   );
-
-  // Surface MUX_ONLY provider assets (Mux assets without a Supabase row).
-  // Read-only advisory rows; never imported into Supabase.
   const muxOnlyItems = getAssetsByState(providerInventory, "MUX_ONLY");
   muxOnlyItems.forEach((item, index) => {
     const muxAsset = providerInventory.muxAssets.find(
@@ -231,7 +237,32 @@ export async function getMediaViewRows(
     rows.push(muxOnlyToViewRow(item, signedPlaybackId, index));
   });
 
-  return rows.filter((row) => matchesTab(tab, row));
+  let filtered = rows.filter((row) => matchesTab(tab, row));
+  if (search?.trim()) {
+    const term = search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (row) =>
+        row.assetId.toLowerCase().includes(term) ||
+        row.providerUploadReference?.toLowerCase().includes(term) ||
+        row.providerAssetReference?.toLowerCase().includes(term),
+    );
+  }
+
+  const totalCount = rows.length;
+  const filteredCount = filtered.length;
+  const safePage = Math.max(1, Math.min(page, Math.max(1, Math.ceil(filteredCount / pageSize))));
+  const start = (safePage - 1) * pageSize;
+  const paged = filtered.slice(start, start + pageSize);
+
+  return {
+    rows: paged,
+    totalCount,
+    filteredCount,
+    page: safePage,
+    pageSize,
+    hasPrevious: safePage > 1,
+    hasNext: start + pageSize < filteredCount,
+  };
 }
 
 // Explicit Asset Detail / manual diagnostics. Fetches a single stored asset's

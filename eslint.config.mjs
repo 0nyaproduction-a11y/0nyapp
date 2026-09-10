@@ -20,6 +20,22 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  {
+    files: ["apps/android/**/*.{js,ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
+  {
+    files: ["**/*.test.{ts,tsx}", "**/*.contract.test.{ts,tsx}"],
+    rules: {
+      "@next/next/no-assign-module-variable": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

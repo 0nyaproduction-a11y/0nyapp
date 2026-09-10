@@ -59,3 +59,70 @@ supabase/.temp/
 # Android / binary artifacts
 *.apk
 *.aab
+
+# Session / local probe scripts
+/verify_auth.cjs
+/verify_constraints.cjs
+/verify_schema.cjs
+/m6b_probe.cjs
+/parse_bounds.py
+/parse_bounds2.py
+/parse_bounds3.py
+/parse_clickable.py
+
+# Local diff / log artifacts
+/diff_output.txt
+/diffstat.txt
+/crash_log.txt
+*.log
+
+# Device / emulator UI dumps (root-level)
+/dev_dump.xml
+/phone_uidump.xml
+/signin-ui.xml
+/w3.xml
+/window.xml
+/window2.xml
+/window3.xml
+/window4.xml
+/window5.xml
+/window6.xml
+/window7.xml
+/window_dump.xml
+/.temp_uidump.xml
+
+# QA screenshot artifacts (root-level captures)
+/test_screen*.png
+/emulator_screen*.png
+/phone_*.png
+/check*.png
+/screen_*_verified.png
+/final.png
+/final2.png
+/final3.png
+/dl.png
+/dl2.png
+/m6b_unknown_*.png
+
+# Local UI audit / session captures
+/ui-audit/
+/docs/agent-state/screen-captures/
+
+# Local tool directories
+/workspace_verify/
+/.expo/
+/.continue/
+/.obsidian/
+/.playwright-mcp/
+/.temp/
+/apps/.temp/
+
+# Temporary session-prefixed files (screenshots, backups)
+/.temp_*.png
+/.temp_*.bak
+/.temp_*.tsx.bak
+/apps/android/.temp_*.png
+/apps/android/.temp_*.bak
+
+# Local one-off scripts
+/apk_server.js

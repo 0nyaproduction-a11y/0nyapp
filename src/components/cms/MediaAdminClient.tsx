@@ -1,7 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import {
+  CmsEmptyState,
+  CmsErrorState,
+  CmsLoading,
+  CmsReloadButton,
+} from "@/components/cms/CmsStates";
 import {
   AssetDetailPanel,
   IssueBadge,
@@ -15,7 +22,7 @@ import {
 } from "@/components/cms/MediaTabComponents";
 import { MediaDirectUploadField, type MediaUploadIntent } from "@/components/cms/MediaDirectUploadField";
 import type { MediaAssetFormState } from "@/lib/cms/media";
-import type { MediaViewRow, MediaViewTab } from "@/lib/cms/media-truth-model";
+import type { MediaViewRow, MediaViewTab, MediaViewListResult } from "@/lib/cms/media-truth-model";
 import type { DeleteImpactReport } from "@/lib/cms/media-delete-impact";
 import type {
   ConfirmDeleteResult,
@@ -24,7 +31,7 @@ import type {
 import { mediaListPath } from "@/lib/routes";
 
 type MediaAdminClientProps = {
-  initialRows: MediaViewRow[];
+  result: MediaViewListResult;
   initialTab: MediaViewTab;
   requestUploadAction: (
     mimeType: string,
@@ -51,33 +58,6 @@ type MediaAdminClientProps = {
 };
 
 const TABS: MediaViewTab[] = ["all", "processing", "problems", "unassigned"];
-
-// Mirrors the server-side tab predicate so the client can filter the preloaded
-// "all" rows locally for instant tab switching (no per-tab server round trip).
-function matchesTab(tab: MediaViewTab, row: MediaViewRow): boolean {
-  switch (tab) {
-    case "processing":
-      return row.classification === "PROCESSING";
-    case "problems":
-      return (
-        row.classification === "FAILED" ||
-        row.classification === "MISSING" ||
-        row.flags.includes("PUBLISHED_BUT_UNPLAYABLE") ||
-        row.flags.includes("PROVIDER_REFERENCE_MISMATCH") ||
-        row.flags.includes("PROVIDER_REFERENCE_AMBIGUOUS") ||
-        row.isMuxOnly
-      );
-    case "unassigned":
-      return (
-        row.classification === "READY" &&
-        !row.isMuxOnly &&
-        row.contentRefs.episodes === 0 &&
-        row.contentRefs.shortFilms === 0
-      );
-    default:
-      return true;
-  }
-}
 
 function classificationVariant(
   classification: MediaViewRow["classification"],
@@ -127,6 +107,7 @@ function getTableHeaders(tab: MediaViewTab): string[] {
       return ["Status", "Content", "Type", "Mux", "Supabase", "Playback", "Published", "Issue"];
   }
 }
+
 function buildCells(tab: MediaViewTab, row: MediaViewRow): ReactNode[] {
   const cells: ReactNode[] = [];
 
@@ -286,8 +267,9 @@ function buildCells(tab: MediaViewTab, row: MediaViewRow): ReactNode[] {
 
   return cells;
 }
+
 export function MediaAdminClient({
-  initialRows,
+  result,
   initialTab,
   requestUploadAction,
   refreshAction,
@@ -303,32 +285,40 @@ export function MediaAdminClient({
   const [selectedAsset, setSelectedAsset] = useState<MediaViewRow | null>(null);
   const [showAssetDetail, setShowAssetDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
-  const rows = initialRows;
-  const filteredRows = rows.filter((row) => matchesTab(activeTab, row));
+  const { rows, totalCount, filteredCount, page, pageSize, hasPrevious, hasNext } = result;
+
+  const tableRows = rows.map((row) => ({
+    ...row,
+    key: `${row.isMuxOnly ? "mux-only" : "asset"}:${row.assetId}`,
+    cells: buildCells(activeTab, row),
+  }));
 
   function handleTabChange(tab: MediaViewTab) {
     setActiveTab(tab);
-    router.push(`${mediaListPath}?tab=${tab}`, { scroll: false });
+    router.push(`${mediaListPath}?tab=${tab}&page=1`, { scroll: false });
   }
 
   async function handleRowClick(row: MediaViewRow) {
     if (row.isMuxOnly) {
-      // Mux-only rows have no Supabase media_asset row to inspect; the detail
-      // panel is only meaningful for stored assets. Stay in the table.
       return;
     }
     setDetailError(null);
+    setDetailLoading(true);
     try {
       const detail = await loadAssetDetailAction(row.assetId);
       if (detail) {
         setSelectedAsset(detail);
         setShowAssetDetail(true);
       } else {
-        setDetailError("Could not load asset detail.");
+        setDetailError("Could not load the detail for this asset. Click the row again to retry.");
       }
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : "Failed to load asset detail.");
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -351,25 +341,25 @@ export function MediaAdminClient({
 
     setScanActionState("scanning");
     setScanReport(null);
+    setScanError(null);
 
     try {
       const result = await loadAssetDetailAndImpactAction(asset.assetId);
       setScanReport(result.impact);
       setScanActionState("done");
-      // A fresh scan invalidates any previously displayed delete outcome —
-      // re-read the current quarantine state too, since nothing here is
-      // authoritative until re-confirmed at execution time.
       const status = await loadQuarantineStatusAction(asset.assetId);
       setQuarantineStatus(status);
     } catch (err) {
       console.error("Error scanning asset for deletion:", err);
+      setScanError(
+        err instanceof Error
+          ? err.message
+          : "Could not evaluate this asset for deletion. Try again.",
+      );
       setScanActionState("idle");
     }
   }
 
-  // ---------------------------------------------------------------------
-  // M6B — quarantine + explicit authorized delete (CMS-only, no auto-run).
-  // ---------------------------------------------------------------------
   const [quarantineStatus, setQuarantineStatus] = useState<QuarantineStatus>("not_quarantined");
   const [quarantineActionState, setQuarantineActionState] = useState<"idle" | "working">("idle");
   const [quarantineError, setQuarantineError] = useState<string | null>(null);
@@ -421,7 +411,6 @@ export function MediaAdminClient({
       if (!result.ok) {
         setDeleteError(result.error);
       } else {
-        // Row is gone — reflect it locally without waiting for a full reload.
         router.refresh();
       }
     } catch (err) {
@@ -431,35 +420,102 @@ export function MediaAdminClient({
     }
   }
 
-  const tableRows = filteredRows.map((row) => ({
-    ...row,
-    key: `${row.isMuxOnly ? "mux-only" : "asset"}:${row.assetId}`,
-    cells: buildCells(activeTab, row),
-  }));
-
   return (
     <div className="space-y-8">
       <MediaDirectUploadField requestUploadAction={requestUploadAction} />
 
-      <div className="flex border-b border-bone/10">
-        {TABS.map((tab) => (
-          <MediaTab key={tab} active={activeTab === tab} onClick={() => handleTabChange(tab)}>
-            {tab === "all" ? `All Media (${rows.length})` : getTabTitle(tab)}
-          </MediaTab>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex border-b border-bone/10">
+          {TABS.map((tab) => (
+            <MediaTab key={tab} active={activeTab === tab} onClick={() => handleTabChange(tab)}>
+              {tab === "all" ? `All (${totalCount})` : `${getTabTitle(tab)} (${filteredCount})`}
+            </MediaTab>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-bone/70">
+            Page {page} of {Math.max(1, Math.ceil(filteredCount / pageSize))}
+          </div>
+          <div className="flex gap-2">
+            {hasPrevious ? (
+              <Link
+                href={`${mediaListPath}?tab=${activeTab}&page=${page - 1}&pageSize=${pageSize}`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 border border-bone/20 bg-bone/[0.03] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/80 transition hover:border-bone/25 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
+              >
+                Previous
+              </Link>
+            ) : (
+              <span className="inline-flex min-h-11 items-center justify-center gap-2 border border-bone/10 bg-bone/[0.03] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/30">
+                Previous
+              </span>
+            )}
+            {hasNext ? (
+              <Link
+                href={`${mediaListPath}?tab=${activeTab}&page=${page + 1}&pageSize=${pageSize}`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 border border-teal/70 bg-transparent px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-teal transition hover:border-teal hover:bg-teal/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
+              >
+                Next
+              </Link>
+            ) : (
+              <span className="inline-flex min-h-11 items-center justify-center gap-2 border border-bone/10 bg-bone/[0.03] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/30">
+                Next
+              </span>
+            )}
+          </div>
+          <div>
+            <CmsReloadButton
+              label="Reload list (read-only)"
+              title="Re-fetches the media list from the server. Performs no writes."
+            />
+          </div>
+        </div>
       </div>
 
-      {detailError && <p className="text-xs text-red-400">{detailError}</p>}
+      {detailLoading && (
+        <CmsLoading label="Loading asset detail…" className="max-w-md" />
+      )}
+
+      {detailError && (
+        <CmsErrorState
+          title="Could not load asset detail"
+          message={detailError}
+        />
+      )}
 
       <MediaTabContainer title={getTabTitle(activeTab)}>
         {tableRows.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-bone/60">No media assets in this view.</p>
-          </div>
+          activeTab === "problems" ? (
+            <CmsEmptyState
+              title="No problems detected"
+              description="No failed, missing, mismatched or unplayable assets in the current list. This tab fills in when a problem is found."
+            />
+          ) : activeTab === "processing" ? (
+            <CmsEmptyState
+              title="No media currently processing"
+              description="Assets appear here while Mux is still processing an upload."
+            />
+          ) : activeTab === "unassigned" ? (
+            <CmsEmptyState
+              title="No unassigned assets"
+              description="Every ready media asset is attached to a series, episode or short film."
+            />
+          ) : (
+            <CmsEmptyState
+              title="No media assets"
+              description="Upload media from this page or from an episode/short-film editor; assets appear here once an upload starts."
+            />
+          )
         ) : (
           <MediaTable headers={getTableHeaders(activeTab)} rows={tableRows} onRowClick={handleRowClick} />
         )}
       </MediaTabContainer>
+
+      {scanError && (
+        <CmsErrorState
+          title="Could not evaluate this asset for deletion"
+          message={scanError}
+        />
+      )}
 
       {showAssetDetail && selectedAsset && (
         <AssetDetailPanel

@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/Button";
+import { ButtonLink } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
+import { CmsEmptyState, CmsSubmitButton } from "@/components/cms/CmsStates";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { SeriesMetadataForm } from "@/components/cms/SeriesMetadataForm";
 import { SeriesEpisodeManager } from "@/components/cms/SeriesEpisodeManager";
 import { SeriesStatusForm, type SeriesStatusFormState } from "@/components/cms/SeriesStatusForm";
+import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   archiveAllEpisodesForSeries,
@@ -39,6 +41,7 @@ import {
   seriesListPath,
   seriesPath,
   watchEpisodePath,
+  withListContext,
 } from "@/lib/routes";
 import { ARTWORK_MAX_FILE_SIZE_BYTES, createArtworkUploadIntent } from "@/lib/supabase/artwork";
 
@@ -46,7 +49,7 @@ const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 type AdminSeriesEditPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string; flash?: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>;
 };
 
 function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
@@ -57,7 +60,7 @@ function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
 
 export default async function AdminSeriesEditPage({ params, searchParams }: AdminSeriesEditPageProps) {
   const { id } = await params;
-  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string }>({}));
+  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>({}));
   const context = await requireCmsAdmin(seriesEditPath(id));
 
   if (context.status === "forbidden") {
@@ -81,8 +84,14 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
   const flashMessage = typeof query.flash === "string" ? query.flash : null;
   const errorMessage = typeof query.error === "string" ? query.error : null;
 
-  const episodes = await listEpisodesForSeries(id);
-  const hasEpisodes = episodes.length > 0;
+  const page = Math.max(1, Number(query.page) || 1);
+  const pageSize = Number(query.pageSize) || 25;
+  const search = String(query.search ?? "").trim();
+  const status = String(query.status ?? "").trim();
+
+  const episodeResult = await listEpisodesForSeries(id, { page, pageSize, search, status: status || undefined });
+  const { rows: episodes, totalCount, filteredCount, hasPrevious, hasNext } = episodeResult;
+  const hasEpisodes = totalCount > 0;
   const hasUnassignedMediaEpisode = episodes.some((episode) => !episode.media_asset_id);
   const episodeManagerRows = await Promise.all(
     episodes.map(async (episode) => ({
@@ -94,6 +103,19 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
   );
   const deleteEpisodesPreview = await getSeriesEpisodesDeletePreview(id);
   const deletePreview = await getSeriesDeletePreview(id);
+
+  // Build breadcrumbs
+  const listQuery = {
+    page: String(Math.max(1, Number(query.page) || 1)),
+    search: String(query.search ?? "").trim(),
+    status: String(query.status ?? "").trim(),
+  };
+
+  const breadcrumbs = [
+    { label: "Admin", href: "/admin" },
+    { label: "Series", href: withListContext(seriesListPath, listQuery) },
+    { label: currentSeries.title, isCurrent: true },
+  ];
 
   function buildEpisodeUpdateAction(episodeId: string) {
     return async function updateEpisodeReviewAction(
@@ -212,7 +234,7 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
     if (status === "archived" || status === "published") {
       const refreshedEpisodes = await listEpisodesForSeries(id);
 
-      for (const episode of refreshedEpisodes) {
+      for (const episode of refreshedEpisodes.rows) {
         revalidatePath(episodeEditPath(id, episode.id));
         revalidatePath(watchEpisodePath(result.series.slug, episode.episode_number));
         revalidatePath(purchaseEpisodePath(result.series.slug, episode.episode_number));
@@ -443,9 +465,11 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-3xl space-y-10">
+        <CmsBreadcrumb items={breadcrumbs} />
+
         <div>
           <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
-            0nya CMS
+            0nya CMS · {series.title}
           </p>
           <h1 className="mt-2 text-2xl font-semibold">{series.title}</h1>
           <p className="mt-1 text-sm text-bone/50">/{series.slug}</p>
@@ -511,22 +535,45 @@ export default async function AdminSeriesEditPage({ params, searchParams }: Admi
               </p>
             </div>
             {hasUnassignedMediaEpisode && (
-              <form action={refreshProcessingMediaAction}>
-                <Button type="submit" variant="secondary">
-                  Refresh processing uploads
-                </Button>
+              <form action={refreshProcessingMediaAction} className="space-y-1">
+                <CmsSubmitButton pendingLabel="Reconciling…">
+                  Reconcile orphaned processing assets
+                </CmsSubmitButton>
+                <p className="max-w-xs text-xs text-bone/40">
+                  This is a write operation: it syncs orphaned processing media rows against
+                  their live Mux status. It is not a generic refresh.
+                </p>
               </form>
             )}
           </div>
 
           <div className="mt-3">
             {episodeManagerRows.length === 0 ? (
-              <p className="text-sm text-bone/60">No episodes yet.</p>
+              <CmsEmptyState
+                title="No episodes yet"
+                description="Add episodes one at a time or upload a batch with automatic metadata probing."
+              >
+                <div className="mt-4 flex flex-wrap justify-center gap-3">
+                  <ButtonLink href={episodeNewPath(id)} variant="secondary">
+                    Add single episode
+                  </ButtonLink>
+                  <ButtonLink href={episodeBulkUploadPath(id)} variant="secondary">
+                    Upload batch
+                  </ButtonLink>
+                </div>
+              </CmsEmptyState>
             ) : (
               <SeriesEpisodeManager
                 addEpisodeHref={episodeNewPath(id)}
                 bulkUploadHref={episodeBulkUploadPath(id)}
                 rows={episodeManagerRows}
+                totalCount={totalCount}
+                filteredCount={filteredCount}
+                page={episodeResult.page}
+                pageSize={episodeResult.pageSize}
+                hasPrevious={hasPrevious}
+                hasNext={hasNext}
+                seriesId={id}
               />
             )}
           </div>

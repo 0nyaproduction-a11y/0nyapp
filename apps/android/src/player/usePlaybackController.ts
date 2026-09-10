@@ -1,5 +1,5 @@
 import { useEventListener } from "expo";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import {
   useVideoPlayer,
@@ -21,6 +21,9 @@ type UsePlaybackControllerOptions = {
   playbackLimitSeconds?: number | null;
   source: VideoSource;
   onEnded?: (payload: PlaybackEndedPayload) => void;
+  // PIP01: when true (Plus-only PiP-eligible full playback), the background
+  // AppState pause is skipped so native auto-PiP can take over instead.
+  allowBackgroundForPiPRef?: RefObject<boolean>;
 };
 
 const INITIAL_STATUS: VideoPlayerStatus = "idle";
@@ -76,6 +79,7 @@ export function usePlaybackController({
   playbackLimitSeconds,
   onEnded,
   source,
+  allowBackgroundForPiPRef,
 }: UsePlaybackControllerOptions) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -495,6 +499,12 @@ useEventListener(player, "statusChange", (payload) => {
   useEffect(() => {
     const handleAppStateChange = (state: AppStateStatus) => {
       if (state !== "active") {
+        // PIP01: PiP-eligible Plus playback must not race the native auto-PiP
+        // transition; expo-video's PiP manager owns pausing for that path and
+        // the foreground return needs no compensating play/pause/seek.
+        if (allowBackgroundForPiPRef?.current) {
+          return;
+        }
         userPausedRef.current = true;
         player.pause();
         player.playbackRate = playbackRate;
@@ -506,7 +516,7 @@ useEventListener(player, "statusChange", (payload) => {
     return () => {
       subscription.remove();
     };
-  }, [player, playbackRate]);
+  }, [player, playbackRate, allowBackgroundForPiPRef]);
 
   useEffect(() => {
     return () => {

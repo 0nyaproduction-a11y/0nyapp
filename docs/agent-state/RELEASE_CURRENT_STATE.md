@@ -4,6 +4,21 @@ Snapshot from repository evidence. Verify against the current working tree —
 do not convert an old passing check into a claim about the current tree.
 Status vocabulary: COMPLETE / PARTIAL / PENDING / BLOCKED / UNVERIFIED.
 
+## 2026-09-10 current-tree audit
+
+- Root production build: PASS. Root and Android typechecks: PASS. Android
+  direct test inventory: 225 PASS.
+- Configured root tests: 346 PASS / 2 FAIL / 12 SKIP. Root lint: FAIL on the
+  current tree; generated Android `dist` and untracked scratch/debug files are
+  included, with additional source lint errors.
+- Cloud Run QA evidence: `/`, `/admin/login`, `/api/v1/catalog`, and
+  `/api/v1/play-together/config` returned HTTP 200. This proves endpoint
+  availability only; it does not prove the deployed revision matches this
+  dirty worktree or prove remote migration state.
+- `apps/android/eas.json` and `apps/android/google-services.json` exist in the
+  current tree. Their presence is configuration evidence, not a release or
+  Play Console acceptance gate.
+
 ## Approved QA infrastructure — 31 August 2026
 
 Explicit user-approved project decision.
@@ -39,11 +54,14 @@ localhost Supabase.
   `src/lib/cms/home.ts`, `src/app/admin/home/page.tsx`), rewarded
   multi-completion (migration 027, `src/lib/rewarded-*.ts` + tests,
   `monetization` events route), CMS password-recovery finalization, Android
-  Home/Explore/tokens/api-types work, docs contract revisions
-  (`0nya_BACKEND_API_CONTRACT_v1.0.md`, `0nya_CMS_PRODUCT_CONTRACT_v1.0.md`,
-  etc.), `eas.json`/package files, `Dockerfile`, `.dockerignore`,
-  `.gcloudignore`, plus untracked `0nya_autonomous/`, `docs/architecture/`,
-  `src/lib/monetization/`, `MONETIZATION_DISCOVERY_REPORT.md`, QA screenshots.
+   Home/Explore/tokens/api-types work, docs revisions
+   (`0nya_DESIGN_SYSTEM_v1.0.md` and `docs/agent-state/ANDROID_CURRENT_STATE.md`
+   only; the API/CMS contract docs are NOT modified in the current tree),
+   `eas.json`/package files, `Dockerfile`, `.dockerignore`,
+   `.gcloudignore`, plus untracked `MONETIZATION_DISCOVERY_REPORT.md` and
+   QA screenshots. (Note: `0nya_autonomous/` and `docs/architecture/` are NOT
+   present in the working tree; `src/lib/monetization/` is tracked/committed,
+   not untracked; `apps/android/eas.json` is NOT present in the working tree.)
 - Recent commits (sampled): `fix: complete CMS password recovery flow`,
   `Build 15: lock launch commercial configuration`,
   `chore(android): point QA preview builds to Cloud Run`,
@@ -72,7 +90,10 @@ localhost Supabase.
 
 ## tests
 
-- No test runner wired in root `package.json` at snapshot.
+- Root `package.json` HAS a `test` script (`npx tsx --test ...`). Current-tree
+  result: 360 tests, 346 pass / 2 fail / 12 skip (failures: commercial-config
+  "Plus weekly membership" and playback-w01 legacy-compatibility read). Root
+  and Android typecheck both PASS on the current tree.
 - Verified test-like files present: `scripts/verify-commercial-config.mjs`
   (node:test; validates launch commercial configuration), and untracked
   `src/lib/{rewarded-analytics,rewarded-backend,rewarded-config}.test.ts`,
@@ -105,7 +126,11 @@ localhost Supabase.
 
 ## environment/configuration readiness
 
-- Env names documented in `SYSTEM_MAP.md`. `.env.example` covers root vars.
+- Env names documented in `SYSTEM_MAP.md`. `.env.example` is INCOMPLETE: it does
+  not document all vars consumed by `apps/android/src/config/env.ts` (e.g.
+  `EXPO_PUBLIC_ONYA_API_BASE_URL`, `EXPO_PUBLIC_ADMOB_REWARDED_AD_UNIT_ID`,
+  `EXPO_PUBLIC_ONYA_CANONICAL_URL`, `EXPO_PUBLIC_ONYA_DEV_BILLING_HARNESS`,
+  `EXPO_PUBLIC_ONYA_SUPPRESS_PLAY_INTERRUPTION`).
 - Commercial configuration locked by `verify-commercial-config.mjs`
   (`Build 15: lock launch commercial configuration`).
 - QA preview EAS build env points to the Cloud Run QA API host
@@ -130,10 +155,10 @@ localhost Supabase.
 - Mux assets + signed playback (needs live Mux env + ready media_assets).
 - AdMob rewarded SSV requires the production `ADMOB_REWARDED_AD_UNIT_ID`
   pin (server fail-closed) and real Play Console ad-unit approval.
-- Google Play Billing client service is still a stub — real Play purchase/
-  restore is EXTERNALLY BLOCKED by D-U-N-S / Play organization and current
-  availability, expected unavailable approximately one month from 2026-09-02;
-  re-check before resuming.
+- Google Play Billing has an `expo-iap` client adapter, but real Play purchase/
+  restore, server verification, acknowledgement/consumption, lifecycle, and
+  device E2E remain PARTIAL / UNVERIFIED and EXTERNALLY BLOCKED by Play
+  organisation/D-U-N-S and availability constraints.
 - Home spotlight + rewarded multi-completion uncommitted work must land
   before those features can be considered release-ready.
 
@@ -143,7 +168,7 @@ Repository evidence only; confirm live:
 
 - Home spotlight editorial phase: PENDING (uncommitted).
 - Rewarded multi-completion + monetization events: PENDING (uncommitted).
-- Play Billing client purchase/restore: PARTIAL (stub) + EXTERNALLY BLOCKED
+- Play Billing client purchase/restore: PARTIAL (adapter exists) + EXTERNALLY BLOCKED
   during the current availability window.
 - Full current-tree build/typecheck/lint/device pass: UNVERIFIED.
 

@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/DangerZoneDeleteForm";
 import { EpisodeMetadataForm } from "@/components/cms/EpisodeMetadataForm";
 import { Button } from "@/components/ui/Button";
 import { EpisodeMediaAssignmentForm } from "@/components/cms/EpisodeMediaAssignmentForm";
+import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   EPISODE_STATUSES,
@@ -97,8 +97,7 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     revalidatePath(episodeEditPath(seriesId, episodeId));
     return {
       errors: {},
-      // eslint-disable-next-line react-hooks/purity -- Server action response marker, not render output.
-      submittedAt: Date.now(),
+      submittedAt: getSubmissionTimestamp(),
       submitMode: String(formData.get("submitMode") ?? "save"),
     };
   }
@@ -243,17 +242,23 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
     redirect(buildFlashUrl(seriesEditPath(seriesId), result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
+  const breadcrumbs = [
+    { label: "Admin", href: "/admin" },
+    { label: "Series", href: seriesListPath },
+    { label: currentSeries.title, href: seriesEditPath(seriesId) },
+    { label: `Episode ${currentEpisode.episode_number}`, isCurrent: true },
+  ];
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-3xl space-y-10">
+        <CmsBreadcrumb items={breadcrumbs} />
+
         <div>
           <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
             0nya CMS · {series.title}
           </p>
           <h1 className="mt-2 text-2xl font-semibold">Episode {episode.episode_number}</h1>
-          <Link href={seriesEditPath(seriesId)} className="mt-1 inline-block text-sm text-teal">
-            ← Back to series
-          </Link>
         </div>
 
         <section>
@@ -322,4 +327,7 @@ export default async function EpisodeEditPage({ params }: EpisodeEditPageProps) 
       </div>
     </main>
   );
+}
+function getSubmissionTimestamp(): number {
+  return Date.now();
 }

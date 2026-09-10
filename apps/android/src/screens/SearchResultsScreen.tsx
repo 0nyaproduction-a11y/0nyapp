@@ -12,14 +12,16 @@ import {
 } from "react-native";
 import { Screen } from "../components/Screen";
 import { BehaviorImpression } from "../components/BehaviorImpression";
-import { LoadingState, RecoveryState } from "../components/ui";
+import { DetailInfoButton, LoadingState, RecoveryState } from "../components/ui";
 import { useDiscoveryCatalog } from "../lib/useDiscoveryCatalog";
 import { resolveMediaUrl } from "../lib/media";
 import { perfMark } from "../lib/perf";
 import { useAuth } from "../lib/authContext";
-import { recordRankingDecision } from "../lib/api";
+import { getSeries, recordRankingDecision } from "../lib/api";
 import { emitBehaviorEvidence } from "../lib/behavioralEvents";
 import { markCollectionServed } from "../lib/behaviorImpressionModel";
+import { isContinueWatchingProgress } from "../lib/playbackCompletion";
+import { findStartEpisode } from "../lib/seriesPlayback";
 import {
   ALL_GENRES_FILTER,
   filterDiscoverableItems,
@@ -38,6 +40,7 @@ import {
   runRankingDecisionEvidenceFailOpen,
 } from "../lib/rankingDecisionEvidence";
 import type { RootStackScreenProps, ExploreFormat, SearchResultContext } from "../navigation/types";
+import type { ApiSeries } from "../types/api";
 import { borders, colors, radii, typography } from "../theme/tokens";
 
 const GRID_HORIZONTAL_PADDING = 20;
@@ -58,8 +61,9 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const { width } = useWindowDimensions();
-  const resource = useDiscoveryCatalog(session, false);
+  const resource = useDiscoveryCatalog(session, true);
   const { catalog, shortFilms } = resource;
+  const progress = resource.progress;
   const { isLoading, reload: reloadCatalog } = resource;
   const error = resource.error?.title ?? null;
   const [query, setQuery] = useState(initialQuery);
@@ -157,6 +161,55 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
 
   const shouldShowGenreFilter = availableGenres.length > 0;
 
+  async function openSeriesPlayback(series: ApiSeries, searchContext: SearchResultContext) {
+    const key = `series-${series.slug}`;
+
+    if (resolvingKey) {
+      return;
+    }
+
+    perfMark("CONTENT_TAP", {
+      content_type: "series_episode",
+      series_slug: series.slug,
+      source: "SEARCH_RESULTS",
+    });
+    setResolvingKey(key);
+
+    try {
+      const seriesProgress = progress.filter(
+        (item) => item.contentType === "series_episode" && item.seriesSlug === series.slug,
+      );
+      const resumeProgress = seriesProgress
+        .sort(
+          (first, second) =>
+            new Date(second.lastWatchedAt).getTime() - new Date(first.lastWatchedAt).getTime(),
+        )
+        .find(isContinueWatchingProgress);
+      const resumeEpisode = resumeProgress
+        ? series.episodes.find((episode) => episode.number === resumeProgress.episodeNumber)
+        : undefined;
+      const startEpisode = findStartEpisode(series.episodes);
+      const targetEpisode = resumeEpisode ?? startEpisode;
+
+      if (targetEpisode) {
+        void getSeries(series.slug, accessToken).catch(() => undefined);
+        navigation.navigate("Watch", {
+          episodeNumber: targetEpisode.number,
+          resumeAtSeconds: resumeProgress?.positionSeconds ?? undefined,
+          seriesSlug: series.slug,
+          searchContext,
+        });
+        return;
+      }
+    } catch {
+      // Fall through to details.
+    } finally {
+      setResolvingKey(null);
+    }
+
+    navigation.navigate("Series", { searchContext, slug: series.slug });
+  }
+
   function renderResultCard(
     entry: DiscoverableItem,
     index: number,
@@ -188,9 +241,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
         style={{ width: cardWidth }}
       >
         <Pressable
-          accessibilityLabel={
-            isSeries ? `Open ${title}` : `Open details for ${title}`
-          }
+          accessibilityLabel={`Watch ${title}`}
           accessibilityRole="button"
           disabled={isBusy}
           onPress={() => {
@@ -213,7 +264,12 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
                 series_slug: item.slug,
                 source: "SEARCH_RESULTS",
               });
-              navigation.navigate("Series", { searchContext, slug: item.slug });
+              const series = catalog.find((candidate) => candidate.slug === item.slug);
+              if (series) {
+                void openSeriesPlayback(series, searchContext);
+              } else {
+                navigation.navigate("Series", { searchContext, slug: item.slug });
+              }
               return;
             }
 
@@ -222,7 +278,7 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
               short_film_slug: item.slug,
               source: "SEARCH_RESULTS",
             });
-            navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+            navigation.navigate("ShortFilmPlayback", { searchContext, slug: item.slug });
           }}
           style={({ pressed }) => [styles.card, { width: cardWidth }, pressed && styles.cardPressed]}
         >
@@ -243,6 +299,19 @@ export function SearchResultsScreen({ navigation, route }: RootStackScreenProps<
                 </Text>
               </View>
             )}
+            <DetailInfoButton
+              accessibilityLabel={`More information about ${title}`}
+              onPress={() => {
+                const searchContext = createSearchResultContext(entry, query, index, rankingDecision.rankingDecisionId, recommendationReason);
+                if (isSeries) {
+                  navigation.navigate("Series", { searchContext, slug: item.slug });
+                } else {
+                  navigation.navigate("ShortFilm", { searchContext, slug: item.slug });
+                }
+              }}
+              style={styles.infoButton}
+            >
+            </DetailInfoButton>
           </View>
           <View style={styles.cardInfo}>
             <Text style={styles.cardTitle} numberOfLines={2}>
@@ -608,5 +677,24 @@ const styles = StyleSheet.create({
     color: colors.accent,
     ...typography.label,
     fontWeight: "600",
+  },
+  infoButton: {
+    position: "absolute",
+    right: 6,
+    top: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(232, 228, 218, 0.12)",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoButtonText: {
+    color: "rgba(232, 228, 218, 0.75)",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 14,
   },
 });

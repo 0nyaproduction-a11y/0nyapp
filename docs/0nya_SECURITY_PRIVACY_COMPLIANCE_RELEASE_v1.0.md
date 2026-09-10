@@ -23,6 +23,14 @@ scope: "Android-first consumer app; India OTT; future iOS-aware"
 8. `docs/0nya_VIDEO_PLAYBACK_ARCHITECTURE_v1.0.md`
 
 > This is the final internal governance/release-gate document.
+
+> **2026-09-10 audit reconciliation:** The Android source now contains an
+> `expo-iap` client adapter. Replace any interpretation of “no Google Play
+> Billing implementation in code” with: **client adapter implemented;
+> production Play setup, server purchase-token verification,
+> acknowledgement/consumption, restore/revocation lifecycle, and device E2E
+> remain incomplete, unverified, and externally blocked**. This does not alter
+> the release gate or permit a PASS claim.
 >
 > It does not replace legal advice or Google Play / Apple / Government policy text.
 > Current official policy always wins if a requirement changes.

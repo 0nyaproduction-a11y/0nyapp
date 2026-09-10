@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
+import { CmsEmptyState } from "@/components/cms/CmsStates";
+import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listSeriesForAdmin } from "@/lib/cms/series";
-import { seriesEditPath, seriesNewPath } from "@/lib/routes";
+import { seriesEditPath, seriesListPath, seriesNewPath, withListContext } from "@/lib/routes";
+import { SeriesListFilters } from "@/components/cms/SeriesListFilters";
 
 type AdminSeriesListPageProps = {
-  searchParams?: Promise<{ error?: string; flash?: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string; page?: string; search?: string; status?: string }>;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -14,8 +17,17 @@ const STATUS_STYLES: Record<string, string> = {
   archived: "text-bone/30 border-bone/10",
 };
 
+const STATUS_OPTIONS = [
+  { label: "All", value: "all" },
+  { label: "Draft", value: "draft" },
+  { label: "Published", value: "published" },
+  { label: "Archived", value: "archived" },
+];
+
+const PAGE_SIZE = 25;
+
 export default async function AdminSeriesListPage({ searchParams }: AdminSeriesListPageProps) {
-  const params = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string }>({}));
+  const params = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string; page?: string; search?: string; status?: string }>({}));
   const context = await requireCmsAdmin(seriesNewPath);
 
   if (context.status === "forbidden") {
@@ -29,19 +41,38 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
     );
   }
 
-  const series = await listSeriesForAdmin();
+  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const data = await listSeriesForAdmin({
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+    search: params.search || "",
+    status: params.status || "",
+  });
+
   const flashMessage = typeof params.flash === "string" ? params.flash : null;
   const errorMessage = typeof params.error === "string" ? params.error : null;
+
+  const totalPages = Math.ceil(data.totalCount / PAGE_SIZE);
+
+  const breadcrumbs = [
+    { label: "Admin", href: "/admin" },
+    { label: "Series", isCurrent: true },
+  ];
+
+  const listQuery = {
+    page: String(currentPage),
+    search: params.search || "",
+    status: params.status || "",
+  };
 
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-4xl">
-        <div className="flex items-center justify-between">
+        <CmsBreadcrumb items={breadcrumbs} />
+
+        <div className="mt-6 flex items-center justify-between">
           <div>
-            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
-              0nya CMS
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold">Series</h1>
+            <h1 className="text-2xl font-semibold">Series</h1>
           </div>
           <ButtonLink href={seriesNewPath}>New series</ButtonLink>
         </div>
@@ -58,14 +89,26 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
           </div>
         )}
 
+        <SeriesListFilters
+          initialSearch={params.search || ""}
+          initialStatus={params.status || ""}
+          statusOptions={STATUS_OPTIONS}
+          totalCount={data.totalCount}
+          filteredCount={data.filteredCount}
+        />
+
         <div className="mt-8 divide-y divide-bone/10 border border-bone/10">
-          {series.length === 0 && (
-            <p className="px-4 py-6 text-sm text-bone/60">No series yet.</p>
+          {data.rows.length === 0 && (
+            <CmsEmptyState
+              title="No series yet"
+              description="Create your first series to start adding episodes."
+              action={{ href: seriesNewPath, label: "New series" }}
+            />
           )}
-          {series.map((item) => (
+          {data.rows.map((item) => (
             <Link
               key={item.id}
-              href={seriesEditPath(item.id)}
+              href={withListContext(seriesEditPath(item.id), listQuery)}
               className="flex items-center justify-between gap-4 px-4 py-4 transition hover:bg-bone/[0.03]"
             >
               <div>
@@ -82,7 +125,39 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
             </Link>
           ))}
         </div>
+
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-between gap-3">
+            <p className="text-sm text-bone/60">
+              Page {currentPage} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Link
+                href={buildPaginationUrl(currentPage - 1, params.search, params.status)}
+                className={`inline-flex min-h-11 items-center justify-center gap-2 border border-bone/20 bg-bone/[0.03] px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/80 transition hover:border-bone/25 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${currentPage <= 1 ? "pointer-events-none opacity-50" : ""}`}
+                aria-disabled={currentPage <= 1}
+              >
+                Previous
+              </Link>
+              <Link
+                href={buildPaginationUrl(currentPage + 1, params.search, params.status)}
+                className={`inline-flex min-h-11 items-center justify-center gap-2 border border-teal/70 bg-transparent px-4 py-3 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-teal transition hover:border-teal hover:bg-teal/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal ${currentPage >= totalPages ? "pointer-events-none opacity-50" : ""}`}
+                aria-disabled={currentPage >= totalPages}
+              >
+                Next
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
+}
+
+function buildPaginationUrl(page: number, search?: string, status?: string) {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  if (search) params.set("search", search);
+  if (status && status !== "all") params.set("status", status);
+  return `${seriesListPath}?${params.toString()}`;
 }

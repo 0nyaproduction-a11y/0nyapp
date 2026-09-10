@@ -60,7 +60,7 @@ export default async function BulkEpisodeUploadPage({ params }: BulkEpisodeUploa
     notFound();
   }
 
-  const existingNumbers = (await listEpisodesForSeries(id)).map((episode) => episode.episode_number);
+  const existingNumbers = (await listEpisodesForSeries(id)).rows.map((episode) => episode.episode_number);
 
   async function createEpisodeAction(input: BulkEpisodeCreateInput): Promise<BulkEpisodeCreateResult> {
     "use server";

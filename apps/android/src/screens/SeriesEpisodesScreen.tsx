@@ -3,10 +3,11 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Screen } from "../components/Screen";
+import { EpisodeAccessMarkers } from "../components/EpisodeAccessMarkers";
 import { Label, LoadingState, RecoveryState, Title } from "../components/ui";
 import { useAuth } from "../lib/authContext";
 import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
-import { getEpisodeAccessDisplay, type EpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
+import { getEpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
 import { getSeries } from "../lib/api";
 import {
   buildEpisodeRanges,
@@ -16,6 +17,7 @@ import {
 } from "../lib/episodeRanges";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { findResumeEpisode } from "../lib/seriesPlayback";
+import { usePlusMembership } from "../player/usePlusMembership";
 import type { RootStackParamList } from "../navigation/types";
 import type { ApiEpisode, ApiSeries, EpisodeAccess, WatchProgressItem } from "../types/api";
 import { borders, colors } from "../theme/tokens";
@@ -39,6 +41,7 @@ function SeriesEpisodesScreenContent({ navigation, route }: Props) {
   const { width } = useWindowDimensions();
   const { session } = useAuth();
   const accessToken = session?.access_token;
+  const isPlus = usePlusMembership(accessToken);
   const [accessRevision, setAccessRevision] = useState(0);
   const routedSeries = route.params.series;
   const routedSeriesSlug = route.params.seriesSlug ?? routedSeries?.slug;
@@ -146,6 +149,11 @@ function SeriesEpisodesScreenContent({ navigation, route }: Props) {
   const series = resolvedSeries ?? routedSeries ?? null;
   const episodes = useMemo(() => series?.episodes ?? EMPTY_EPISODES, [series]);
   const episodeAccess = resolvedEpisodeAccess;
+  const isPlusUser =
+    Boolean(isPlus) ||
+    Object.values(resolvedEpisodeAccess).some(
+      (access) => access?.kind === "subscription" && access?.canWatch,
+    );
   const ranges = useMemo(() => buildEpisodeRanges(episodes, EPISODE_RANGE_SIZE), [episodes]);
   const columns = useMemo(() => getColumnsForWidth(width), [width]);
   const cellSize = Math.max(
@@ -318,7 +326,10 @@ function SeriesEpisodesScreenContent({ navigation, route }: Props) {
               kind: "locked" as const,
               label: "Locked" as const,
             };
-            const accessDisplay = getEpisodeAccessDisplay(item, access);
+            const accessDisplay = getEpisodeAccessDisplay(item, access, {
+              isGuest: !session,
+              isPlus: isPlusUser,
+            });
             const isCurrent = item.number === resumeEpisode?.number;
 
             return (
@@ -343,7 +354,7 @@ function SeriesEpisodesScreenContent({ navigation, route }: Props) {
                 <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
                   {item.number}
                 </Text>
-                {renderAccessMarkers(accessDisplay, isCurrent)}
+                <EpisodeAccessMarkers accessDisplay={accessDisplay} />
               </Pressable>
             );
           }}
@@ -373,49 +384,6 @@ function getColumnsForWidth(width: number) {
   }
 
   return MIN_COLUMNS;
-}
-
-function renderAccessMarkers(accessDisplay: EpisodeAccessDisplay, isCurrent: boolean) {
-  return (
-    <View style={styles.markerRow}>
-      {accessDisplay.markers.map((marker) => (
-        <View
-          key={`${marker.label}-${marker.accessibilityLabel}`}
-          style={[
-            styles.marker,
-            marker.tone === "available" && styles.markerAvailable,
-            marker.tone === "locked" && styles.markerLocked,
-            isCurrent && styles.markerCurrent,
-          ]}
-        >
-          {marker.icon === "coin" ? <CoinGlyph /> : null}
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.cellAccessLabel,
-              marker.tone === "available" && styles.cellAccessLabelAvailable,
-              marker.tone === "locked" && styles.cellAccessLabelLocked,
-              marker.variant === "plus" && styles.cellAccessLabelPlus,
-              marker.variant === "ad" && styles.cellAccessLabelAd,
-              marker.variant === "coin" && styles.cellAccessLabelCoin,
-              isCurrent && styles.cellAccessLabelCurrent,
-            ]}
-          >
-            {marker.label}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function CoinGlyph() {
-  return (
-    <View style={styles.coinGlyph}>
-      <View style={styles.coinGlyphInner} />
-      <View style={styles.coinGlyphHighlight} />
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({

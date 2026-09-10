@@ -108,13 +108,28 @@ function AppNavigator() {
           component={CoinPurchaseScreen}
           options={{ title: t("coin_purchase.title", "Buy Coins") }}
         />
-        <Stack.Screen name="Plus" component={PlusScreen} options={{ title: "" }} />
+        <Stack.Screen
+          name="Plus"
+          component={PlusScreen}
+          options={{
+            headerRight: () => null,
+            title: "",
+          }}
+        />
         <Stack.Screen
           name="SearchResults"
           component={SearchResultsScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Series" component={SeriesScreen} />
+        <Stack.Screen
+          name="Series"
+          component={SeriesScreen}
+          options={{
+            headerRight: () => null,
+            title: "",
+            headerShown: false,
+          }}
+        />
         <Stack.Screen
           name="SeriesEpisodes"
           component={SeriesEpisodesScreen}
@@ -148,12 +163,18 @@ function AppNavigator() {
         <Stack.Screen
           name="AgeDeclaration"
           component={AgeDeclarationScreen}
-          options={{ title: t("age_declaration.title", "Before you continue") }}
+          options={{
+            headerRight: () => null,
+            title: t("age_declaration.title", "Before you continue"),
+          }}
         />
         <Stack.Screen
           name="SignIn"
           component={SignInScreen}
-          options={{ title: t("signin.title", "Sign in") }}
+          options={{
+            headerRight: () => null,
+            title: t("signin.title", "Sign in"),
+          }}
         />
         <Stack.Screen
           name="PlayTogetherRoom"

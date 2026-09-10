@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { ArtworkUploadField } from "@/components/cms/ArtworkUploadField";
 import { CmsSelect } from "@/components/cms/CmsSelect";
@@ -9,6 +8,7 @@ import { DangerZoneDeleteForm, type DeleteFormState } from "@/components/cms/Dan
 import { MediaAssetAssignmentForm } from "@/components/cms/MediaAssetAssignmentForm";
 import { ShortFilmChaiConfigForm } from "@/components/cms/ShortFilmChaiConfigForm";
 import { ShortFilmMetadataForm } from "@/components/cms/ShortFilmMetadataForm";
+import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { createArtworkUploadIntent, ARTWORK_MAX_FILE_SIZE_BYTES } from "@/lib/supabase/artwork";
 import {
@@ -42,11 +42,6 @@ import {
 
 const ARTWORK_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
-type AdminShortFilmEditPageProps = {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string; flash?: string }>;
-};
-
 function buildFlashUrl(path: string, kind: "error" | "flash", message: string) {
   const params = new URLSearchParams();
   params.set(kind, message);
@@ -59,6 +54,11 @@ function formatDate(value: string) {
     timeStyle: "short",
   }).format(new Date(value));
 }
+
+type AdminShortFilmEditPageProps = {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string }>;
+};
 
 export default async function AdminShortFilmEditPage({ params, searchParams }: AdminShortFilmEditPageProps) {
   const { id } = await params;
@@ -379,18 +379,23 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
     redirect(buildFlashUrl(shortFilmListPath, result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
+  const breadcrumbs = [
+    { label: "Admin", href: "/admin" },
+    { label: "Short Films", href: shortFilmListPath },
+    { label: shortFilm.title, isCurrent: true },
+  ];
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-4xl space-y-10">
+        <CmsBreadcrumb items={breadcrumbs} />
+
         <div>
           <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
-            0nya CMS
+            0nya CMS · {shortFilm.title}
           </p>
           <h1 className="mt-2 text-2xl font-semibold">{shortFilm.title}</h1>
           <p className="mt-1 text-sm text-bone/50">/{shortFilm.slug}</p>
-          <Link href={shortFilmListPath} className="mt-1 inline-block text-sm text-teal">
-            ← Back to short films
-          </Link>
         </div>
 
         {flashMessage && (

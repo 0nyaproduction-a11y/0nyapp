@@ -20,6 +20,16 @@ Evidence reviewed:
 
 Important note: `docs/0nya_CMS_PRODUCT_CONTRACT_v1.0.md` is present in this repo and remains the conceptual CMS product contract. This architecture document records implementation evidence only.
 
+> **2026-09-10 audit reconciliation:** The current Android source contains an
+> `expo-iap` Google Play adapter in `apps/android/src/billing/googlePlay.ts`.
+> Therefore older statements below saying that no Play Billing client exists
+> are historical audit findings and are superseded on that narrow point. The
+> correct current status is **adapter implemented; production Play product
+> setup, server verification, acknowledgement/consumption, restore/revocation
+> lifecycle, and device E2E partial/unverified/external-blocked**. The current
+> worktree also has root build/typecheck and Android typecheck PASS, but root
+> tests and lint are not clean as recorded in the current-state documents.
+
 > **B00 documentation reconciliation note (2026-08-31):** Several sections below were written as an earlier audit and contain stale claims (e.g. "Android is only a starter shell", "no native player", "no rewarded/Short Film/Chai", "CMS Product Contract absent", "only simplified access", "only mock player", "no full account deletion flow"). These contradict the verified current implementation recorded in **§ BUILD 15 VERIFIED MONETIZATION + PLAYBACK CHECKPOINT** and the **Multi-Rewarded Unlock (V1 Launch Policy)** appendix at the end of this document. Where they conflict, the checkpoint and appendix are authoritative. Current status of each area:
 > - Expo Android consumer app, React Navigation, Home/Explore/Profile, Explore/Search, Series Detail, `expo-video` player, playback lifecycle, backend playback authorization, preview/access resolver, Continue Watching, Wallet/Coins, rewarded attempt/progress/SSV foundation, Short Film detail/playback/end, Chai, parental controls, account deletion, Home Composer, Multi-Spotlight: **IMPLEMENTED / DEV-QA**.
 > - Native Google Play Billing, store purchase verification, Plus real store lifecycle, P05 Manage Subscription, Restore real Play purchases, production AdMob E2E, migration 027 remote application, production Mux asset/deliverability, Short Film production ad rolls, deep-link E2E, public legal/support surfaces, reliable A-rated age verification: **PARTIAL / NOT PRODUCTION COMPLETE**.

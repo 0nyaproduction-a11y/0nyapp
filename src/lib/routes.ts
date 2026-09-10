@@ -31,6 +31,20 @@ export const shortFilmNewPath = "/admin/short-films/new";
 export const billingListPath = "/admin/billing";
 export const homeListPath = "/admin/home";
 
+export function withListContext(path: string, query?: Record<string, string>): string {
+  if (!query) return path;
+
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, value);
+    }
+  });
+
+  const queryString = params.toString();
+  return queryString ? `${path}?${queryString}` : path;
+}
+
 export function seriesEditPath(seriesId: string) {
   return `/admin/series/${seriesId}`;
 }

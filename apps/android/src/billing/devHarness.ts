@@ -6,8 +6,9 @@ import type {
   StoreProduct,
 } from "./types";
 
-const plusProduct: StoreProduct = {
+const defaultPlusProduct: StoreProduct = {
   billingPeriodLabel: "Store price not configured",
+  billingPlan: "weekly",
   coinAmount: null,
   displayName: "0nya Plus",
   googleProductId: null,
@@ -80,15 +81,21 @@ function restoreStatusForScenario(
   }
 }
 
-export function createDevelopmentBillingHarness(coinProducts: StoreProduct[] = []): BillingService {
+export function createDevelopmentBillingHarness(products: StoreProduct[] = []): BillingService {
+  const plusProduct = products.find((product) => product.kind === "subscription") ?? defaultPlusProduct;
   return {
     isHarness: true,
     async getProducts(kind) {
-      const products = [...coinProducts, plusProduct];
-      return kind ? products.filter((product) => product.kind === kind) : products;
+      const configuredProducts = products.some((product) => product.kind === "subscription")
+        ? products
+        : [...products, plusProduct];
+      return kind
+        ? configuredProducts.filter((product) => product.kind === kind)
+        : configuredProducts;
     },
     async purchase(product, scenario = "PURCHASE_SUCCESS") {
       return {
+        billingPlan: product.billingPlan,
         googleProductId: product.googleProductId,
         kind: product.kind,
         productCode: product.productCode,
@@ -106,6 +113,7 @@ export function createDevelopmentBillingHarness(coinProducts: StoreProduct[] = [
           ? [
               {
                 googleProductId: plusProduct.googleProductId,
+                billingPlan: plusProduct.billingPlan,
                 kind: "subscription",
                 productCode: plusProduct.productCode,
                 scenario,

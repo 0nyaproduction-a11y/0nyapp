@@ -1,5 +1,8 @@
 import "server-only";
 
+// COMPATIBILITY_REFERENCE_SAFETY: preview_media_asset_id is legacy-only and
+// is read here solely so media deletion cannot orphan an existing DB reference.
+
 import {
   createMuxDirectUpload,
   deleteMuxAsset,

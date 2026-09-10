@@ -6,6 +6,24 @@
 **Purpose:** Single operational execution roadmap for completing the consumer **0nya App** from the current live repository state to a release candidate.
 **Canonical repo location:** `docs/agent-state/APP_COMPLETION_ROADMAP.md`
 
+## 2026-09-10 audit reconciliation
+
+The current worktree is not a release baseline: it has broad modified files
+and 201 untracked paths, including valid Android/CMS/source/migration work,
+agent-state reports, and scratch/device artifacts. No cleanup or deletion is
+authorized by this audit. Current verification is root build PASS, root and
+Android typecheck PASS, Android direct tests 225 PASS, root suite 346 PASS / 2
+FAIL / 12 SKIP, and root lint FAIL. Cloud Run QA endpoint probes returned 200,
+but deployed-revision identity and remote Supabase migration application are
+not proven against this worktree.
+
+The Android billing status is corrected: an `expo-iap` adapter exists in
+`apps/android/src/billing/googlePlay.ts`; production Play product setup,
+server purchase-token verification, acknowledgement/consumption, restore and
+revocation lifecycle, and device E2E remain partial, unverified, and externally
+blocked. The next gate is not “implement a billing client”; it is the bounded
+Play-availability check followed by real store/server lifecycle verification.
+
 > This roadmap is an execution-priority and completion-tracking document. It is **not** a product authority and does not replace the 9 canonical App authority documents.
 
 ---
@@ -113,7 +131,7 @@ No indefinite waits, blind retries, or inferred PASS.
 - Multi-Spotlight implementation exists in the current working tree.
 - Account deletion implementation.
 - Cloud Run QA backend/CMS migration.
-- Supabase data model/migrations 001–026; migration `027` exists untracked for rewarded multi-completion and is not proven applied to remote QA.
+- Supabase data model/migrations 001–026; migration `027` (tracked/committed in source) for rewarded multi-completion; not proven applied to remote QA.
 - Mux playback authorization/signing code foundation.
 
 ### Current working-tree reality
@@ -125,7 +143,7 @@ Important in-flight/uncommitted areas include:
 - Android Multi-Spotlight Home.
 - Home/API/CMS types and Home Composer work.
 - Rewarded multi-completion backend/client work.
-- Migration `027` for multi-rewarded completion.
+- Migration `027` for multi-rewarded completion (tracked/committed in source; not proven applied to remote QA).
 - Rewarded analytics/config/routes/tests.
 - AdMob SSV hardening.
 - Authority-document revisions.
@@ -189,8 +207,12 @@ The final read-only B00 audit established a coherent source baseline without mod
 ### Proven in current source / Git
 
 - Branch: `qa/netlify-api-e34ab5e`.
-- HEAD: `8d5b4c692ff4f7f4deb538a1f14714f47c2ee232`.
-- Current HEAD is the Home Composer deployability milestone commit `8d5b4c6`.
+- HEAD at snapshot: `e7abbcc2da2b50975b9565d1b2e0711b9682e72d` (prior snapshot cited
+  `8d5b4c6`; the branch has since advanced. B00/B01 were verified at `8d5b4c6`;
+  the current tip's current-tree B00/B01 status is UNVERIFIED and the working
+  tree is dirty).
+- Baseline reference point: the Home Composer deployability milestone commit
+  `8d5b4c6`.
 - Non-Autonomous dirty App work remains substantial and legitimate; do not reset/clean/stash/overwrite it.
 - Android typecheck: PASS.
 - Root typecheck: PASS.
@@ -205,7 +227,8 @@ The final read-only B00 audit established a coherent source baseline without mod
 - Restored-series playback remains blocked by missing/invalid media; Mux production readiness remains **PARTIALLY IMPLEMENTED / NOT PROVEN**.
 - Coin wallet/unlock/idempotency architecture remains implemented; real Google Play coin purchase/verification remains incomplete/external.
 - Rewarded 1–2 completion architecture is coherent in source.
-- Migration `027` is untracked, 663 lines, not proven applied remotely.
+- Migration `027` is tracked/committed in source (663 lines), not proven applied
+  to remote QA.
 - Launch rewarded entitlement semantics in migration `027` are permanent-only.
 - A rewarded **session-mode configuration trap is CONFIRMED**:
   - database legacy CHECK still permits `session`;

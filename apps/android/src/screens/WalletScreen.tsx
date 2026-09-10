@@ -31,6 +31,17 @@ import { WalletAccessPaywall } from "../components/WalletAccessPaywall";
 import { colors, radii, surfaces, typography } from "../theme/tokens";
 
 type WalletEntry = WalletResponse["recentTransactions"][number];
+type WalletEntryMetadata = {
+  episodeNumber?: number;
+  episodeTitle?: string;
+  episode_number?: number;
+  episode_title?: string;
+  seriesName?: string;
+  seriesTitle?: string;
+  series_name?: string;
+  series_title?: string;
+};
+type ExtendedWalletEntry = WalletEntry & WalletEntryMetadata & { metadata?: WalletEntryMetadata };
 type Props = RootStackScreenProps<"Wallet">;
 
 const ledgerDescriptionByType: Record<WalletEntry["type"], string> = {
@@ -300,10 +311,10 @@ function WalletContent({ route }: Props) {
   );
 
   useEffect(() => {
-    if (isPlusActive && episode?.plusAccess && isFocused) {
+    if (isPlusActive && isFocused) {
       void openWatchAfterUnlock();
     }
-  }, [isPlusActive, episode?.plusAccess, isFocused, openWatchAfterUnlock]);
+  }, [isPlusActive, isFocused, openWatchAfterUnlock]);
 
   const rewardCoinAmount = episode?.coinPrice && episode.coinPrice > 0 ? episode.coinPrice : 10;
   const isWatchAndEarnAvailable = Boolean(
@@ -522,7 +533,7 @@ function WalletContent({ route }: Props) {
               {filteredTransactions.length > 0 ? (
                 <View style={styles.activityList}>
                   {filteredTransactions.map((transaction, index) => {
-                    const rawTx = transaction as any;
+                    const rawTx = transaction as ExtendedWalletEntry;
                     const seriesTitle =
                       rawTx.seriesTitle ??
                       rawTx.metadata?.seriesTitle ??

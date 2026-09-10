@@ -1,5 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { setAccessIdentity } from "./api";
 import { clearParentalSessionUnlock } from "./parentalControls";
 import {
   getHistoryMergeUiState,
@@ -8,6 +9,7 @@ import {
   type HistorySyncUiState,
 } from "./playbackHistory";
 import { supabase } from "./supabase";
+import { handleAuthenticatedSession, handleSignOut } from "./notifications";
 
 type AuthContextValue = {
   historySyncStatus: HistorySyncUiState;
@@ -25,6 +27,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const lastUserIdRef = useRef<string | null>(null);
+
+  // Authenticated requests read the identity registry rather than context, so
+  // every authoritative session change must publish to it before the state
+  // update. Without this a cold start issues no authenticated requests.
+  const publishSession = useCallback((nextSession: Session | null) => {
+    setAccessIdentity(nextSession?.user.id ?? null, nextSession?.access_token ?? null);
+    setSession(nextSession);
+  }, []);
 
   function syncParentalUnlocks(nextSession: Session | null) {
     const nextUserId = nextSession?.user?.id ?? null;
@@ -48,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!data.session) {
           syncParentalUnlocks(null);
-          setSession(null);
+          publishSession(null);
           setIsLoading(false);
           return;
         }
@@ -61,13 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await supabase.auth.signOut({ scope: "local" });
             if (isMounted) {
               syncParentalUnlocks(null);
-              setSession(null);
+              publishSession(null);
               setIsLoading(false);
             }
           } else {
             if (isMounted) {
               syncParentalUnlocks(data.session);
-              setSession(data.session);
+              publishSession(data.session);
               setIsLoading(false);
             }
           }
@@ -75,8 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         syncParentalUnlocks(data.session);
-        setSession(data.session);
+        publishSession(data.session);
         setIsLoading(false);
+        void handleAuthenticatedSession(data.session.access_token);
       })
       .catch(async (error) => {
         if (!isMounted) {
@@ -90,14 +101,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await supabase.auth.signOut({ scope: "local" });
         }
         syncParentalUnlocks(null);
-        setSession(null);
+        publishSession(null);
         setIsLoading(false);
       });
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       syncParentalUnlocks(nextSession);
-      setSession(nextSession);
+      publishSession(nextSession);
       setIsLoading(false);
+      if (nextSession?.access_token) {
+        // New/changed session (sign-in, refresh, user-switch) — re-register
+        // the current device under the CURRENT user. Failures are
+        // best-effort (never thrown) so auth flow cannot break.
+        void handleAuthenticatedSession(nextSession.access_token);
+      } else {
+        // Session cleared (sign-out from another tab/device) — reset the
+        // success guard so a later user registers fresh.
+        void handleSignOut(null).catch(() => undefined);
+      }
     });
 
     return () => {
@@ -167,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       retryGuestHistoryMerge,
       session,
       async signIn(email, password) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error, data } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -175,8 +196,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           throw new Error(error.message);
         }
+
+        const accessToken = data?.session?.access_token ?? null;
+        if (accessToken) {
+          void handleAuthenticatedSession(accessToken);
+        }
       },
       async signOut() {
+        if (session?.access_token) {
+          await handleSignOut(session.access_token);
+        }
         const { error } = await supabase.auth.signOut();
 
         if (error) {

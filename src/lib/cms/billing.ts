@@ -16,18 +16,31 @@ function getAdminClient() {
 // CMS/CMS-catalog authority only: coin quantities (coin_amount) are
 // config-controlled, but real-money prices live in store (Google Play / App
 // Store) product metadata and are NEVER written or read from this table here.
-export async function listCoinProducts(): Promise<CoinProductRow[]> {
+export type CoinProductListResult = {
+  rows: CoinProductRow[];
+  totalCount: number;
+};
+
+export async function listCoinProducts(
+  params: { page?: number; pageSize?: number } = {},
+): Promise<CoinProductListResult> {
   const supabase = getAdminClient();
-  const { data, error } = await supabase
+  const { page = 1, pageSize = 25 } = params;
+  const offset = (page - 1) * pageSize;
+
+  const { data, error, count } = await supabase
     .from("coin_products")
-    .select("*")
-    .order("sort_order", { ascending: true });
+    .select("*", { count: "exact" })
+    .order("sort_order", { ascending: true })
+    .range(offset, offset + pageSize - 1);
+
+  const totalCount = count ?? 0;
 
   if (error || !data) {
-    return [];
+    return { rows: [], totalCount: 0 };
   }
 
-  return data;
+  return { rows: data, totalCount };
 }
 
 export async function updateCoinProductActive(
