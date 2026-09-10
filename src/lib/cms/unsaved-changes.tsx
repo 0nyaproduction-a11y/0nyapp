@@ -51,7 +51,6 @@ export function isEqual<T>(a: T, b: T): boolean {
   }
   return false;
 }
-
 type UnsavedChangesProviderProps = {
   children: ReactNode;
 };
