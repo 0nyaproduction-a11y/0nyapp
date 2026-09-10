@@ -7,6 +7,8 @@ declare global {
     __formWrapperError?: string;
     __formWrapperTargets?: number;
     __formWrapperSuccess?: string;
+    __formWrapperInputCount?: number;
+    __formWrapperLastInput?: { name: string; value: unknown };
   }
 }
 
@@ -74,6 +76,8 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
         const checked = (el as HTMLInputElement).checked;
         const newValue = type === "checkbox" ? checked : value;
         setValues((prev) => ({ ...prev, [name]: newValue }));
+        window.__formWrapperInputCount = (window.__formWrapperInputCount || 0) + 1;
+        window.__formWrapperLastInput = { name, value: newValue };
       };
       el.addEventListener("input", handler);
       listeners.push({ element: el, handler });
