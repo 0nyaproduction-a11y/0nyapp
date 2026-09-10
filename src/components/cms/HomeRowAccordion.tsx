@@ -94,7 +94,7 @@ function HomeRowItems({
           <span className={FIELD_LABEL_CLASS}>Sort order</span>
           <input className={INPUT_CLASS} type="number" name="sortOrder" defaultValue={100} />
         </label>
-        <CmsSubmitButton pendingLabel="Adding…">Add item</CmsSubmitButton>
+        <CmsSubmitButton pendingLabel="Addingâ€¦">Add item</CmsSubmitButton>
       </form>
 
       <div className="space-y-3">
@@ -113,8 +113,8 @@ function HomeRowItems({
               <div>
                 <p className="font-medium">{item.contentTitle ?? item.slug ?? item.id}</p>
                 <p className="text-xs text-bone/50">
-                  {item.content_type} · {item.contentStatus ?? "unknown"}
-                  {item.consumerVisible ? " · visible" : " · hidden"}
+                  {item.content_type} Â· {item.contentStatus ?? "unknown"}
+                  {item.consumerVisible ? " Â· visible" : " Â· hidden"}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -123,7 +123,7 @@ function HomeRowItems({
                   <input type="hidden" name="direction" value="up" />
                   <CmsSubmitButton
                     disabled={itemIndex === 0}
-                    pendingLabel="Moving…"
+                    pendingLabel="Movingâ€¦"
                     title="Move up"
                     className={MOVE_BUTTON_CLASS}
                   >
@@ -135,7 +135,7 @@ function HomeRowItems({
                   <input type="hidden" name="direction" value="down" />
                   <CmsSubmitButton
                     disabled={itemIndex === row.items.length - 1}
-                    pendingLabel="Moving…"
+                    pendingLabel="Movingâ€¦"
                     title="Move down"
                     className={MOVE_BUTTON_CLASS}
                   >
@@ -162,7 +162,7 @@ function HomeRowItems({
                     defaultValue={item.sort_order}
                   />
                 </label>
-                <CmsSubmitButton pendingLabel="Saving…">Save</CmsSubmitButton>
+                <CmsSubmitButton pendingLabel="Savingâ€¦">Save</CmsSubmitButton>
               </form>
               <form
                 action={removeHomeRowItemAction as unknown as (formData: FormData) => Promise<void>}
@@ -332,15 +332,15 @@ export function HomeRowAccordion({
                     <span>
                       role: <span className="text-bone">{row.row_role}</span>
                     </span>
-                    <span>•</span>
+                    <span>â€¢</span>
                     <span className={row.enabled ? "text-teal" : "text-amber-400"}>
                       {row.enabled ? "enabled" : "disabled"}
                     </span>
-                    <span>•</span>
+                    <span>â€¢</span>
                     <span>
                       sort <span className="text-bone">{row.sort_order}</span>
                     </span>
-                    <span>•</span>
+                    <span>â€¢</span>
                     <span>
                       items <span className="text-bone">{row.items.length}</span>
                     </span>
@@ -362,7 +362,7 @@ export function HomeRowAccordion({
                   <input type="hidden" name="direction" value="up" />
                   <CmsSubmitButton
                     disabled={rowIndex === 0}
-                    pendingLabel="Moving…"
+                    pendingLabel="Movingâ€¦"
                     title="Move up"
                     className={MOVE_BUTTON_CLASS}
                   >
@@ -374,7 +374,7 @@ export function HomeRowAccordion({
                   <input type="hidden" name="direction" value="down" />
                   <CmsSubmitButton
                     disabled={rowIndex === rows.length - 1}
-                    pendingLabel="Moving…"
+                    pendingLabel="Movingâ€¦"
                     title="Move down"
                     className={MOVE_BUTTON_CLASS}
                   >
