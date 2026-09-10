@@ -34,10 +34,13 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   const hasRegisteredRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const initialValuesRef = useRef<T>(initialValues);
+  const onDirtyChangeRef = useRef(onDirtyChange);
 
   useEffect(() => {
     initialValuesRef.current = initialValues;
   }, [initialValues]);
+
+  onDirtyChangeRef.current = onDirtyChange;
 
   useEffect(() => {
     console.log("[FormWrapper] MOUNT formId:", formId, "initialValues:", JSON.stringify(initialValues));
@@ -57,13 +60,13 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     if (isDirty) {
       console.log("[FormWrapper] CALLING markDirty for", formId);
       markDirty(formId, values, initialValuesRef.current);
-      onDirtyChange?.(true);
+      onDirtyChangeRef.current?.(true);
     } else {
       console.log("[FormWrapper] CALLING markClean for", formId);
       markClean(formId);
-      onDirtyChange?.(false);
+      onDirtyChangeRef.current?.(false);
     }
-  }, [values, formId, markDirty, markClean, onDirtyChange]);
+  }, [values, formId, markDirty, markClean]);
 
   useEffect(() => {
     const form = formRef.current;
