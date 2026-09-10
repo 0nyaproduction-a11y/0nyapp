@@ -1,12 +1,13 @@
 import { getApiAuth } from "@/lib/api/auth";
 import { dataResponse, errorResponse } from "@/lib/api/responses";
 import { deactivatePushDevice } from "@/lib/push-devices";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ deviceId: string }> }
 ) {
-  const { supabase, user } = await getApiAuth(request);
+  const { user } = await getApiAuth(request);
 
   if (!user) {
     return errorResponse("not_authenticated", "Authentication is required.", 401);
@@ -20,7 +21,7 @@ export async function DELETE(
   }
 
   try {
-    const result = await deactivatePushDevice(supabase, user.id, deviceId.trim());
+    const result = await deactivatePushDevice(createAdminClient(), user.id, deviceId.trim());
     return dataResponse(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

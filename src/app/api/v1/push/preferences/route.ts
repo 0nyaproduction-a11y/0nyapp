@@ -5,6 +5,7 @@ import {
   updateNotificationPreferences,
   type NotificationPreferencesInput,
 } from "@/lib/push-devices";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: Request) {
   const { supabase, user } = await getApiAuth(request);
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { supabase, user } = await getApiAuth(request);
+  const { user } = await getApiAuth(request);
 
   if (!user) {
     return errorResponse("not_authenticated", "Authentication is required.", 401);
@@ -50,7 +51,7 @@ export async function PUT(request: Request) {
   if (typeof raw.accountSecurity === "boolean") input.account_security = raw.accountSecurity;
 
   try {
-    const preferences = await updateNotificationPreferences(supabase, user.id, input);
+    const preferences = await updateNotificationPreferences(createAdminClient(), user.id, input);
     return dataResponse({ preferences });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildNotificationPreferencesWrite,
+  buildPushDeviceWrite,
   validatePushDeviceInput,
   type RegisterPushDeviceInput,
 } from "./push-devices";
@@ -37,7 +39,6 @@ test("validatePushDeviceInput validates required fields correctly", () => {
   });
   assert.equal(validAndroid.valid, true);
   assert.deepEqual(validAndroid.data, {
-    active: true,
     deviceId: "android_device_123",
     expoPushToken: "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
     nativePushToken: "fcm_token_sample",
@@ -53,7 +54,43 @@ test("validatePushDeviceInput validates required fields correctly", () => {
   });
   assert.equal(validIos.valid, true);
   assert.equal(validIos.data?.platform, "ios");
-  assert.equal(validIos.data?.active, false);
+  assert.equal("active" in (validIos.data ?? {}), false);
+});
+
+test("server-owned builders discard identity, timestamp, and field tampering", () => {
+  const now = "2026-09-10T12:00:00.000Z";
+  const deviceValidation = validatePushDeviceInput({
+    active: false,
+    created_at: "1900-01-01T00:00:00.000Z",
+    deviceId: "device-safe",
+    id: "attacker-id",
+    platform: "android",
+    status: "DELIVERED",
+    updated_at: "1900-01-01T00:00:00.000Z",
+    user_id: "attacker-user",
+  });
+  assert.equal(deviceValidation.valid, true);
+  const deviceWrite = buildPushDeviceWrite("authenticated-user", deviceValidation.data!, now);
+  assert.equal(deviceWrite.user_id, "authenticated-user");
+  assert.equal(deviceWrite.active, true);
+  assert.equal(deviceWrite.updated_at, now);
+  assert.equal("id" in deviceWrite, false);
+  assert.equal("created_at" in deviceWrite, false);
+  assert.equal("status" in deviceWrite, false);
+
+  const preferenceWrite = buildNotificationPreferencesWrite(
+    "authenticated-user",
+    { account_security: true, new_releases: true, promotions: true },
+    { promotions: false },
+    now,
+  );
+  assert.deepEqual(preferenceWrite, {
+    account_security: true,
+    new_releases: true,
+    promotions: false,
+    updated_at: now,
+    user_id: "authenticated-user",
+  });
 });
 
 test("registerPushDevice enforces server-side user_id and updates idempotently mock logic", () => {
@@ -73,9 +110,12 @@ test("registerPushDevice enforces server-side user_id and updates idempotently m
     authenticatedUserId: string,
     input: RegisterPushDeviceInput
   ) {
-    // Deactivate previous registration for same physical device under different user
+    // Transfer only when the same device also presents a matching provider token.
     for (const row of db) {
-      if (row.device_id === input.deviceId && row.user_id !== authenticatedUserId) {
+      const tokenMatches =
+        (input.expoPushToken && row.expo_push_token === input.expoPushToken) ||
+        (input.nativePushToken && row.native_push_token === input.nativePushToken);
+      if (row.device_id === input.deviceId && row.user_id !== authenticatedUserId && tokenMatches) {
         row.active = false;
       }
     }
@@ -88,7 +128,7 @@ test("registerPushDevice enforces server-side user_id and updates idempotently m
     if (existingIndex >= 0) {
       db[existingIndex] = {
         ...db[existingIndex],
-        active: input.active ?? true,
+        active: true,
         expo_push_token: input.expoPushToken ?? null,
         native_push_token: input.nativePushToken ?? null,
         platform: input.platform,
@@ -96,7 +136,7 @@ test("registerPushDevice enforces server-side user_id and updates idempotently m
       return db[existingIndex];
     } else {
       const newRow: DeviceRow = {
-        active: input.active ?? true,
+        active: true,
         device_id: input.deviceId,
         expo_push_token: input.expoPushToken ?? null,
         id: `uuid_${db.length + 1}`,
@@ -133,7 +173,7 @@ test("registerPushDevice enforces server-side user_id and updates idempotently m
   // User 2 signs in on the same physical device_abc
   const reg2 = mockRegisterDevice("user_222", {
     deviceId: "device_abc",
-    expoPushToken: "ExponentPushToken[token2]",
+    expoPushToken: "ExponentPushToken[token1_refreshed]",
     platform: "android",
   });
 
@@ -144,6 +184,15 @@ test("registerPushDevice enforces server-side user_id and updates idempotently m
   // Check that User 1's registration for device_abc is now inactive
   const user1Device = db.find((r) => r.user_id === "user_111" && r.device_id === "device_abc");
   assert.equal(user1Device?.active, false);
+
+  // A guessed device_id without the matching provider token cannot deactivate
+  // another user's registration.
+  mockRegisterDevice("attacker", {
+    deviceId: "device_abc",
+    expoPushToken: "ExponentPushToken[attacker-token]",
+    platform: "android",
+  });
+  assert.equal(reg2.active, true);
 });
 
 test("notification preferences default and ownership mock logic", () => {

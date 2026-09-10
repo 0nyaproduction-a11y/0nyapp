@@ -5,9 +5,10 @@ import {
   registerPushDevice,
   validatePushDeviceInput,
 } from "@/lib/push-devices";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
-  const { supabase, user } = await getApiAuth(request);
+  const { user } = await getApiAuth(request);
 
   if (!user) {
     return errorResponse("not_authenticated", "Authentication is required.", 401);
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const device = await registerPushDevice(supabase, user.id, validation.data);
+    const device = await registerPushDevice(createAdminClient(), user.id, validation.data);
     return dataResponse({ device });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const { supabase, user } = await getApiAuth(request);
+  const { user } = await getApiAuth(request);
 
   if (!user) {
     return errorResponse("not_authenticated", "Authentication is required.", 401);
@@ -59,7 +60,7 @@ export async function DELETE(request: Request) {
   }
 
   try {
-    const result = await deactivatePushDevice(supabase, user.id, deviceId.trim());
+    const result = await deactivatePushDevice(createAdminClient(), user.id, deviceId.trim());
     return dataResponse(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

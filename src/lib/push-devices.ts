@@ -1,9 +1,11 @@
-import type { RequestSupabaseClient } from "@/lib/api/auth";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+type NotificationWriteClient = SupabaseClient<Database>;
 
 export type PushDevicePlatform = "android" | "ios" | "web";
 
 export type RegisterPushDeviceInput = {
-  active?: boolean;
   deviceId: string;
   expoPushToken?: string | null;
   nativePushToken?: string | null;
@@ -58,12 +60,9 @@ export function validatePushDeviceInput(input: unknown): {
     return { valid: false, error: "nativePushToken exceeds maximum length." };
   }
 
-  const active = typeof raw.active === "boolean" ? raw.active : true;
-
   return {
     valid: true,
     data: {
-      active,
       deviceId: raw.deviceId.trim(),
       expoPushToken,
       nativePushToken,
@@ -72,34 +71,74 @@ export function validatePushDeviceInput(input: unknown): {
   };
 }
 
+export function buildPushDeviceWrite(
+  authenticatedUserId: string,
+  input: RegisterPushDeviceInput,
+  now: string,
+) {
+  return {
+    user_id: authenticatedUserId,
+    device_id: input.deviceId,
+    platform: input.platform,
+    expo_push_token: input.expoPushToken ?? null,
+    native_push_token: input.nativePushToken ?? null,
+    active: true,
+    last_seen_at: now,
+    updated_at: now,
+  };
+}
+
+export function buildNotificationPreferencesWrite(
+  authenticatedUserId: string,
+  current: {
+    account_security: boolean;
+    new_releases: boolean;
+    promotions: boolean;
+  },
+  input: NotificationPreferencesInput,
+  now: string,
+) {
+  return {
+    user_id: authenticatedUserId,
+    promotions: input.promotions ?? current.promotions,
+    new_releases: input.new_releases ?? current.new_releases,
+    account_security: input.account_security ?? current.account_security,
+    updated_at: now,
+  };
+}
+
 export async function registerPushDevice(
-  supabase: RequestSupabaseClient,
+  supabase: NotificationWriteClient,
   userId: string,
   input: RegisterPushDeviceInput
 ) {
   const now = new Date().toISOString();
 
-  // 1. Deactivate this device_id if previously registered under another user
-  await supabase
-    .from("push_devices")
-    .update({ active: false, updated_at: now })
-    .eq("device_id", input.deviceId)
-    .neq("user_id", userId);
+  // 1. Deactivate a prior user's registration only when the caller presents a
+  // matching provider token for the same device. device_id alone is client
+  // supplied and must not authorize cross-user mutation.
+  const presentedTokens = [
+    ["expo_push_token", input.expoPushToken],
+    ["native_push_token", input.nativePushToken],
+  ] as const;
+  for (const [column, token] of presentedTokens) {
+    if (!token) continue;
+    const { error } = await supabase
+      .from("push_devices")
+      .update({ active: false, updated_at: now })
+      .eq("device_id", input.deviceId)
+      .eq(column, token)
+      .neq("user_id", userId);
+    if (error) {
+      throw new Error(`Failed to reconcile prior push device ownership: ${error.message}`);
+    }
+  }
 
   // 2. Upsert device registration for current user
   const { data, error } = await supabase
     .from("push_devices")
     .upsert(
-      {
-        user_id: userId,
-        device_id: input.deviceId,
-        platform: input.platform,
-        expo_push_token: input.expoPushToken ?? null,
-        native_push_token: input.nativePushToken ?? null,
-        active: input.active ?? true,
-        last_seen_at: now,
-        updated_at: now,
-      },
+      buildPushDeviceWrite(userId, input, now),
       { onConflict: "user_id,device_id" }
     )
     .select()
@@ -113,7 +152,7 @@ export async function registerPushDevice(
 }
 
 export async function deactivatePushDevice(
-  supabase: RequestSupabaseClient,
+  supabase: NotificationWriteClient,
   userId: string,
   deviceId: string
 ) {
@@ -134,7 +173,7 @@ export async function deactivatePushDevice(
 }
 
 export async function getNotificationPreferences(
-  supabase: RequestSupabaseClient,
+  supabase: NotificationWriteClient,
   userId: string
 ) {
   const { data, error } = await supabase
@@ -161,20 +200,14 @@ export async function getNotificationPreferences(
 }
 
 export async function updateNotificationPreferences(
-  supabase: RequestSupabaseClient,
+  supabase: NotificationWriteClient,
   userId: string,
   input: NotificationPreferencesInput
 ) {
   const current = await getNotificationPreferences(supabase, userId);
   const now = new Date().toISOString();
 
-  const updated = {
-    user_id: userId,
-    promotions: input.promotions ?? current.promotions,
-    new_releases: input.new_releases ?? current.new_releases,
-    account_security: input.account_security ?? current.account_security,
-    updated_at: now,
-  };
+  const updated = buildNotificationPreferencesWrite(userId, current, input, now);
 
   const { data, error } = await supabase
     .from("notification_preferences")
