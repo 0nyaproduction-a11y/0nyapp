@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
@@ -119,7 +119,6 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
 
   const markDirty = useCallback((formId: string, currentValues: Record<string, unknown>, originalValues: Record<string, unknown>) => {
     const equal = isEqual(currentValues, originalValues);
-    console.log("[UnsavedChanges] markDirty", formId, "equal:", equal, "currentKeys:", Object.keys(currentValues), "originalKeys:", Object.keys(originalValues));
     if (!equal) {
       setDirtyForms((prev) => {
         const newSet = new Set(prev);
@@ -130,7 +129,6 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
   }, []);
 
   const markClean = useCallback((formId: string) => {
-    console.log("[UnsavedChanges] markClean", formId);
     setDirtyForms((prev) => {
       const newSet = new Set(prev);
       newSet.delete(formId);
@@ -231,4 +229,3 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
     </UnsavedChangesContext.Provider>
   );
 }
-

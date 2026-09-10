@@ -7,8 +7,6 @@ declare global {
     __formWrapperError?: string;
     __formWrapperTargets?: number;
     __formWrapperSuccess?: string;
-    __formWrapperInputCount?: number;
-    __formWrapperLastInput?: { name: string; value: unknown };
   }
 }
 
@@ -40,14 +38,14 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     initialValuesRef.current = initialValues;
   }, [initialValues]);
 
-  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
 
   useEffect(() => {
-    console.log("[FormWrapper] MOUNT formId:", formId, "initialValues:", JSON.stringify(initialValues));
     registerForm(formId, initialValues);
     hasRegisteredRef.current = true;
     return () => {
-      console.log("[FormWrapper] UNMOUNT formId:", formId);
       unregisterForm(formId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,13 +54,10 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   useEffect(() => {
     if (!hasRegisteredRef.current) return;
     const isDirty = !isEqual(values, initialValuesRef.current);
-    console.log("[FormWrapper] DIRTY CHECK formId:", formId, "isDirty:", isDirty, "values:", JSON.stringify(values), "initialValues:", JSON.stringify(initialValuesRef.current));
     if (isDirty) {
-      console.log("[FormWrapper] CALLING markDirty for", formId);
       markDirty(formId, values, initialValuesRef.current);
       onDirtyChangeRef.current?.(true);
     } else {
-      console.log("[FormWrapper] CALLING markClean for", formId);
       markClean(formId);
       onDirtyChangeRef.current?.(false);
     }
@@ -86,8 +81,6 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
         const checked = (el as HTMLInputElement).checked;
         const newValue = type === "checkbox" ? checked : value;
         setValues((prev) => ({ ...prev, [name]: newValue }));
-        window.__formWrapperInputCount = (window.__formWrapperInputCount || 0) + 1;
-        window.__formWrapperLastInput = { name, value: newValue };
       };
       el.addEventListener("input", handler);
       listeners.push({ element: el, handler });
