@@ -1,6 +1,15 @@
 "use client";
 
 import React from "react";
+
+declare global {
+  interface Window {
+    __formWrapperError?: string;
+    __formWrapperTargets?: number;
+    __formWrapperSuccess?: string;
+  }
+}
+
 import { useState, useEffect, useContext, useRef, type FormHTMLAttributes, type ReactNode } from "react";
 import { UnsavedChangesContext } from "@/lib/cms/unsaved-changes";
 
@@ -50,12 +59,12 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   useEffect(() => {
     const form = formRef.current;
     if (!form) {
-      (window as Record<string, unknown>).__formWrapperError = `formRef null for ${formId}`;
+      window.__formWrapperError = `formRef null for ${formId}`;
       return;
     }
 
     const targets = form.querySelectorAll("input, select, textarea");
-    (window as Record<string, unknown>).__formWrapperTargets = targets.length;
+    window.__formWrapperTargets = targets.length;
     const listeners: { element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; handler: EventListener }[] = [];
 
     targets.forEach((target) => {
@@ -71,7 +80,7 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     });
 
     form.setAttribute("data-listeners-attached", "true");
-    (window as Record<string, unknown>).__formWrapperSuccess = `listeners attached for ${formId}`;
+    window.__formWrapperSuccess = `listeners attached for ${formId}`;
 
     return () => {
       listeners.forEach(({ element, handler }) => {
