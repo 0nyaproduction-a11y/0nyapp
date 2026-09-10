@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useContext, useRef, useEffect } from "react";
+import { useState, useContext, useRef, useEffect, useCallback } from "react";
 import { UnsavedChangesContext } from "@/lib/cms/unsaved-changes";
 import { HomeRowForm } from "./HomeRowForm";
 import { CmsSubmitButton, CmsEmptyState } from "./CmsStates";
@@ -234,7 +234,7 @@ export function HomeRowAccordion({
     return dirtyMapRef.current.get(rowId) === true || isFormDirty(rowFormId(rowId));
   }
 
-  function handleDirtyChange(rowId: string) {
+  const handleDirtyChange = useCallback((rowId: string) => {
     return (isDirty: boolean) => {
       setDirtyMap((prev) => {
         const next = new Map(prev);
@@ -242,7 +242,7 @@ export function HomeRowAccordion({
         return next;
       });
     };
-  }
+  }, []);
 
   function handleHeaderClick(targetId: string) {
     if (expandedRowId === targetId) {
