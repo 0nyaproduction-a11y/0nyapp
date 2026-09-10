@@ -231,7 +231,10 @@ export function HomeRowAccordion({
   }
 
   function isRowDirty(rowId: string) {
-    return dirtyMapRef.current.get(rowId) === true || isFormDirty(rowFormId(rowId));
+    const mapDirty = dirtyMapRef.current.get(rowId) === true;
+    const formDirty = isFormDirty(rowFormId(rowId));
+    console.log("[HomeRowAccordion] isRowDirty rowId:", rowId, "mapDirty:", mapDirty, "formDirty:", formDirty);
+    return mapDirty || formDirty;
   }
 
   const handleDirtyChange = useCallback((rowId: string) => {
@@ -245,18 +248,22 @@ export function HomeRowAccordion({
   }, []);
 
   function handleHeaderClick(targetId: string) {
+    console.log("[HomeRowAccordion] handleHeaderClick targetId:", targetId, "expandedRowId:", expandedRowId, "isRowDirty:", expandedRowId !== null ? isRowDirty(expandedRowId) : false);
     if (expandedRowId === targetId) {
       if (isRowDirty(targetId)) {
+        console.log("[HomeRowAccordion] SAME ROW, DIRTY - RETURN");
         return;
       }
       setExpandedRowId(null);
       return;
     }
     if (expandedRowId !== null && isRowDirty(expandedRowId)) {
+      console.log("[HomeRowAccordion] DIFFERENT ROW, DIRTY - SHOW MODAL");
       pendingSwitchRef.current = { from: expandedRowId, to: targetId };
       setShowLeaveModal(true);
       return;
     }
+    console.log("[HomeRowAccordion] DIFFERENT ROW, NOT DIRTY - SWITCH");
     setExpandedRowId(targetId);
   }
 
@@ -462,3 +469,4 @@ export function HomeRowAccordion({
     </section>
   );
 }
+
