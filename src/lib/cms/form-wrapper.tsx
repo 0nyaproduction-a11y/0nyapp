@@ -50,12 +50,12 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   useEffect(() => {
     const form = formRef.current;
     if (!form) {
-      console.log("[FormWrapper] formRef NULL for formId:", formId);
+      (window as Record<string, unknown>).__formWrapperError = `formRef null for ${formId}`;
       return;
     }
-    console.log("[FormWrapper] ATTACH LISTENERS formId:", formId, "targets:", form.querySelectorAll("input, select, textarea").length);
 
     const targets = form.querySelectorAll("input, select, textarea");
+    (window as Record<string, unknown>).__formWrapperTargets = targets.length;
     const listeners: { element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; handler: EventListener }[] = [];
 
     targets.forEach((target) => {
@@ -71,7 +71,7 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     });
 
     form.setAttribute("data-listeners-attached", "true");
-    console.log("[FormWrapper] LISTENERS ATTACHED formId:", formId);
+    (window as Record<string, unknown>).__formWrapperSuccess = `listeners attached for ${formId}`;
 
     return () => {
       listeners.forEach(({ element, handler }) => {
