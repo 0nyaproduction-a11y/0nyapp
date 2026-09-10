@@ -21,6 +21,7 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   const { registerForm, unregisterForm, markDirty, markClean } = useContext(UnsavedChangesContext);
   const [values, setValues] = useState<T>(initialValues);
   const hasRegisteredRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     registerForm(formId, initialValues);
@@ -43,8 +44,43 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     }
   }, [values, initialValues, formId, markDirty, markClean, onDirtyChange]);
 
-  const handleChange = (e: React.FormEvent<HTMLFormElement>) => {
-    const target = e.target as unknown as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) {
+      console.log("[FormWrapper] formRef is null for formId:", formId);
+      return;
+    }
+    console.log("[FormWrapper] attaching listeners for formId:", formId);
+
+    const targets = form.querySelectorAll("input, select, textarea");
+    console.log("[FormWrapper] found targets:", targets.length);
+    const listeners: { element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; handler: EventListener }[] = [];
+
+    targets.forEach((target) => {
+      const el = target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      const handler = () => {
+        const { name, value, type } = el;
+        const checked = (el as HTMLInputElement).checked;
+        const newValue = type === "checkbox" ? checked : value;
+        setValues((prev) => ({ ...prev, [name]: newValue }));
+      };
+      el.addEventListener("input", handler);
+      listeners.push({ element: el, handler });
+    });
+
+    form.setAttribute("data-listeners-attached", "true");
+    console.log("[FormWrapper] listeners attached for formId:", formId);
+
+    return () => {
+      listeners.forEach(({ element, handler }) => {
+        element.removeEventListener("input", handler);
+      });
+      form.removeAttribute("data-listeners-attached");
+    };
+  }, [formId]);
+
+  const handleChange = (_e: React.FormEvent<HTMLFormElement>) => {
+    const target = _e.target as unknown as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
     const { name, value, type } = target;
     const checked = (target as HTMLInputElement).checked;
     const newValue = type === "checkbox" ? checked : value;
@@ -52,7 +88,7 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   };
 
   return (
-    <form {...props} onInput={handleChange}>
+    <form ref={formRef} {...props} onInput={handleChange}>
       {children}
     </form>
   );
@@ -73,5 +109,3 @@ function isEqual<T>(a: T, b: T): boolean {
   }
   return false;
 }
-
-
