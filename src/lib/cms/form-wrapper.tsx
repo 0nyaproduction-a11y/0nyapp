@@ -24,15 +24,18 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
+    console.log("[FormWrapper] MOUNT formId:", formId, "initialValues:", JSON.stringify(initialValues));
     registerForm(formId, initialValues);
     hasRegisteredRef.current = true;
     return () => {
+      console.log("[FormWrapper] UNMOUNT formId:", formId);
       unregisterForm(formId);
     };
   }, [formId, initialValues, registerForm, unregisterForm]);
 
   useEffect(() => {
     if (!hasRegisteredRef.current) return;
+    console.log("[FormWrapper] DIRTY CHECK formId:", formId, "values:", JSON.stringify(values));
 
     const isDirty = !isEqual(values, initialValues);
     if (isDirty) {
@@ -47,13 +50,12 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
   useEffect(() => {
     const form = formRef.current;
     if (!form) {
-      console.log("[FormWrapper] formRef is null for formId:", formId);
+      console.log("[FormWrapper] formRef NULL for formId:", formId);
       return;
     }
-    console.log("[FormWrapper] attaching listeners for formId:", formId);
+    console.log("[FormWrapper] ATTACH LISTENERS formId:", formId, "targets:", form.querySelectorAll("input, select, textarea").length);
 
     const targets = form.querySelectorAll("input, select, textarea");
-    console.log("[FormWrapper] found targets:", targets.length);
     const listeners: { element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; handler: EventListener }[] = [];
 
     targets.forEach((target) => {
@@ -69,7 +71,7 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
     });
 
     form.setAttribute("data-listeners-attached", "true");
-    console.log("[FormWrapper] listeners attached for formId:", formId);
+    console.log("[FormWrapper] LISTENERS ATTACHED formId:", formId);
 
     return () => {
       listeners.forEach(({ element, handler }) => {
