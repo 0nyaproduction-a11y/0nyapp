@@ -118,7 +118,9 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
   }, []);
 
   const markDirty = useCallback((formId: string, currentValues: Record<string, unknown>, originalValues: Record<string, unknown>) => {
-    if (!isEqual(currentValues, originalValues)) {
+    const equal = isEqual(currentValues, originalValues);
+    console.log("[UnsavedChanges] markDirty", formId, "equal:", equal, "currentKeys:", Object.keys(currentValues), "originalKeys:", Object.keys(originalValues));
+    if (!equal) {
       setDirtyForms((prev) => {
         const newSet = new Set(prev);
         newSet.add(formId);
@@ -128,6 +130,7 @@ export function UnsavedChangesProvider({ children }: UnsavedChangesProviderProps
   }, []);
 
   const markClean = useCallback((formId: string) => {
+    console.log("[UnsavedChanges] markClean", formId);
     setDirtyForms((prev) => {
       const newSet = new Set(prev);
       newSet.delete(formId);

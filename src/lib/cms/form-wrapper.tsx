@@ -52,13 +52,14 @@ export function FormWrapper<T extends Record<string, unknown> = Record<string, u
 
   useEffect(() => {
     if (!hasRegisteredRef.current) return;
-    console.log("[FormWrapper] DIRTY CHECK formId:", formId, "values:", JSON.stringify(values));
-
     const isDirty = !isEqual(values, initialValuesRef.current);
+    console.log("[FormWrapper] DIRTY CHECK formId:", formId, "isDirty:", isDirty, "values:", JSON.stringify(values), "initialValues:", JSON.stringify(initialValuesRef.current));
     if (isDirty) {
+      console.log("[FormWrapper] CALLING markDirty for", formId);
       markDirty(formId, values, initialValuesRef.current);
       onDirtyChange?.(true);
     } else {
+      console.log("[FormWrapper] CALLING markClean for", formId);
       markClean(formId);
       onDirtyChange?.(false);
     }
