@@ -36,8 +36,11 @@ export function HomeRowForm({ rowId, title, enabled, sortOrder, action, onDirtyC
       if (result && typeof result === "object" && "success" in result && !result.success) {
         setServerError(result.error);
       }
-    } catch {
-      // Successful save redirects are handled by Next.js framework.
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if ((err as Error & { digest?: string }).digest !== "NEXT_REDIRECT") {
+        setServerError(err.message || "Unexpected error.");
+      }
     }
   };
 
@@ -86,3 +89,9 @@ export function HomeRowForm({ rowId, title, enabled, sortOrder, action, onDirtyC
     </FormWrapper>
   );
 }
+
+
+
+
+
+
