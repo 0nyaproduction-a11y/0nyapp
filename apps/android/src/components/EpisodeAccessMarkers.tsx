@@ -21,7 +21,6 @@ export function EpisodeAccessMarkers({
       importantForAccessibility="no"
       style={[styles.markerRow, style]}
     >
-      <LockIcon color="rgba(254, 253, 253, 0.45)" size={9} />
       <LockIcon color="#E5A93C" size={8.5} />
     </View>
   );

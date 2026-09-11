@@ -67,11 +67,18 @@ export function AdMobProvider({ children }: { children: ReactNode }) {
       if (__DEV__) {
         console.info("[0nya adMob] Dev/test-ad startup bypasses UMP consent bootstrap.");
 
+        try {
+          await initializeMobileAds();
+        } catch (initError) {
+          console.warn("[0nya adMob] MobileAds init failed in dev:", initError instanceof Error ? initError.message : initError);
+        }
+
         if (active) {
           setBootstrapError(null);
           setCanRequestAds(true);
           setPrivacyOptionsRequired(false);
           setIsInitialized(false);
+          setIsInitialized(true);
           setIsBootstrapping(false);
         }
 

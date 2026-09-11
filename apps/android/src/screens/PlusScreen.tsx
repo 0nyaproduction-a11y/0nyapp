@@ -1,5 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { SubscriptionManagementModal } from "../components/SubscriptionManagementModal";
@@ -14,10 +14,12 @@ import { getMe, submitGooglePlayBillingBoundary } from "../lib/api";
 import { useAuth } from "../lib/authContext";
 import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import {
+  checkReferralEligibility,
   getBillingService,
-  PLUS_BILLING_PLANS,
-  createUnconfiguredPlusPlanProducts,
+  normalizePlusPlans,
   type BillingHarnessScenario,
+  type NormalizedPlusPlan,
+  type PlusBillingPlan,
   type StoreProduct,
 } from "../billing";
 import type { RootStackScreenProps } from "../navigation/types";
@@ -34,17 +36,16 @@ function formatDate(dateString: string) {
   }).format(new Date(dateString));
 }
 
-const APPROVED_PLANS: StoreProduct[] = createUnconfiguredPlusPlanProducts();
-
-export function PlusScreen({ navigation }: Props) {
+export function PlusScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBillingLoading, setIsBillingLoading] = useState(true);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [plusPlans, setPlusPlans] = useState<StoreProduct[]>([]);
-  const [selectedProductCode, setSelectedProductCode] = useState("0nya_plus_weekly");
+  const [selectedCadence, setSelectedCadence] = useState<PlusBillingPlan>("weekly");
   const [isManagementSheetOpen, setIsManagementSheetOpen] = useState(false);
   const token = session?.access_token;
   const billingService = getBillingService();
@@ -82,12 +83,14 @@ export function PlusScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       void loadSubscription();
+      setIsBillingLoading(true);
       void getBillingService()
         .getProducts("subscription")
-        .then((products) =>
-          setPlusPlans(products.filter((product) => product.kind === "subscription")),
-        )
-        .catch(() => setPlusPlans([]));
+        .then((products) => {
+          setPlusPlans(products.filter((product) => product.kind === "subscription"));
+        })
+        .catch(() => setPlusPlans([]))
+        .finally(() => setIsBillingLoading(false));
     }, [loadSubscription]),
   );
 
@@ -97,24 +100,21 @@ export function PlusScreen({ navigation }: Props) {
 
   const isPlus = me?.subscription.status === "active";
 
-  const approvedPlans = APPROVED_PLANS.map((approved) => {
-    const storeMatch = plusPlans.find((product) => product.productCode === approved.productCode);
-    return storeMatch
-      ? {
-          ...approved,
-          ...storeMatch,
-          localizedPrice: storeMatch.localizedPrice || approved.localizedPrice,
-        }
-      : approved;
-  });
+  const isReferredUser = checkReferralEligibility(session, route.params);
+
+  const normalizedPlans = useMemo(
+    () => normalizePlusPlans(plusPlans, isReferredUser),
+    [plusPlans, isReferredUser],
+  );
 
   const selectedPlan =
-    approvedPlans.find((product) => product.productCode === selectedProductCode) ??
-    approvedPlans[0];
-  const selectedCadence = selectedPlan?.billingPlan ?? "weekly";
+    normalizedPlans.find((plan) => plan.cadence === selectedCadence) ?? normalizedPlans[0];
+  const purchasableProduct = selectedPlan.purchasableProduct;
+
   const canPurchaseSelectedPlan =
     billingService.isHarness ||
-    (selectedPlan?.status === "available" && Boolean(selectedPlan.googleProductId && selectedPlan.offerToken));
+    (purchasableProduct?.status === "available" &&
+      Boolean(purchasableProduct.googleProductId && purchasableProduct.offerToken));
 
   async function handlePlusPurchase(scenario?: BillingHarnessScenario) {
     if (!token) {
@@ -130,7 +130,7 @@ export function PlusScreen({ navigation }: Props) {
     setBillingMessage(null);
 
     const plusProduct: StoreProduct =
-      selectedPlan ??
+      purchasableProduct ??
       (await billingService.getProducts("subscription"))[0] ?? {
         billingPeriodLabel: "Store price not configured",
         billingPlan: "weekly",
@@ -142,6 +142,7 @@ export function PlusScreen({ navigation }: Props) {
         productCode: "0nya_plus",
         status: "not_configured",
       };
+
     try {
       const result = await billingService.purchase(plusProduct, scenario);
       const boundary = await submitGooglePlayBillingBoundary(token, {
@@ -187,34 +188,30 @@ export function PlusScreen({ navigation }: Props) {
         <Text style={styles.heroTagline}>More story. Less interruption.</Text>
       </View>
 
-      {/* 2. What You Get (Consolidated Benefits Card) */}
-      <View style={styles.section}>
-        <Text style={styles.sectionEyebrow}>WHAT YOU GET</Text>
-        <View style={styles.benefitsCard}>
+      {/* 2. Included with Plus (Refined Benefits Section) */}
+      <View style={styles.benefitsSection}>
+        <Text style={styles.sectionEyebrow}>Included with Plus</Text>
+        <View style={styles.benefitsList}>
           <BenefitRow
             helper="Stay with the story a little longer."
             icon={<MiniPlayIcon color={colors.accent} />}
             title="More Micro Drama access"
           />
-          <View style={styles.benefitDivider} />
           <BenefitRow
             helper="Let the film play without breaking the mood."
             icon={<MiniFilmIcon color={colors.accent} />}
             title="Ad-free Short Films"
           />
-          <View style={styles.benefitDivider} />
           <BenefitRow
             helper="See every frame with more depth and clarity."
             icon={<MiniQualityIcon color={colors.accent} />}
             title="Up to 2K playback"
           />
-          <View style={styles.benefitDivider} />
           <BenefitRow
             helper="Let the story follow you beyond the player."
             icon={<MiniPipIcon color={colors.accent} />}
             title="Picture in Picture"
           />
-          <View style={styles.benefitDivider} />
           <BenefitRow
             helper="Your Coins remain yours, separate from Plus."
             icon={<MiniCoinsIcon color={colors.accent} />}
@@ -239,11 +236,11 @@ export function PlusScreen({ navigation }: Props) {
         <View style={styles.membershipCard}>
           <Text style={styles.sectionEyebrow}>MEMBERSHIP</Text>
           <View style={styles.membershipTitleRow}>
-            <Text accessibilityLabel="0nya Plus · ACTIVE" style={styles.membershipHeadline}>
+            <Text accessibilityLabel={"0nya Plus \u00B7 ACTIVE"} style={styles.membershipHeadline}>
               <Text style={styles.brand0}>0</Text>
               <Text style={styles.brandNya}>nya</Text>
               <Text style={styles.brandPlus}> Plus</Text>
-              <Text style={styles.membershipDot}> · </Text>
+              <Text style={styles.membershipDot}>{" \u00B7 "}</Text>
               <Text style={styles.membershipActiveText}>ACTIVE</Text>
             </Text>
           </View>
@@ -258,7 +255,7 @@ export function PlusScreen({ navigation }: Props) {
             ]}
           >
             <Text style={styles.manageSubscriptionText}>Manage subscription</Text>
-            <Text style={styles.manageSubscriptionChevron}>›</Text>
+            <Text style={styles.manageSubscriptionChevron}>{"\u203A"}</Text>
           </Pressable>
         </View>
       ) : (
@@ -266,18 +263,19 @@ export function PlusScreen({ navigation }: Props) {
           <Text style={styles.sectionEyebrow}>MEMBERSHIP</Text>
           <Text style={styles.membershipOfferTitle}>Choose your Plus plan</Text>
           <View style={styles.planList}>
-            {approvedPlans.map((plan) => (
+            {normalizedPlans.map((plan) => (
               <PlanRow
-                key={plan.productCode}
-                onPress={() => setSelectedProductCode(plan.productCode)}
+                isBillingLoading={isBillingLoading}
+                key={plan.cadence}
+                onPress={() => setSelectedCadence(plan.cadence)}
                 plan={plan}
-                selected={plan.productCode === selectedPlan?.productCode}
+                selected={plan.cadence === selectedCadence}
               />
             ))}
           </View>
 
           <Pressable
-            accessibilityLabel="Subscribe to Plus"
+            accessibilityLabel="Continue with Plus"
             accessibilityRole="button"
             disabled={isPurchasing || !canPurchaseSelectedPlan}
             onPress={() => void handlePlusPurchase()}
@@ -293,7 +291,7 @@ export function PlusScreen({ navigation }: Props) {
                 (isPurchasing || !canPurchaseSelectedPlan) && styles.payButtonTextDisabled,
               ]}
             >
-              {isPurchasing ? "Processing..." : "Subscribe to Plus"}
+              {isPurchasing ? "Processing..." : "Continue with Plus"}
             </Text>
           </Pressable>
 
@@ -301,7 +299,7 @@ export function PlusScreen({ navigation }: Props) {
             <Text style={styles.renewalDisclosureText}>
               Auto-renews {selectedCadence} until cancelled.
             </Text>
-            {selectedPlan?.offerPurpose === "referral_intro" ? (
+            {selectedPlan.hasActiveReferralOffer ? (
               <Text style={styles.renewalDisclosureText}>
                 Referral introductory price applies for the first month; standard monthly store price applies after.
               </Text>
@@ -507,50 +505,69 @@ const glyphStyles = StyleSheet.create({
   },
 });
 
-function cadenceNounFor(plan: StoreProduct) {
-  return (
-    PLUS_BILLING_PLANS.find((entry) => entry.billingPlan === plan.billingPlan)?.cadenceNoun ?? null
-  );
-}
-
-function planTitle(plan: StoreProduct) {
-  if (plan.offerPurpose === "referral_intro") {
-    return "Referral Monthly";
-  }
-  if (!plan.billingPlan) {
-    return plan.displayName;
-  }
-
-  const cadence = plan.billingPlan;
-  return `${cadence.charAt(0).toUpperCase()}${cadence.slice(1)}`;
-}
-
-function formatPlanPriceText(plan: StoreProduct): string {
-  const noun = plan.billingPlan === "weekly" ? "week" : cadenceNounFor(plan);
-
-  const price = plan.localizedPrice;
-  if (price && noun) {
-    return `${price} / ${noun}`;
-  }
-  if (price) {
-    return price;
-  }
-  return "Price not configured";
-}
-
 type PlanRowProps = {
+  isBillingLoading: boolean;
   onPress: () => void;
-  plan: StoreProduct;
+  plan: NormalizedPlusPlan;
   selected: boolean;
 };
 
-function PlanRow({ onPress, plan, selected }: PlanRowProps) {
-  const priceText = formatPlanPriceText(plan);
-  const title = planTitle(plan);
+function PlanRow({ isBillingLoading, onPress, plan, selected }: PlanRowProps) {
+  const isMonthlyReferred = plan.hasActiveReferralOffer && Boolean(plan.referralOfferProduct);
+
+  const renderPrice = () => {
+    if (isBillingLoading) {
+      return <View style={styles.priceSkeleton} />;
+    }
+
+    if (isMonthlyReferred) {
+      const referralPrice = plan.referralOfferProduct?.localizedPrice;
+      const basePrice = plan.baseProduct.localizedPrice;
+
+      if (!referralPrice || plan.referralOfferProduct?.status === "unavailable") {
+        return <Text style={styles.planPriceUnavailable}>Unavailable</Text>;
+      }
+
+      return (
+        <View style={styles.referralPriceBlock}>
+          <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>
+            {`${referralPrice} first month`}
+          </Text>
+          {basePrice ? (
+            <Text style={styles.planPriceSub}>
+              {`then ${basePrice}/month`}
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
+
+    const price = plan.baseProduct.localizedPrice;
+    if (
+      !price ||
+      plan.baseProduct.status === "unavailable" ||
+      plan.baseProduct.status === "not_configured"
+    ) {
+      return <Text style={styles.planPriceUnavailable}>Unavailable</Text>;
+    }
+
+    const noun =
+      plan.cadence === "weekly"
+        ? "week"
+        : plan.cadence === "monthly"
+          ? "month"
+          : "year";
+
+    return (
+      <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>
+        {`${price}/${noun}`}
+      </Text>
+    );
+  };
 
   return (
     <Pressable
-      accessibilityLabel={`${title}. ${priceText}`}
+      accessibilityLabel={`${plan.title} plan`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}
@@ -560,13 +577,18 @@ function PlanRow({ onPress, plan, selected }: PlanRowProps) {
         selected && styles.planRowSelected,
       ]}
     >
-      <View style={styles.planRowContent}>
+      <View style={styles.planRowLeft}>
         <View style={[styles.planRadio, selected && styles.planRadioSelected]}>
           {selected ? <View style={styles.planRadioDot} /> : null}
         </View>
-        <Text style={[styles.planName, selected && styles.planNameSelected]}>{title}</Text>
+        <View style={styles.planTitleBlock}>
+          <Text style={[styles.planName, selected && styles.planNameSelected]}>{plan.title}</Text>
+          {isMonthlyReferred ? (
+            <Text style={styles.referralWelcomeTagline}>A little welcome from 0nya</Text>
+          ) : null}
+        </View>
       </View>
-      <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>{priceText}</Text>
+      <View style={styles.planRowRight}>{renderPrice()}</View>
     </Pressable>
   );
 }
@@ -603,60 +625,54 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     lineHeight: 21,
   },
-  section: {
+  benefitsSection: {
     gap: 8,
+    marginTop: 2,
+    marginBottom: 4,
   },
   sectionEyebrow: {
-    color: "rgba(254, 253, 253, 0.45)",
+    color: "rgba(254, 253, 253, 0.48)",
     fontSize: 10.5,
     fontWeight: "600",
     letterSpacing: 1.1,
     textTransform: "uppercase",
   },
-  benefitsCard: {
-    backgroundColor: "rgba(254, 253, 253, 0.02)",
-    borderColor: "rgba(254, 253, 253, 0.08)",
-    borderRadius: 16,
+  benefitsList: {
+    backgroundColor: "rgba(254, 253, 253, 0.015)",
+    borderColor: "rgba(254, 253, 253, 0.06)",
+    borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    gap: 10,
   },
   benefitRow: {
     alignItems: "flex-start",
     flexDirection: "row",
-    gap: 12,
-    paddingVertical: 8,
-  },
-  benefitDivider: {
-    backgroundColor: "rgba(254, 253, 253, 0.06)",
-    height: 1,
+    gap: 11,
   },
   benefitIconWrap: {
     alignItems: "center",
-    backgroundColor: "rgba(43, 126, 125, 0.12)",
-    borderColor: "rgba(43, 126, 125, 0.28)",
-    borderRadius: 8,
-    borderWidth: 1,
-    height: 28,
+    height: 22,
     justifyContent: "center",
     marginTop: 1,
-    width: 28,
+    width: 22,
   },
   benefitCopy: {
     flex: 1,
-    gap: 2,
+    gap: 1.5,
   },
   benefitTitle: {
     color: colors.text,
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: "600",
     letterSpacing: -0.1,
   },
   benefitHelper: {
-    color: colors.textSecondary,
-    fontSize: 12,
+    color: "rgba(254, 253, 253, 0.52)",
+    fontSize: 11.5,
     fontWeight: "400",
-    lineHeight: 16.5,
+    lineHeight: 15.5,
   },
   membershipSection: {
     gap: 8,
@@ -664,7 +680,7 @@ const styles = StyleSheet.create({
   },
   membershipOfferTitle: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: "600",
   },
   membershipCard: {
@@ -726,49 +742,36 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   planList: {
-    gap: 6,
+    gap: 8,
   },
   planRow: {
     alignItems: "center",
     backgroundColor: "rgba(254, 253, 253, 0.02)",
-    borderColor: "rgba(254, 253, 253, 0.08)",
+    borderColor: "rgba(254, 253, 253, 0.07)",
     borderRadius: 12,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 9,
   },
   planRowPressed: {
     backgroundColor: "rgba(254, 253, 253, 0.05)",
   },
   planRowSelected: {
-    backgroundColor: "rgba(43, 126, 125, 0.08)",
-    borderColor: colors.accent,
+    backgroundColor: "rgba(43, 126, 125, 0.07)",
+    borderColor: "#2B7E7D",
+    borderWidth: 1.2,
   },
-  planRowContent: {
+  planRowLeft: {
     alignItems: "center",
     flexDirection: "row",
     gap: 10,
+    flex: 1,
   },
-  planRadio: {
-    alignItems: "center",
-    borderColor: "rgba(254, 253, 253, 0.25)",
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 16,
-    justifyContent: "center",
-    width: 16,
-  },
-  planRadioSelected: {
-    borderColor: colors.accent,
-  },
-  planRadioDot: {
-    backgroundColor: colors.accent,
-    borderRadius: 999,
-    height: 8,
-    width: 8,
+  planTitleBlock: {
+    gap: 2,
   },
   planName: {
     color: colors.text,
@@ -777,6 +780,34 @@ const styles = StyleSheet.create({
   },
   planNameSelected: {
     color: colors.text,
+  },
+  referralWelcomeTagline: {
+    color: "rgba(43, 126, 125, 0.92)",
+    fontSize: 11.5,
+    fontWeight: "400",
+    letterSpacing: -0.1,
+  },
+  planRowRight: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  planRadio: {
+    alignItems: "center",
+    borderColor: "rgba(254, 253, 253, 0.22)",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 16,
+    justifyContent: "center",
+    width: 16,
+  },
+  planRadioSelected: {
+    borderColor: "#2B7E7D",
+  },
+  planRadioDot: {
+    backgroundColor: "#2B7E7D",
+    borderRadius: 999,
+    height: 8,
+    width: 8,
   },
   planPrice: {
     color: colors.textSecondary,
@@ -787,15 +818,35 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "600",
   },
+  planPriceSub: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "400",
+    marginTop: 1,
+  },
+  planPriceUnavailable: {
+    color: "rgba(254, 253, 253, 0.35)",
+    fontSize: 12.5,
+    fontWeight: "500",
+  },
+  referralPriceBlock: {
+    alignItems: "flex-end",
+  },
+  priceSkeleton: {
+    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    borderRadius: 4,
+    height: 12,
+    width: 58,
+  },
   payButton: {
     alignItems: "center",
-    backgroundColor: "rgba(43, 126, 125, 0.12)",
-    borderColor: "rgba(43, 126, 125, 0.38)",
+    backgroundColor: "rgba(43, 126, 125, 0.14)",
+    borderColor: "rgba(43, 126, 125, 0.40)",
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 42,
     justifyContent: "center",
-    marginTop: 4,
+    marginTop: 6,
   },
   payButtonDisabled: {
     backgroundColor: "rgba(254, 253, 253, 0.03)",
@@ -803,8 +854,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   payButtonPressed: {
-    backgroundColor: "rgba(43, 126, 125, 0.20)",
-    opacity: 0.88,
+    backgroundColor: "rgba(43, 126, 125, 0.22)",
+    opacity: 0.9,
   },
   payButtonText: {
     color: colors.text,
@@ -813,7 +864,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   payButtonTextDisabled: {
-    color: "rgba(254, 253, 253, 0.32)",
+    color: "rgba(254, 253, 253, 0.28)",
   },
   launchStatusText: {
     color: colors.textMuted,
@@ -826,6 +877,7 @@ const styles = StyleSheet.create({
   },
   renewalDisclosure: {
     gap: 2,
+    marginTop: 4,
   },
   renewalDisclosureText: {
     color: colors.textSecondary,

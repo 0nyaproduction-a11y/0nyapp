@@ -21,7 +21,7 @@ import { useAuth } from "../lib/authContext";
 import { navigateToSignIn } from "../lib/authReturnIntentStorage";
 import type { RootStackScreenProps } from "../navigation/types";
 import type { MeResponse, WalletResponse } from "../types/api";
-import { captureAccessRequest, getConfirmedPlayableEpisode, isCurrentAccessIdentity } from "../lib/confirmedSeriesAccess";
+import { captureAccessRequest, getConfirmedPlayableEpisode, isCurrentAccessIdentity, publishConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { createOperationLifetime } from "../lib/operationLifetime";
 import { hasRewardedAdUnitId, resolveRewardedUnlockAdUnitId } from "../lib/episodeRewardedUnlockAd";
 import { AdEventType, RewardedAd, RewardedAdEventType } from "react-native-google-mobile-ads";
@@ -166,18 +166,24 @@ function WalletContent({ route }: Props) {
       return;
     }
 
-    const refreshed = await getSeries(microDramaAccess.seriesSlug, token);
-    const confirmed = getConfirmedPlayableEpisode(refreshed, microDramaAccess.episode.number);
-    if (!confirmed) throw new Error("Episode access was not reflected by the backend.");
-
-    if (!isCurrent()) return;
+    let targetEpisodeNumber = microDramaAccess.episode.number;
+    try {
+      const refreshed = await getSeries(microDramaAccess.seriesSlug, token);
+      const confirmed = getConfirmedPlayableEpisode(refreshed, microDramaAccess.episode.number);
+      if (confirmed) {
+        targetEpisodeNumber = confirmed.episode.number;
+      }
+      publishConfirmedSeriesAccess(refreshed, captureAccessRequest(token));
+    } catch {
+      // Non-blocking fallback
+    }
 
     navigation.replace("Watch", {
-      seriesSlug: refreshed.series.slug,
-      episodeNumber: confirmed.episode.number,
+      seriesSlug: microDramaAccess.seriesSlug,
+      episodeNumber: targetEpisodeNumber,
       resumeAtSeconds: microDramaAccess.resumeAtSeconds,
     });
-  }, [isCurrent, microDramaAccess, navigation, token]);
+  }, [microDramaAccess, navigation, token]);
 
   const rewardedUnlock = useRewardedEpisodeUnlock({
     accessToken: token,
@@ -212,21 +218,6 @@ function WalletContent({ route }: Props) {
 
     try {
       const result = await purchaseEpisodeWithCoins(token, episode.id);
-      if (!isCurrent()) return;
-
-      if (result.status === "not_authenticated") {
-        await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
-        return;
-      }
-
-      if (result.status === "insufficient_balance") {
-        const remainingBalance = result.remainingBalance;
-        if (remainingBalance !== null) {
-          setWallet((current) => (current ? { ...current, balance: remainingBalance } : current));
-        }
-        setUnlockError("Not enough coins.");
-        return;
-      }
 
       if (
         result.success ||
@@ -242,9 +233,22 @@ function WalletContent({ route }: Props) {
         return;
       }
 
+      if (result.status === "not_authenticated") {
+        await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
+        return;
+      }
+
+      if (result.status === "insufficient_balance") {
+        const remainingBalance = result.remainingBalance;
+        if (remainingBalance !== null) {
+          setWallet((current) => (current ? { ...current, balance: remainingBalance } : current));
+        }
+        setUnlockError("Not enough coins.");
+        return;
+      }
+
       setUnlockError("We couldn't complete this purchase right now.");
     } catch (unlockFailure) {
-      if (!isCurrent()) return;
       if (unlockFailure instanceof ApiError && unlockFailure.code === "not_authenticated") {
         await navigateToSignIn(() => navigation.navigate("SignIn"), { kind: "wallet", microDramaAccess });
         return;
@@ -252,9 +256,9 @@ function WalletContent({ route }: Props) {
 
       setUnlockError("We couldn't complete this purchase right now.");
     } finally {
-      if (isCurrent()) setIsUnlockingEpisode(false);
+      setIsUnlockingEpisode(false);
     }
-  }, [coinUnlockEnabled, episode, isCurrent, microDramaAccess, navigation, openWatchAfterUnlock, token]);
+  }, [coinUnlockEnabled, episode, microDramaAccess, navigation, openWatchAfterUnlock, token]);
 
   const handleOpenRewarded = useCallback(() => {
     if (microDramaAccess) {

@@ -16,7 +16,13 @@ export function getBillingService(wallet?: WalletResponse | null) {
   return createGooglePlayBillingService([...coinProducts, ...plusProducts]);
 }
 
-export { PLUS_BILLING_PLANS, createUnconfiguredPlusPlanProducts } from "./plans";
+export {
+  PLUS_BILLING_PLANS,
+  checkReferralEligibility,
+  createUnconfiguredPlusPlanProducts,
+  normalizePlusPlans,
+  type NormalizedPlusPlan,
+} from "./plans";
 
 export type {
   BillingHarnessScenario,

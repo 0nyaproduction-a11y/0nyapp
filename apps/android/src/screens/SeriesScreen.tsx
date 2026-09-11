@@ -16,6 +16,7 @@ import {
   VectorChevron,
 } from "../components/ui";
 import { SeriesEpisodeTray } from "./SeriesEpisodeTray";
+import { EpisodeAccessSheet } from "../components/EpisodeAccessSheet";
 import { getCatalog, getRequestRecoveryCopy, getSeries, type RecoveryCopy } from "../lib/api";
 import { resolveMediaUrl } from "../lib/media";
 import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
@@ -26,7 +27,7 @@ import { useAppLanguage } from "../lib/appLanguage";
 import { getEpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
 import { findResumeEpisode, findStartEpisode } from "../lib/seriesPlayback";
 import { usePlusMembership } from "../player/usePlusMembership";
-import type { RootStackParamList } from "../navigation/types";
+import type { MicroDramaAccessContext, RootStackParamList } from "../navigation/types";
 import type { ApiEpisode, ApiSeries, SeriesResponse, WatchProgressItem } from "../types/api";
 import { borders, colors, radii, spacing, surfaces, typography } from "../theme/tokens";
 
@@ -69,6 +70,7 @@ function SeriesScreenContent({ navigation, route }: Props) {
   const [error, setError] = useState<RecoveryCopy | null>(null);
   const [isLoading, setIsLoading] = useState(() => !confirmedInitialSeriesAccess);
   const [isEpisodeTrayOpen, setIsEpisodeTrayOpen] = useState(false);
+  const [lockedEpisodeAccess, setLockedEpisodeAccess] = useState<MicroDramaAccessContext | null>(null);
   const [isMyList, setIsMyList] = useState(false);
   const hasHydratedRef = useRef(Boolean(confirmedInitialSeriesAccess));
 
@@ -306,6 +308,19 @@ function SeriesScreenContent({ navigation, route }: Props) {
 
       setIsEpisodeTrayOpen(false);
 
+      const hasPreview = (episode.lockedPreviewSeconds ?? 0) > 0;
+      if (!access.canWatch && !hasPreview) {
+        setLockedEpisodeAccess({
+          access,
+          episode,
+          episodeAccess: data.episodeAccess,
+          episodeNumber: episode.number,
+          seriesSlug: data.series.slug,
+          seriesTitle: data.series.title,
+        });
+        return;
+      }
+
       navigation.navigate("Watch", {
         seriesSlug: data.series.slug,
         episodeNumber: episode.number,
@@ -465,6 +480,19 @@ function SeriesScreenContent({ navigation, route }: Props) {
                 source: "SERIES_DETAIL",
               });
 
+              const hasPreview = (ctaEpisode.lockedPreviewSeconds ?? 0) > 0;
+              if (!ctaAccess.canWatch && !hasPreview) {
+                setLockedEpisodeAccess({
+                  access: ctaAccess,
+                  episode: ctaEpisode,
+                  episodeAccess: data.episodeAccess,
+                  episodeNumber: ctaEpisode.number,
+                  seriesSlug: data.series.slug,
+                  seriesTitle: data.series.title,
+                });
+                return;
+              }
+
               navigation.navigate("Watch", {
                 seriesSlug: data.series.slug,
                 episodeNumber: ctaEpisode.number,
@@ -603,6 +631,33 @@ function SeriesScreenContent({ navigation, route }: Props) {
           onClose={() => setIsEpisodeTrayOpen(false)}
           onSelectEpisode={handleSelectEpisode}
           seriesTitle={data.series.title}
+        />
+      ) : null}
+
+      {lockedEpisodeAccess ? (
+        <EpisodeAccessSheet
+          microDramaAccess={lockedEpisodeAccess}
+          onDismiss={() => setLockedEpisodeAccess(null)}
+          onSuccess={(confirmedEpisode) => {
+            const nextSeriesSlug = lockedEpisodeAccess.seriesSlug;
+            const episodeNum = confirmedEpisode.number;
+            setData((current) => {
+              if (!current) return current;
+              return {
+                ...current,
+                episodeAccess: {
+                  ...current.episodeAccess,
+                  [String(episodeNum)]: { canWatch: true, kind: "owned", label: "Owned" },
+                },
+              };
+            });
+            setLockedEpisodeAccess(null);
+            navigation.navigate("Watch", {
+              seriesSlug: nextSeriesSlug,
+              episodeNumber: episodeNum,
+              searchContext: route.params.searchContext,
+            });
+          }}
         />
       ) : null}
     </>

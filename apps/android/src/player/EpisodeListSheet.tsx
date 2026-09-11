@@ -21,38 +21,29 @@ type EpisodeListSheetProps = {
 
 // Layout constants — compact circular episode buttons filling width edge-to-edge
 const CIRCLE_SIZE = 44;
-const SHEET_HORIZONTAL_PADDING = 20;
-const GRID_GAP_VERTICAL = 14;
-const SHEET_TOP_PADDING = 12;
 const SHEET_HORIZONTAL_PADDING = 16;
 const GRID_GAP_VERTICAL = 12;
 const SHEET_TOP_PADDING = 10;
-const HEADER_ROW_HEIGHT = 38;
-const HEADER_MARGIN_BOTTOM = 16;
-const HEADER_MARGIN_BOTTOM = 14;
+const HEADER_ROW_HEIGHT = 36;
+const HEADER_MARGIN_BOTTOM = 12;
+const DIVIDER_HEIGHT = 1;
+const DIVIDER_MARGIN_BOTTOM = 14;
 const RANGE_STRIP_HEIGHT = 44;
-const SAFE_BOTTOM_BREATHING_ROOM = 12;
-const MIN_BOTTOM_PADDING = 20;
+const SAFE_BOTTOM_BREATHING_ROOM = 10;
 const MIN_BOTTOM_PADDING = 14;
 const SHEET_TOP_RADIUS = 24;
 
-// Color theme — adapted from cinema inspiration
-// Color theme — adapted from cinema inspiration + 0nya palette
 // Color theme — 0nya cinema palette with smarter tonal depth
-const BACKDROP_COLOR = "rgba(0, 0, 0, 0.55)";
-const SHEET_SURFACE = "#0C1211";
-const CIRCLE_SURFACE = "#050505";
+const BACKDROP_COLOR = "rgba(0, 0, 0, 0.60)";
 const SHEET_SURFACE = "#0B0F0E";
-const CIRCLE_SURFACE = "#060808";
-const CIRCLE_BORDER = "rgba(254, 253, 253, 0.10)";
-const SELECTED_CIRCLE_FILL = "#367B79";
-const SELECTED_CIRCLE_BORDER = "#4BA29F";
-const SELECTED_NUMBER = "#FFFFFF";
-const SHEET_TOP_BORDER = "rgba(43, 126, 125, 0.22)";
-const SELECTED_CIRCLE_FILL = "rgba(43, 126, 125, 0.22)";
+const CIRCLE_SURFACE = "#070A09";
+const CIRCLE_BORDER = "rgba(254, 253, 253, 0.08)";
+const CIRCLE_LOCKED_SURFACE = "rgba(229, 169, 60, 0.04)";
+const CIRCLE_LOCKED_BORDER = "rgba(229, 169, 60, 0.18)";
+const SELECTED_CIRCLE_FILL = "rgba(43, 126, 125, 0.18)";
 const SELECTED_CIRCLE_BORDER = "#2B7E7D";
 const SELECTED_NUMBER = "#FEFDFD";
-const SHEET_TOP_BORDER = "rgba(43, 126, 125, 0.28)";
+const SHEET_TOP_BORDER = "rgba(43, 126, 125, 0.30)";
 
 function getColumnsForWidth(width: number): number {
   const available = width - SHEET_HORIZONTAL_PADDING * 2;
@@ -60,11 +51,11 @@ function getColumnsForWidth(width: number): number {
   for (let cols = 8; cols >= 4; cols--) {
     const gap = (available - cols * CIRCLE_SIZE) / (cols - 1);
     if (gap >= 10) return cols;
+  }
   if (width >= 600) {
     return 8;
   }
   return 5;
-  return 6;
 }
 
 export function EpisodeListSheet({
@@ -100,6 +91,29 @@ export function EpisodeListSheet({
     episodes,
   });
 
+  // Account status badge displayed directly next to Episodes title
+  const { statusDotColor, statusLabel, statusTextColor } = useMemo(() => {
+    if (isPlusUser) {
+      return {
+        statusDotColor: "#B91825",
+        statusLabel: "Plus",
+        statusTextColor: "#FEFDFD",
+      };
+    }
+    if (isGuest) {
+      return {
+        statusDotColor: "rgba(254, 253, 253, 0.40)",
+        statusLabel: "Guest",
+        statusTextColor: "rgba(254, 253, 253, 0.72)",
+      };
+    }
+    return {
+      statusDotColor: "#2B7E7D",
+      statusLabel: "Free",
+      statusTextColor: "#2B7E7D",
+    };
+  }, [isGuest, isPlusUser]);
+
   // Calculate gap so circles span from left corner to right corner with no empty corner dead space
   const horizontalGap = useMemo(() => {
     const available = width - SHEET_HORIZONTAL_PADDING * 2;
@@ -107,8 +121,6 @@ export function EpisodeListSheet({
   }, [width, columns]);
 
   const rows = Math.max(1, Math.ceil(visibleEpisodes.length / columns));
-  const maxSheetHeight = Math.round(windowHeight * 0.70);
-  const minSheetHeight = Math.round(windowHeight * 0.38);
   const maxSheetHeight = Math.round(windowHeight * 0.72);
   const gridContentHeight =
     rows * CIRCLE_SIZE + Math.max(0, rows - 1) * GRID_GAP_VERTICAL;
@@ -117,11 +129,12 @@ export function EpisodeListSheet({
     18 + // handle bar + margin
     HEADER_ROW_HEIGHT +
     HEADER_MARGIN_BOTTOM +
+    DIVIDER_HEIGHT +
+    DIVIDER_MARGIN_BOTTOM +
     (ranges.length > 1 ? RANGE_STRIP_HEIGHT : 0) +
     sheetBottomPadding;
-  const sheetHeight = Math.min(maxSheetHeight, chromeHeight + gridContentHeight);
   const naturalHeight = chromeHeight + gridContentHeight;
-  const sheetHeight = Math.min(maxSheetHeight, Math.max(minSheetHeight, naturalHeight));
+  const sheetHeight = Math.min(maxSheetHeight, naturalHeight);
 
   // Left-aligned with sheet padding so row 1 starts under "Episodes" and partial rows stay left-aligned
   const columnWrapperStyle = useMemo(
@@ -139,31 +152,22 @@ export function EpisodeListSheet({
         {/* Grab handle indicator */}
         <View style={styles.handleBar} />
 
+        {/* Header — title + status badge next to it + close button */}
         <View style={styles.header}>
-          <View style={styles.headerSideLeft}>
+          <View style={styles.headerTitleRow}>
             <Text style={styles.headerTitle}>
               {"Episodes"}
               {episodes.length > 0 ? (
                 <Text style={styles.headerCount}>{` (${episodes.length})`}</Text>
               ) : null}
             </Text>
-          </View>
 
-          <View style={styles.headerCenter}>
-            <Text numberOfLines={1} style={styles.plusStatusText}>
-              <Text style={styles.plusShunya}>{"Shunya "}</Text>
-              <Text style={styles.plusBrand}>{"Plus"}</Text>
-              <Text style={styles.plusDot}>{" · "}</Text>
-              <Text style={styles.plusActive}>{"Active"}</Text>
-            </Text>
-            {isPlusUser ? (
-              <Text numberOfLines={1} style={styles.plusStatusText}>
-                <Text style={styles.plusShunya}>{"Shunya "}</Text>
-                <Text style={styles.plusBrand}>{"Plus"}</Text>
-                <Text style={styles.plusDot}>{" · "}</Text>
-                <Text style={styles.plusActive}>{"Active"}</Text>
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
+              <Text style={styles.statusPillText}>
+                {"Status - "}<Text style={[styles.statusPillValue, { color: statusTextColor }]}>{statusLabel}</Text>
               </Text>
-            ) : null}
+            </View>
           </View>
 
           <View style={styles.headerSideRight}>
@@ -178,6 +182,9 @@ export function EpisodeListSheet({
             </Pressable>
           </View>
         </View>
+
+        {/* Subtle divider under header */}
+        <View style={styles.headerDivider} />
 
         <EpisodeRangeSelector
           activeRangeStart={activeRangeStart}
@@ -201,6 +208,7 @@ export function EpisodeListSheet({
               isPlus: isPlusUser,
             });
             const isLastRow = Math.floor(index / columns) === rows - 1;
+            const isLocked = accessDisplay.isLocked && !isPlaying;
 
             return (
               <Pressable
@@ -217,10 +225,11 @@ export function EpisodeListSheet({
                     width: CIRCLE_SIZE,
                   },
                   isPlaying && styles.circlePlaying,
+                  isLocked && styles.circleLocked,
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.cellNumber, isPlaying && styles.cellNumberPlaying]}>
+                <Text style={[styles.cellNumber, isPlaying && styles.cellNumberPlaying, isLocked && styles.cellNumberLocked]}>
                   {item.number}
                 </Text>
                 <EpisodeAccessMarkers accessDisplay={accessDisplay} />
@@ -299,15 +308,13 @@ const styles = StyleSheet.create({
   },
   handleBar: {
     alignSelf: "center",
-    backgroundColor: "rgba(254, 253, 253, 0.22)",
+    backgroundColor: "rgba(254, 253, 253, 0.18)",
     borderRadius: 2,
-    height: 4,
-    marginBottom: 14,
-    width: 38,
     height: 3.5,
     marginBottom: 12,
     width: 36,
   },
+  // ── Header ──────────────────────────────────────────────────
   header: {
     alignItems: "center",
     flexDirection: "row",
@@ -316,16 +323,11 @@ const styles = StyleSheet.create({
     marginBottom: HEADER_MARGIN_BOTTOM,
     paddingHorizontal: SHEET_HORIZONTAL_PADDING,
   },
-  headerSideLeft: {
-    alignItems: "flex-start",
-    flexShrink: 0,
-    justifyContent: "center",
-  },
-  headerCenter: {
+  headerTitleRow: {
     alignItems: "center",
     flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 8,
+    flexDirection: "row",
+    gap: 10,
   },
   headerSideRight: {
     alignItems: "flex-end",
@@ -336,35 +338,47 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "700",
+    letterSpacing: -0.2,
   },
   headerCount: {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: "500",
   },
-  plusStatusText: {
-    fontSize: 12.5,
-    fontWeight: "600",
+  // ── Account status badge (next to Episodes title) ──────────
+  statusPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.05)",
+    borderColor: "rgba(254, 253, 253, 0.10)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusDot: {
+    borderRadius: 999,
+    height: 5,
+    width: 5,
+  },
+  statusPillText: {
+    color: "rgba(254, 253, 253, 0.50)",
+    fontSize: 11,
+    fontWeight: "500",
     letterSpacing: 0.2,
-    lineHeight: 16,
-    textAlign: "center",
   },
-  plusShunya: {
-    color: colors.accent,
+  statusPillValue: {
     fontWeight: "700",
   },
-  plusBrand: {
-    color: "#955E61",
-    fontWeight: "700",
+  // ── Header divider ──────────────────────────────────────────
+  headerDivider: {
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
+    height: DIVIDER_HEIGHT,
+    marginBottom: DIVIDER_MARGIN_BOTTOM,
+    marginHorizontal: SHEET_HORIZONTAL_PADDING,
   },
-  plusDot: {
-    color: "rgba(254, 253, 253, 0.45)",
-    fontWeight: "400",
-  },
-  plusActive: {
-    color: colors.plusRed,
-    fontWeight: "600",
-  },
+  // ── Close button ────────────────────────────────────────────
   closeCircle: {
     alignItems: "center",
     backgroundColor: CIRCLE_SURFACE,
@@ -378,6 +392,7 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78,
   },
+  // ── Grid ────────────────────────────────────────────────────
   gridList: {
     flex: 1,
   },
@@ -385,7 +400,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     paddingTop: 0,
   },
-  // Compact circular episode buttons
+  // ── Episode circles ─────────────────────────────────────────
   circle: {
     alignItems: "center",
     backgroundColor: CIRCLE_SURFACE,
@@ -396,16 +411,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 2,
   },
-  // Selected active circle — rich brand teal fill
-  // Selected active circle — subtle brand teal active fill and border
   circlePlaying: {
     backgroundColor: SELECTED_CIRCLE_FILL,
     borderColor: SELECTED_CIRCLE_BORDER,
     borderWidth: 1.5,
   },
+  circleLocked: {
+    backgroundColor: CIRCLE_LOCKED_SURFACE,
+    borderColor: CIRCLE_LOCKED_BORDER,
+  },
   cellNumber: {
-    color: colors.text,
-    fontSize: 14,
     color: "rgba(254, 253, 253, 0.85)",
     fontSize: 13.5,
     fontWeight: "600",
@@ -413,5 +428,8 @@ const styles = StyleSheet.create({
   cellNumberPlaying: {
     color: SELECTED_NUMBER,
     fontWeight: "700",
+  },
+  cellNumberLocked: {
+    color: "rgba(254, 253, 253, 0.50)",
   },
 });

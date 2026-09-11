@@ -93,7 +93,12 @@ export type RootStackParamList = {
           shortFilm: ApiShortFilm;
         };
       };
-  Plus: undefined;
+  Plus:
+    | undefined
+    | {
+        isReferred?: boolean;
+        referralCode?: string;
+      };
   SearchResults: {
     format?: ExploreFormat;
     genre?: string | null;

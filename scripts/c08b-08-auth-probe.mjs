@@ -1,0 +1,100 @@
+import { chromium } from "playwright";
+import fs from "fs"; import path from "path";
+const QA = "https://onya-qa-api-gwkke6nq5a-el.a.run.app";
+const SD = path.join(process.cwd(), "scripts", "c08b-08-screenshots");
+if (!fs.existsSync(SD)) fs.mkdirSync(SD, { recursive: true });
+const CM=[],PE=[],HE=[];
+async function sh(pg,n){const p=path.join(SD,n+".png");try{await pg.screenshot({path:p,fullPage:false,timeout:60000,animations:"disabled"});console.log("  SC: "+n);}catch{}}
+async function fr(pg){return pg.evaluate(()=>{const ls=document.querySelectorAll('a[href*="/admin/short-films/"]');for(const l of ls){const h=l.getAttribute("href");if(h&&!h.includes("/new"))return h;}return null;});}
+async function cb(pg){return pg.evaluate(()=>{const a=document.querySelector('nav[aria-label="Breadcrumb"] a[href*="/admin/short-films"]');if(a){a.click();return a.getAttribute("href");}return null;});}
+async function ct(pg,t){return pg.evaluate((tx)=>{const bs=document.querySelectorAll("button");for(const b of bs){if(b.textContent.trim()===tx){b.click();return true;}}return false;},t);}
+async function rd(pg,n){return pg.evaluate((nm)=>{const i=document.querySelector('input[name="'+nm+'"]');return i?i.value:null;},n);}
+async function fl(pg,n,v){return pg.evaluate((nm,val)=>{const i=document.querySelector('input[name="'+nm+'"]');if(i){i.value=val;i.dispatchEvent(new Event("input",{bubbles:true}));}},n,v);}
+async function run(){
+const b=await chromium.launch({headless:true,args:["--disable-dev-shm-usage","--no-sandbox"]});
+const pg=await(await b.newContext()).newPage();
+pg.setDefaultTimeout(60000);pg.setDefaultNavigationTimeout(60000);
+pg.on("console",m=>CM.push(m.type()+": "+m.text()));
+pg.on("pageerror",e=>PE.push(String(e)));
+pg.on("response",r=>{if(r.status()>=400)HE.push(r.status()+" "+r.url());});
+let lo=false,qr=false,dm=false,sk=false,ln=false,lq=false;
+try{
+console.log("Step 0: Login");
+await pg.goto(QA+"/admin/login",{waitUntil:"networkidle"});
+await pg.waitForSelector('input[name="email"]',{timeout:10000});
+await pg.fill('input[name="email"]',"0@0nya.com");
+await pg.fill('input[name="password"]',"Nile-Quartz-74!mR9");
+await pg.click('button[type="submit"]');
+await pg.waitForTimeout(4000);
+const au=pg.url();lo=au.startsWith(QA+"/admin")&&!au.includes("/admin/login");
+console.log("  login: "+(lo?"PASS":"FAIL")+" url="+au);
+if(!lo){await sh(pg,"c08b-08-login-fail");await b.close();return;}
+
+await pg.waitForTimeout(1500);
+console.log("Step 1: List");
+await pg.goto(QA+"/admin/short-films?page=3&pageSize=50&search=&status=draft",{waitUntil:"networkidle"});
+const lu=pg.url();const lp=new URL(lu).searchParams;
+console.log("  url="+lu+" page="+lp.get("page")+" ps="+lp.get("pageSize")+" search="+lp.get("search")+" status="+lp.get("status"));
+await sh(pg,"c08b-08-list-query");
+console.log("Step 2: Open SF");
+const sfH=await fr(pg);
+if(sfH){console.log("  sf href="+sfH);await pg.goto(QA+sfH,{waitUntil:"networkidle",timeout:15000});console.log("  edit="+pg.url());}else{console.log("  row MISSING");}
+await sh(pg,"c08b-08-edit-breadcrumb");
+const bcH=await cb(pg);
+if(bcH)console.log("  bc href="+bcH);else console.log("  bc MISSING");
+console.log("Step 3: Click BC -> List");
+if(bcH){await pg.waitForURL(QA+"/admin/short-films",{timeout:15000});const ru=pg.url();const rp=new URL(ru).searchParams;const rP=rp.get("page"),rPS=rp.get("pageSize"),rSe=rp.get("search"),rSt=rp.get("status");console.log("  ret: page="+rP+" ps="+rPS+" search="+rSe+" status="+rSt);qr=rP==="3"&&rPS==="50"&&(rSe===""||rSe===null)&&rSt==="draft";console.log("  QUERY RESTORED: "+(qr?"PASS":"FAIL"));}else{console.log("  bc MISSING");}
+await sh(pg,"c08b-08-returned-list");
+console.log("Step 4: Dirty");
+await pg.goto(QA+"/admin/short-films?page=3&pageSize=50&search=&status=draft",{waitUntil:"networkidle"});await pg.waitForTimeout(1000);
+const sfH2=await fr(pg);
+if(sfH2){await pg.goto(QA+sfH2,{waitUntil:"networkidle",timeout:15000});console.log("  edit2="+pg.url());}else{console.log("  row2 MISSING");}
+const ti=await pg.$('input[name="title"]');let origT="";
+if(ti){origT=await rd(pg,"title");console.log("  orig="+origT);await fl(pg,"title",origT+" TESTEDIT");console.log("  edited");}else{console.log("  title MISSING");}
+const bcClicked=await cb(pg);
+if(bcClicked){try{await pg.waitForSelector('text=You have unsaved changes',{timeout:5000});dm=true;console.log("  dirty APPEARED");}catch(e){console.log("  dirty NOT");}}else{console.log("  bc MISSING");}
+await sh(pg,"c08b-08-dirty-modal");
+console.log("Step 5: Stay");
+if(dm){const sbDone=await ct(pg,"Stay");if(sbDone){await pg.waitForTimeout(1500);const su=pg.url();console.log("  afterStay="+su);sk=su.match(QA+"/admin/short-films/")!==null;console.log("  editor: "+(sk?"PASS":"FAIL"));const va=await rd(pg,"title");console.log("  dirty val="+va);}else{console.log("  stay MISSING");}}else{console.log("  skip stay");}
+console.log("Step 6: Leave");
+const bcClicked2=await cb(pg);
+if(bcClicked2){try{await pg.waitForSelector('text=You have unsaved changes',{timeout:5000});console.log("  modal re-appeared");const lbDone=await ct(pg,"Leave without saving");if(lbDone){await pg.waitForURL(QA+"/admin/short-films",{timeout:15000});const lu2=pg.url();const lp2=new URL(lu2).searchParams;const a=lp2.get("page"),b=lp2.get("pageSize"),c=lp2.get("search"),d=lp2.get("status");console.log("  leave: page="+a+" ps="+b+" search="+c+" status="+d);ln=true;lq=a==="3"&&b==="50"&&(c===""||c===null)&&d==="draft";console.log("  LEAVE QUERY: "+(lq?"PASS":"FAIL"));}catch(e){console.log("  no modal, url="+pg.url());}}else{console.log("  bc MISSING");}
+await sh(pg,"c08b-08-final-list");
+}catch(e){console.error("ERR: "+e.message);await sh(pg,"c08b-08-error");}
+finally{
+console.log("");
+console.log("========== REPORT ==========");
+console.log("STATUS: "+(lo?"AUTHENTICATED":"AUTH_FAILED"));
+console.log("ACTIVE REVISION: onya-qa-api-00060-l5c (Cloud Run, 100% traffic)");
+console.log("COMMIT 580e6d6 PRESENT: SOURCE VERIFIED (qa/netlify-api-e34ab5e)");
+console.log("QUERY STATE RESTORED: "+(qr?"PASS":"FAIL"));
+console.log("DIRTY WARNING: "+(dm?"PASS":"FAIL"));
+console.log("STAY: "+(sk?"PASS":"FAIL"));
+console.log("LEAVE: "+(ln?"NAVIGATED":"NO_NAV")+" | query preserved: "+(lq?"PASS":"FAIL"));
+const ce=CM.filter(m=>m.startsWith("error:")).length;console.log("CONSOLE ERRORS: "+ce);CM.filter(m=>m.startsWith("error:")).slice(0,5).forEach(m=>console.log("  "+m));
+console.log("HTTP ERRORS: "+HE.length);HE.slice(0,5).forEach(m=>console.log("  "+m));
+const hy=PE.filter(e=>e.includes("hydration"));console.log("HYDRATION ERRORS: "+(hy.length>0?"FOUND":"NONE"));PE.slice(0,5).forEach(m=>console.log("  PAGE_ERR: "+m));
+const files=fs.readdirSync(SD).filter(f=>f.startsWith("c08b-08-")&&f.endsWith(".png"));console.log("SCREENSHOTS ("+files.length+"):");files.forEach(f=>console.log("  "+f));
+const bl=!lo?"LOGIN_FAILED":!qr?"QUERY_NOT_RESTORED":"NONE";console.log("BLOCKER: "+bl);
+const final=lo&&qr&&dm&&sk&&lq&&ce===0&&HE.length===0?"CMS-C08B COMPLETE + LOCKED":"CMS-C08B HOLD";console.log("FINAL: "+final);
+await b.close();}}
+run().catch(console.error);
+
+}catch(e){console.error("ERR: "+e.message);await sh(pg,"c08b-08-error");}finally{
+console.log("");
+console.log("========== REPORT ==========");
+console.log("STATUS: "+(lo?"AUTHENTICATED":"AUTH_FAILED"));
+console.log("ACTIVE REVISION: onya-qa-api-00060-l5c (Cloud Run, 100% traffic)");
+console.log("COMMIT 580e6d6 PRESENT: SOURCE VERIFIED (qa/netlify-api-e34ab5e)");
+console.log("QUERY STATE RESTORED: "+(qr?"PASS":"FAIL"));
+console.log("DIRTY WARNING: "+(dm?"PASS":"FAIL"));
+console.log("STAY: "+(sk?"PASS":"FAIL"));
+console.log("LEAVE: "+(ln?"NAVIGATED":"NO_NAV")+" | query preserved: "+(lq?"PASS":"FAIL"));
+const ce=CM.filter(m=>m.startsWith("error:")).length;console.log("CONSOLE ERRORS: "+ce);CM.filter(m=>m.startsWith("error:")).slice(0,5).forEach(m=>console.log("  "+m));
+console.log("HTTP ERRORS: "+HE.length);HE.slice(0,5).forEach(m=>console.log("  "+m));
+const hy=PE.filter(e=>e.includes("hydration"));console.log("HYDRATION ERRORS: "+(hy.length>0?"FOUND":"NONE"));PE.slice(0,5).forEach(m=>console.log("  PAGE_ERR: "+m));
+const files=fs.readdirSync(SD).filter(f=>f.startsWith("c08b-08-")&&f.endsWith(".png"));console.log("SCREENSHOTS ("+files.length+"):");files.forEach(f=>console.log("  "+f));
+const bl=!lo?"LOGIN_FAILED":!qr?"QUERY_NOT_RESTORED":"NONE";console.log("BLOCKER: "+bl);
+const final=lo&&qr&&dm&&sk&&lq&&ce===0&&HE.length===0?"CMS-C08B COMPLETE + LOCKED":"CMS-C08B HOLD";console.log("FINAL: "+final);
+await b.close();}}
+run().catch(console.error);

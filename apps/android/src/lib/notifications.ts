@@ -5,10 +5,17 @@ try {
   Application = null;
 }
 let Notifications: typeof import("expo-notifications") | null = null;
-try {
-  Notifications = require("expo-notifications");
-} catch {
-  Notifications = null;
+let notificationsLoadAttempted = false;
+function getNotifications(): typeof import("expo-notifications") | null {
+  if (!notificationsLoadAttempted) {
+    notificationsLoadAttempted = true;
+    try {
+      Notifications = require("expo-notifications");
+    } catch {
+      Notifications = null;
+    }
+  }
+  return Notifications;
 }
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
@@ -16,20 +23,6 @@ import { registerPushDeviceApi, deactivatePushDeviceApi } from "./api";
 
 const DEVICE_ID_STORE_KEY = "0nya_push_device_id";
 const DEFAULT_EAS_PROJECT_ID = "6d1467ba-a4db-42cc-b048-8ecc114f87fd";
-
-// Configure default in-app foreground notification presentation behavior
-try {
-  Notifications?.setNotificationHandler?.({
-    handleNotification: async () => ({
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-} catch {
-  // Safe fallback if environment does not support notification handler
-}
 
 /**
  * Retrieves or creates a stable, persistent device identifier.
@@ -75,10 +68,11 @@ import Constants from "expo-constants";
  */
 export async function getNotificationPermissionStatus(): Promise<string> {
   try {
-    if (!Notifications?.getPermissionsAsync) {
+    const notifications = getNotifications();
+    if (!notifications?.getPermissionsAsync) {
       return "undetermined";
     }
-    const settings = await Notifications.getPermissionsAsync();
+    const settings = await notifications.getPermissionsAsync();
     return settings.status;
   } catch {
     return "undetermined";
@@ -91,15 +85,16 @@ export async function getNotificationPermissionStatus(): Promise<string> {
  */
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    if (!Notifications?.getPermissionsAsync || !Notifications?.requestPermissionsAsync) {
+    const notifications = getNotifications();
+    if (!notifications?.getPermissionsAsync || !notifications?.requestPermissionsAsync) {
       return false;
     }
-    const current = await Notifications.getPermissionsAsync();
+    const current = await notifications.getPermissionsAsync();
     if (current.granted) {
       return true;
     }
 
-    const requested = await Notifications.requestPermissionsAsync({
+    const requested = await notifications.requestPermissionsAsync({
       ios: {
         allowAlert: true,
         allowBadge: true,
@@ -130,10 +125,11 @@ export type NotificationPermissionState = {
  */
 export async function getNotificationPermissionState(): Promise<NotificationPermissionState> {
   try {
-    if (!Notifications?.getPermissionsAsync) {
+    const notifications = getNotifications();
+    if (!notifications?.getPermissionsAsync) {
       return { status: "undetermined", canAskAgain: false };
     }
-    const settings = await Notifications.getPermissionsAsync();
+    const settings = await notifications.getPermissionsAsync();
     return {
       status: settings.status,
       canAskAgain: settings.granted ? true : settings.canAskAgain === true,
@@ -151,6 +147,7 @@ export async function getPushTokens(devicePushToken?: import("expo-notifications
   expoPushToken: string | null;
   nativePushToken: string | null;
 }> {
+  const notifications = getNotifications();
   const permissionStatus = await getNotificationPermissionStatus();
 
   if (permissionStatus !== "granted") {
@@ -162,13 +159,13 @@ export async function getPushTokens(devicePushToken?: import("expo-notifications
 
   // 1. Get Expo Push Token
   try {
-    if (Notifications?.getExpoPushTokenAsync) {
+    if (notifications?.getExpoPushTokenAsync) {
       const projectId =
         Constants.expoConfig?.extra?.eas?.projectId ||
         Constants.easConfig?.projectId ||
         DEFAULT_EAS_PROJECT_ID;
 
-      const tokenResult = await Notifications.getExpoPushTokenAsync({ projectId, devicePushToken });
+      const tokenResult = await notifications.getExpoPushTokenAsync({ projectId, devicePushToken });
       if (tokenResult && tokenResult.data) {
         expoPushToken = tokenResult.data;
       }
@@ -182,8 +179,8 @@ export async function getPushTokens(devicePushToken?: import("expo-notifications
 
   // 2. Get Native Push Token (FCM/APNs) where supported
   try {
-    if (Notifications?.getDevicePushTokenAsync) {
-      const nativeTokenResult = devicePushToken ?? await Notifications.getDevicePushTokenAsync();
+    if (notifications?.getDevicePushTokenAsync) {
+      const nativeTokenResult = devicePushToken ?? await notifications.getDevicePushTokenAsync();
       if (nativeTokenResult && nativeTokenResult.data) {
         nativePushToken =
           typeof nativeTokenResult.data === "string"
@@ -284,11 +281,12 @@ export function setupTokenRefreshListener(
   onTokenRefresh?: (token: string) => void
 ): () => void {
   try {
-    if (!accessToken || !Notifications?.addPushTokenListener) {
+    const notifications = getNotifications();
+    if (!accessToken || !notifications?.addPushTokenListener) {
       return () => {};
     }
     const capturedToken = accessToken ?? null;
-    const subscription = Notifications.addPushTokenListener((tokenResult) => {
+    const subscription = notifications.addPushTokenListener((tokenResult) => {
       if (tokenResult?.data) {
         if (onTokenRefresh) {
           onTokenRefresh(tokenResult.data);
@@ -435,11 +433,20 @@ export function setupNotificationListeners(options: NotificationListenersOptions
   let responseSub: NotificationSubscription | null = null;
 
   try {
-    if (!Notifications?.addNotificationReceivedListener || !Notifications?.addNotificationResponseReceivedListener) {
+    const notifications = getNotifications();
+    notifications?.setNotificationHandler?.({
+      handleNotification: async () => ({
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+    if (!notifications?.addNotificationReceivedListener || !notifications?.addNotificationResponseReceivedListener) {
       return () => {};
     }
 
-    receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+    receivedSub = notifications.addNotificationReceivedListener((notification) => {
       if (__DEV__) {
         console.info("[0nya notification received in foreground]", {
           id: notification?.request?.identifier,
@@ -454,7 +461,7 @@ export function setupNotificationListeners(options: NotificationListenersOptions
       }
     });
 
-    responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+    responseSub = notifications.addNotificationResponseReceivedListener((response) => {
       const data = response?.notification?.request?.content?.data;
       const deepLink = typeof data?.deep_link === "string" ? data.deep_link : null;
 

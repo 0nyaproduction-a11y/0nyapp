@@ -21,50 +21,40 @@ type SeriesEpisodeTrayProps = {
 
 // Layout constants — compact circular episode buttons filling width edge-to-edge
 const CIRCLE_SIZE = 44;
-const SHEET_HORIZONTAL_PADDING = 20;
-const GRID_GAP_VERTICAL = 14;
-const SHEET_TOP_PADDING = 12;
 const SHEET_HORIZONTAL_PADDING = 16;
 const GRID_GAP_VERTICAL = 12;
 const SHEET_TOP_PADDING = 10;
-const HEADER_ROW_HEIGHT = 38;
-const HEADER_MARGIN_BOTTOM = 16;
-const HEADER_MARGIN_BOTTOM = 14;
+const HEADER_ROW_HEIGHT = 36;
+const HEADER_MARGIN_BOTTOM = 12;
+const DIVIDER_HEIGHT = 1;
+const DIVIDER_MARGIN_BOTTOM = 14;
 const RANGE_STRIP_HEIGHT = 44;
-const SAFE_BOTTOM_BREATHING_ROOM = 12;
-const MIN_BOTTOM_PADDING = 20;
+const SAFE_BOTTOM_BREATHING_ROOM = 10;
 const MIN_BOTTOM_PADDING = 14;
 const SHEET_TOP_RADIUS = 24;
 
-// Color theme — adapted from cinema inspiration
-// Color theme — adapted from cinema inspiration + 0nya palette
 // Color theme — 0nya cinema palette with smarter tonal depth
-const SCRIM_COLOR = "rgba(0, 0, 0, 0.55)";
-const TRAY_SURFACE = "#0C1211";
-const CIRCLE_SURFACE = "#050505";
+const SCRIM_COLOR = "rgba(0, 0, 0, 0.60)";
 const TRAY_SURFACE = "#0B0F0E";
-const CIRCLE_SURFACE = "#060808";
-const CIRCLE_BORDER = "rgba(254, 253, 253, 0.10)";
-const SELECTED_CIRCLE_FILL = "#367B79";
-const SELECTED_CIRCLE_BORDER = "#4BA29F";
-const SELECTED_NUMBER = "#FFFFFF";
-const TRAY_TOP_BORDER = "rgba(43, 126, 125, 0.22)";
-const SELECTED_CIRCLE_FILL = "rgba(43, 126, 125, 0.22)";
+const CIRCLE_SURFACE = "#070A09";
+const CIRCLE_BORDER = "rgba(254, 253, 253, 0.08)";
+const CIRCLE_LOCKED_SURFACE = "rgba(229, 169, 60, 0.04)";
+const CIRCLE_LOCKED_BORDER = "rgba(229, 169, 60, 0.18)";
+const SELECTED_CIRCLE_FILL = "rgba(43, 126, 125, 0.18)";
 const SELECTED_CIRCLE_BORDER = "#2B7E7D";
 const SELECTED_NUMBER = "#FEFDFD";
-const TRAY_TOP_BORDER = "rgba(43, 126, 125, 0.28)";
+const TRAY_TOP_BORDER = "rgba(43, 126, 125, 0.30)";
 
 function getColumnsForWidth(width: number): number {
   const available = width - SHEET_HORIZONTAL_PADDING * 2;
-  // Choose maximum columns that maintain at least 10dp breathing space between adjacent circles
   for (let cols = 8; cols >= 4; cols--) {
     const gap = (available - cols * CIRCLE_SIZE) / (cols - 1);
     if (gap >= 10) return cols;
+  }
   if (width >= 600) {
     return 8;
   }
   return 5;
-  return 6;
 }
 
 export function SeriesEpisodeTray({
@@ -101,30 +91,28 @@ export function SeriesEpisodeTray({
     episodes,
   });
 
-  // Calculate gap so circles span from left corner to right corner with no empty corner dead space
   const horizontalGap = useMemo(() => {
     const available = width - SHEET_HORIZONTAL_PADDING * 2;
-    return Math.floor((available - columns * CIRCLE_SIZE) / (columns - 1));
+    const totalCircles = columns * CIRCLE_SIZE;
+    return Math.max(8, Math.floor((available - totalCircles) / (columns - 1)));
   }, [width, columns]);
 
   const rows = Math.max(1, Math.ceil(visibleEpisodes.length / columns));
-  const maxTrayHeight = Math.round(windowHeight * 0.70);
-  const minTrayHeight = Math.round(windowHeight * 0.38);
   const maxTrayHeight = Math.round(windowHeight * 0.72);
   const gridContentHeight =
     rows * CIRCLE_SIZE + Math.max(0, rows - 1) * GRID_GAP_VERTICAL;
   const chromeHeight =
     SHEET_TOP_PADDING +
-    18 + // handle bar + margin
+    18 +
     HEADER_ROW_HEIGHT +
     HEADER_MARGIN_BOTTOM +
+    DIVIDER_HEIGHT +
+    DIVIDER_MARGIN_BOTTOM +
     (ranges.length > 1 ? RANGE_STRIP_HEIGHT : 0) +
     sheetBottomPadding;
-  const sheetHeight = Math.min(maxTrayHeight, chromeHeight + gridContentHeight);
   const naturalHeight = chromeHeight + gridContentHeight;
-  const sheetHeight = Math.min(maxTrayHeight, Math.max(minTrayHeight, naturalHeight));
+  const sheetHeight = Math.min(maxTrayHeight, naturalHeight);
 
-  // Left-aligned with sheet padding so row 1 starts under "Episodes" and partial rows stay left-aligned
   const columnWrapperStyle = useMemo(
     () => ({
       gap: horizontalGap,
@@ -133,6 +121,10 @@ export function SeriesEpisodeTray({
     }),
     [horizontalGap],
   );
+
+  const statusLabel = isPlusUser ? "Plus" : isGuest ? "Guest" : "Free";
+  const statusDotColor = isPlusUser ? "#2B7E7D" : isGuest ? "rgba(254, 253, 253, 0.40)" : "#E5A93C";
+  const statusTextColor = isPlusUser ? "#2B7E7D" : isGuest ? "rgba(254, 253, 253, 0.50)" : "#E5A93C";
 
   return (
     <View pointerEvents="auto" style={styles.backdrop}>
@@ -144,34 +136,23 @@ export function SeriesEpisodeTray({
       />
 
       <View style={[styles.sheet, { height: sheetHeight, paddingBottom: sheetBottomPadding }]}>
-        {/* Grab handle indicator */}
         <View style={styles.handleBar} />
 
         <View style={styles.header}>
-          <View style={styles.headerSideLeft}>
+          <View style={styles.headerTitleRow}>
             <Text style={styles.headerTitle}>
               {"Episodes"}
               {episodes.length > 0 ? (
                 <Text style={styles.headerCount}>{` (${episodes.length})`}</Text>
               ) : null}
             </Text>
-          </View>
 
-          <View style={styles.headerCenter}>
-            <Text numberOfLines={1} style={styles.plusStatusText}>
-              <Text style={styles.plusShunya}>{"Shunya "}</Text>
-              <Text style={styles.plusBrand}>{"Plus"}</Text>
-              <Text style={styles.plusDot}>{" · "}</Text>
-              <Text style={styles.plusActive}>{"Active"}</Text>
-            </Text>
-            {isPlusUser ? (
-              <Text numberOfLines={1} style={styles.plusStatusText}>
-                <Text style={styles.plusShunya}>{"Shunya "}</Text>
-                <Text style={styles.plusBrand}>{"Plus"}</Text>
-                <Text style={styles.plusDot}>{" · "}</Text>
-                <Text style={styles.plusActive}>{"Active"}</Text>
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
+              <Text style={styles.statusPillText}>
+                {"Status - "}<Text style={[styles.statusPillValue, { color: statusTextColor }]}>{statusLabel}</Text>
               </Text>
-            ) : null}
+            </View>
           </View>
 
           <View style={styles.headerSideRight}>
@@ -187,6 +168,8 @@ export function SeriesEpisodeTray({
           </View>
         </View>
 
+        <View style={styles.headerDivider} />
+
         <EpisodeRangeSelector
           activeRangeStart={activeRangeStart}
           onSelectRange={onSelectRange}
@@ -195,31 +178,30 @@ export function SeriesEpisodeTray({
         />
 
         <FlatList
-          key={columns}
           columnWrapperStyle={columnWrapperStyle}
           contentContainerStyle={styles.grid}
           data={visibleEpisodes}
-          keyExtractor={(episode) => String(episode.number)}
+          key={columns}
+          keyExtractor={(item) => String(item.number)}
           numColumns={columns}
-          showsVerticalScrollIndicator={false}
-          style={styles.gridList}
-          renderItem={({ index, item }) => {
-            const access = episodeAccess[String(item.number)];
+          renderItem={({ item, index }) => {
             const isCurrent = item.number === currentEpisodeNumber;
+            const access = episodeAccess[String(item.number)];
             const accessDisplay = getEpisodeAccessDisplay(item, access, {
-              isGuest,
+              isGuest: Boolean(isGuest),
               isPlus: isPlusUser,
             });
             const isLastRow = Math.floor(index / columns) === rows - 1;
+            const isLocked = accessDisplay.isLocked && !isCurrent;
 
             return (
               <Pressable
-                accessibilityLabel={`Episode ${item.number}, ${accessDisplay.accessibilityLabel}${
-                  isCurrent ? ", current episode" : ""
-                }`}
+                accessibilityLabel={
+                  isCurrent
+                    ? `Episode ${item.number}, currently playing`
+                    : `Episode ${item.number}, ${accessDisplay.accessibilityLabel}`
+                }
                 accessibilityRole="button"
-                accessibilityState={{ selected: isCurrent }}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 onPress={() => onSelectEpisode(item)}
                 style={({ pressed }) => [
                   styles.circle,
@@ -229,65 +211,45 @@ export function SeriesEpisodeTray({
                     width: CIRCLE_SIZE,
                   },
                   isCurrent && styles.circleCurrent,
+                  isLocked && styles.circleLocked,
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.cellNumber, isCurrent && styles.cellNumberCurrent]}>
+                <Text
+                  style={[
+                    styles.cellNumber,
+                    isCurrent && styles.cellNumberCurrent,
+                    isLocked && styles.cellNumberLocked,
+                  ]}
+                >
                   {item.number}
                 </Text>
                 <EpisodeAccessMarkers accessDisplay={accessDisplay} />
               </Pressable>
             );
           }}
+          showsVerticalScrollIndicator={false}
+          style={styles.gridList}
         />
       </View>
     </View>
   );
 }
 
-function CloseIcon({
-  color = "rgba(254, 253, 253, 0.72)",
-  size = 11,
-}: {
-  color?: string;
-  size?: number;
-}) {
+function CloseIcon() {
   return (
-    <View
-      style={{
-        alignItems: "center",
-        height: size,
-        justifyContent: "center",
-        transform: [{ rotate: "45deg" }],
-        width: size,
-      }}
-    >
-      <View
-        style={{
-          backgroundColor: color,
-          borderRadius: 1,
-          height: 1.5,
-          position: "absolute",
-          width: size,
-        }}
-      />
-      <View
-        style={{
-          backgroundColor: color,
-          borderRadius: 1,
-          height: size,
-          position: "absolute",
-          width: 1.5,
-        }}
-      />
+    <View style={styles.closeIconWrapper}>
+      <View style={[styles.closeIconLine, styles.closeIconLineA]} />
+      <View style={[styles.closeIconLine, styles.closeIconLineB]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: {
+    backgroundColor: "transparent",
     bottom: 0,
-    flexDirection: "column",
+    justifyContent: "flex-end",
     left: 0,
     position: "absolute",
     right: 0,
@@ -308,11 +270,8 @@ const styles = StyleSheet.create({
   },
   handleBar: {
     alignSelf: "center",
-    backgroundColor: "rgba(254, 253, 253, 0.22)",
+    backgroundColor: "rgba(254, 253, 253, 0.18)",
     borderRadius: 2,
-    height: 4,
-    marginBottom: 14,
-    width: 38,
     height: 3.5,
     marginBottom: 12,
     width: 36,
@@ -325,16 +284,10 @@ const styles = StyleSheet.create({
     marginBottom: HEADER_MARGIN_BOTTOM,
     paddingHorizontal: SHEET_HORIZONTAL_PADDING,
   },
-  headerSideLeft: {
-    alignItems: "flex-start",
-    flexShrink: 0,
-    justifyContent: "center",
-  },
-  headerCenter: {
+  headerTitleRow: {
     alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 8,
+    flexDirection: "row",
+    gap: 10,
   },
   headerSideRight: {
     alignItems: "flex-end",
@@ -345,34 +298,43 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "700",
+    letterSpacing: -0.2,
   },
   headerCount: {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: "500",
   },
-  plusStatusText: {
-    fontSize: 12.5,
-    fontWeight: "600",
+  statusPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.05)",
+    borderColor: "rgba(254, 253, 253, 0.10)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusDot: {
+    borderRadius: 999,
+    height: 5,
+    width: 5,
+  },
+  statusPillText: {
+    color: "rgba(254, 253, 253, 0.50)",
+    fontSize: 11,
+    fontWeight: "500",
     letterSpacing: 0.2,
-    lineHeight: 16,
-    textAlign: "center",
   },
-  plusShunya: {
-    color: colors.accent,
+  statusPillValue: {
     fontWeight: "700",
   },
-  plusBrand: {
-    color: "#955E61",
-    fontWeight: "700",
-  },
-  plusDot: {
-    color: "rgba(254, 253, 253, 0.45)",
-    fontWeight: "400",
-  },
-  plusActive: {
-    color: colors.plusRed,
-    fontWeight: "600",
+  headerDivider: {
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
+    height: DIVIDER_HEIGHT,
+    marginBottom: DIVIDER_MARGIN_BOTTOM,
+    marginHorizontal: SHEET_HORIZONTAL_PADDING,
   },
   closeCircle: {
     alignItems: "center",
@@ -394,7 +356,6 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     paddingTop: 0,
   },
-  // Compact circular episode buttons
   circle: {
     alignItems: "center",
     backgroundColor: CIRCLE_SURFACE,
@@ -405,16 +366,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 2,
   },
-  // Selected active circle — rich brand teal fill
-  // Selected active circle — subtle brand teal active fill and border
   circleCurrent: {
     backgroundColor: SELECTED_CIRCLE_FILL,
     borderColor: SELECTED_CIRCLE_BORDER,
     borderWidth: 1.5,
   },
+  circleLocked: {
+    backgroundColor: CIRCLE_LOCKED_SURFACE,
+    borderColor: CIRCLE_LOCKED_BORDER,
+  },
   cellNumber: {
-    color: colors.text,
-    fontSize: 14,
     color: "rgba(254, 253, 253, 0.85)",
     fontSize: 13.5,
     fontWeight: "600",
@@ -422,5 +383,27 @@ const styles = StyleSheet.create({
   cellNumberCurrent: {
     color: SELECTED_NUMBER,
     fontWeight: "700",
+  },
+  cellNumberLocked: {
+    color: "rgba(254, 253, 253, 0.50)",
+  },
+  closeIconWrapper: {
+    alignItems: "center",
+    height: 14,
+    justifyContent: "center",
+    width: 14,
+  },
+  closeIconLine: {
+    backgroundColor: "rgba(254, 253, 253, 0.75)",
+    borderRadius: 1,
+    height: 1.5,
+    position: "absolute",
+    width: 12,
+  },
+  closeIconLineA: {
+    transform: [{ rotate: "45deg" }],
+  },
+  closeIconLineB: {
+    transform: [{ rotate: "-45deg" }],
   },
 });

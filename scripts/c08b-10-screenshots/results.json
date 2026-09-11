@@ -1,0 +1,27 @@
+{
+  "login": "https://onya-qa-api-gwkke6nq5a-el.a.run.app/admin",
+  "list": "https://onya-qa-api-gwkke6nq5a-el.a.run.app/admin/short-films?page=3&pageSize=50&search=&status=draft",
+  "edit": "https://onya-qa-api-gwkke6nq5a-el.a.run.app/admin/short-films/63e4761f-f40c-45ce-8a4a-d0d88967c7a9?page=1&pageSize=50",
+  "breadcrumb": null,
+  "dirtyModal": {
+    "found": true,
+    "text": "You have unsaved changesLeave without saving?StayLeave without saving"
+  },
+  "stay": "https://onya-qa-api-gwkke6nq5a-el.a.run.app/admin/short-films/63e4761f-f40c-45ce-8a4a-d0d88967c7a9?page=1&pageSize=50",
+  "leave": "https://onya-qa-api-gwkke6nq5a-el.a.run.app/admin/short-films?page=1&pageSize=50",
+  "consoleErrors": [],
+  "httpErrors": [],
+  "hydrationErrors": [],
+  "queryState": {
+    "page": "3",
+    "pageSize": "50",
+    "search": "",
+    "status": "draft"
+  },
+  "finalQuery": {
+    "page": "1",
+    "pageSize": "50",
+    "search": null,
+    "status": null
+  }
+}

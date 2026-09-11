@@ -1,10 +1,11 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatPlaybackSpeed, PLAYBACK_SPEED_OPTIONS } from "../lib/playbackSpeed";
-import { colors, radii } from "../theme/tokens";
+import { colors } from "../theme/tokens";
 
-// Keeps the effective tap target >= ~44dp for a slightly shorter visible chip.
-const CHIP_HIT_SLOP = { top: 5, bottom: 5, left: 2, right: 2 };
+// Keeps the effective tap target >= ~44dp for speed chips
+const CHIP_HIT_SLOP = { top: 6, bottom: 6, left: 4, right: 4 };
 
 type PlayerMoreSheetProps = {
   captionsAvailable: boolean;
@@ -19,6 +20,17 @@ type PlayerMoreSheetProps = {
   onTogglePictureInPicture?: (enabled: boolean) => void;
   pictureInPictureEnabled?: boolean;
 };
+
+// 0nya cinema palette matching EpisodeListSheet & SeriesEpisodeTray
+const SHEET_SURFACE = "#0B0F0E";
+const SHEET_TOP_BORDER = "rgba(43, 126, 125, 0.30)";
+const SHEET_TOP_RADIUS = 24;
+const BACKDROP_COLOR = "rgba(0, 0, 0, 0.60)";
+const CHIP_SURFACE = "#070A09";
+const CHIP_BORDER = "rgba(254, 253, 253, 0.08)";
+const SELECTED_CHIP_FILL = "rgba(43, 126, 125, 0.18)";
+const SELECTED_CHIP_BORDER = "#2B7E7D";
+const SELECTED_NUMBER = "#FEFDFD";
 
 export function PlayerMoreSheet({
   captionsAvailable,
@@ -35,42 +47,52 @@ export function PlayerMoreSheet({
 }: PlayerMoreSheetProps) {
   const insets = useSafeAreaInsets();
 
+  // Account status badge directly next to title, identical to EpisodeListSheet
+  const { statusDotColor, statusLabel, statusTextColor } = useMemo(() => {
+    if (isPlus) {
+      return {
+        statusDotColor: "#B91825",
+        statusLabel: "Plus",
+        statusTextColor: "#FEFDFD",
+      };
+    }
+    if (isGuest) {
+      return {
+        statusDotColor: "rgba(254, 253, 253, 0.40)",
+        statusLabel: "Guest",
+        statusTextColor: "rgba(254, 253, 253, 0.72)",
+      };
+    }
+    return {
+      statusDotColor: "#2B7E7D",
+      statusLabel: "Free",
+      statusTextColor: "#2B7E7D",
+    };
+  }, [isGuest, isPlus]);
+
   return (
     <View pointerEvents="auto" style={styles.backdrop}>
-      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+      <Pressable
+        accessibilityLabel="Close playback settings"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={styles.scrimArea}
+      />
+
+      <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 14, 24) }]}>
         <View style={styles.handleBar} />
 
-        {/* HEADER ROW: Title (left) · Entitlement Status (center) · Circular Close (right) */}
+        {/* Header: Title + Status Pill (left) · Circular Close (right) */}
         <View style={styles.header}>
-          <View style={styles.headerSideLeft}>
+          <View style={styles.headerTitleRow}>
             <Text style={styles.headerTitle}>Playback settings</Text>
-          </View>
-
-          {isPlus ? (
-            <View style={styles.headerCenter}>
-              <Text numberOfLines={1} style={styles.plusStatusText}>
-                <Text style={styles.plusShunya}>{"Shunya "}</Text>
-                <Text style={styles.plusBrand}>{"Plus"}</Text>
-                <Text style={styles.plusDot}>{" · "}</Text>
-                <Text style={styles.plusActive}>{"Active"}</Text>
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
+              <Text style={styles.statusPillText}>
+                {"Status - "}<Text style={[styles.statusPillValue, { color: statusTextColor }]}>{statusLabel}</Text>
               </Text>
             </View>
-          ) : (
-            <Pressable
-              accessibilityLabel="Plus required. Tap to view plans."
-              accessibilityRole="button"
-              disabled={!onNavigateToPlus}
-              onPress={onNavigateToPlus}
-              style={({ pressed }) => [
-                styles.headerCenter,
-                pressed && onNavigateToPlus && styles.pressed,
-              ]}
-            >
-              <Text numberOfLines={1} style={styles.plusRequiredText}>
-                Plus required
-              </Text>
-            </Pressable>
-          )}
+          </View>
 
           <View style={styles.headerSideRight}>
             <Pressable
@@ -85,11 +107,14 @@ export function PlayerMoreSheet({
           </View>
         </View>
 
+        {/* Subtle hairline divider under header */}
+        <View style={styles.headerDivider} />
+
         {/* PLAYBACK SPEED (AVAILABLE TO EVERYONE) */}
         <View style={styles.speedSection}>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Playback speed</Text>
-            <Text style={styles.rowValue}>{formatPlaybackSpeed(currentPlaybackRate)}</Text>
+            <Text style={styles.rowValueActive}>{formatPlaybackSpeed(currentPlaybackRate)}</Text>
           </View>
           <View style={styles.speedChips}>
             {PLAYBACK_SPEED_OPTIONS.map((option) => {
@@ -131,10 +156,11 @@ export function PlayerMoreSheet({
               <Text style={styles.rowLabel}>Quality</Text>
               <Text style={styles.rowValue}>2K · Auto</Text>
             </View>
+            <Text style={styles.rowNote}>Adaptive streaming up to 2K</Text>
           </View>
         ) : (
           <Pressable
-            accessibilityLabel="Quality. Up to 2K. Upgrade."
+            accessibilityLabel="Quality. Up to 2K with 0nya Plus. Tap to upgrade."
             accessibilityRole="button"
             disabled={!onNavigateToPlus}
             onPress={onNavigateToPlus}
@@ -142,13 +168,14 @@ export function PlayerMoreSheet({
           >
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Quality</Text>
-              <Text style={styles.upgradeActionText}>{"Upgrade »"}</Text>
-              <Text style={styles.upgradeActionText}>{"Upgrade \u203A"}</Text>
+              <View style={styles.upgradePill}>
+                <Text style={styles.upgradePillText}>Upgrade</Text>
+                <Text style={styles.upgradePillChevron}>{"\u203A"}</Text>
+              </View>
             </View>
-            <Text style={styles.rowNote}>Up to 2K</Text>
+            <Text style={styles.rowNote}>Adaptive streaming (up to 720p) · 2K with 0nya Plus</Text>
           </Pressable>
         )}
-
 
         {/* PICTURE IN PICTURE */}
         <View style={styles.sectionDivider} />
@@ -159,15 +186,16 @@ export function PlayerMoreSheet({
               <Switch
                 accessibilityLabel="Picture in Picture"
                 onValueChange={onTogglePictureInPicture}
-                thumbColor={pictureInPictureEnabled ? colors.accent : colors.muted}
-                trackColor={{ false: colors.borderStrong, true: "rgba(43, 126, 125, 0.4)" }}
+                thumbColor={pictureInPictureEnabled ? colors.accent : "rgba(254, 253, 253, 0.4)"}
+                trackColor={{ false: "rgba(254, 253, 253, 0.12)", true: "rgba(43, 126, 125, 0.45)" }}
                 value={pictureInPictureEnabled}
               />
             </View>
+            <Text style={styles.rowNote}>Play outside 0nya</Text>
           </View>
         ) : (
           <Pressable
-            accessibilityLabel="Picture in Picture. Play outside 0nya. Upgrade."
+            accessibilityLabel="Picture in Picture. Play outside 0nya. Tap to upgrade to 0nya Plus."
             accessibilityRole="button"
             disabled={!onNavigateToPlus}
             onPress={onNavigateToPlus}
@@ -175,20 +203,21 @@ export function PlayerMoreSheet({
           >
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Picture in Picture</Text>
-              <Text style={styles.upgradeActionText}>{"Upgrade »"}</Text>
-              <Text style={styles.upgradeActionText}>{"Upgrade \u203A"}</Text>
+              <View style={styles.upgradePill}>
+                <Text style={styles.upgradePillText}>Upgrade</Text>
+                <Text style={styles.upgradePillChevron}>{"\u203A"}</Text>
+              </View>
             </View>
-            <Text style={styles.rowNote}>Play outside 0nya</Text>
+            <Text style={styles.rowNote}>Play outside 0nya (0nya Plus feature)</Text>
           </Pressable>
         )}
-
 
         {/* CAPTIONS (WHEN AVAILABLE) */}
         {captionsAvailable ? (
           <>
             <View style={styles.sectionDivider} />
             <Pressable
-              accessibilityLabel="Captions"
+              accessibilityLabel={`Captions, currently ${captionsValue}`}
               accessibilityRole="button"
               onPress={onOpenCaptions}
               style={({ pressed }) => [styles.rowItem, pressed && styles.pressed]}
@@ -197,7 +226,6 @@ export function PlayerMoreSheet({
                 <Text style={styles.rowLabel}>Captions</Text>
                 <View style={styles.badgeGroup}>
                   <Text style={styles.rowValue}>{captionsValue}</Text>
-                  <Text style={styles.rowChevron}>{"»"}</Text>
                   <Text style={styles.rowChevron}>{"\u203A"}</Text>
                 </View>
               </View>
@@ -251,43 +279,41 @@ function CloseIcon({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(3, 5, 4, 0.65)",
+    backgroundColor: "transparent",
     justifyContent: "flex-end",
   },
+  scrimArea: {
+    backgroundColor: BACKDROP_COLOR,
+    flex: 1,
+  },
   sheet: {
-    backgroundColor: "#050505",
-    borderTopColor: "rgba(254, 253, 253, 0.10)",
-    borderTopLeftRadius: radii.sheet,
-    borderTopRightRadius: radii.sheet,
+    backgroundColor: SHEET_SURFACE,
+    borderTopColor: SHEET_TOP_BORDER,
+    borderTopLeftRadius: SHEET_TOP_RADIUS,
+    borderTopRightRadius: SHEET_TOP_RADIUS,
     borderTopWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingTop: 10,
   },
   handleBar: {
     alignSelf: "center",
-    backgroundColor: "rgba(254, 253, 253, 0.22)",
+    backgroundColor: "rgba(254, 253, 253, 0.18)",
     borderRadius: 2,
-    height: 4,
-    marginBottom: 14,
-    width: 38,
+    height: 3.5,
+    marginBottom: 12,
+    width: 36,
   },
   header: {
     alignItems: "center",
     flexDirection: "row",
-    height: 38,
+    height: 36,
     justifyContent: "space-between",
     marginBottom: 12,
   },
-  headerSideLeft: {
-    alignItems: "flex-start",
-    flexShrink: 0,
-    justifyContent: "center",
-  },
-  headerCenter: {
+  headerTitleRow: {
     alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 8,
+    flexDirection: "row",
+    gap: 10,
   },
   headerSideRight: {
     alignItems: "flex-end",
@@ -298,50 +324,50 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "700",
+    letterSpacing: -0.2,
   },
-  plusStatusText: {
-    fontSize: 12.5,
-    fontWeight: "600",
+  statusPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.05)",
+    borderColor: "rgba(254, 253, 253, 0.10)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusDot: {
+    borderRadius: 999,
+    height: 5,
+    width: 5,
+  },
+  statusPillText: {
+    color: "rgba(254, 253, 253, 0.50)",
+    fontSize: 11,
+    fontWeight: "500",
     letterSpacing: 0.2,
-    lineHeight: 16,
-    textAlign: "center",
   },
-  plusShunya: {
-    color: colors.accent,
+  statusPillValue: {
     fontWeight: "700",
-  },
-  plusBrand: {
-    color: "#955E61",
-    fontWeight: "700",
-  },
-  plusDot: {
-    color: "rgba(254, 253, 253, 0.45)",
-    fontWeight: "400",
-  },
-  plusActive: {
-    color: colors.accent,
-    fontWeight: "600",
-  },
-  plusRequiredText: {
-    color: "#955E61",
-    fontSize: 12.5,
-    fontWeight: "600",
-    letterSpacing: 0.2,
-    lineHeight: 16,
-    textAlign: "center",
   },
   closeCircle: {
     alignItems: "center",
-    backgroundColor: "#050505",
-    borderColor: "rgba(254, 253, 253, 0.10)",
+    backgroundColor: CHIP_SURFACE,
+    borderColor: CHIP_BORDER,
     borderRadius: 9999,
     borderWidth: 1,
     height: 30,
     justifyContent: "center",
     width: 30,
   },
+  headerDivider: {
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
+    height: 1,
+    marginBottom: 14,
+  },
   speedSection: {
-    marginTop: 4,
+    marginTop: 2,
   },
   speedChips: {
     flexDirection: "row",
@@ -350,29 +376,31 @@ const styles = StyleSheet.create({
   },
   speedChip: {
     alignItems: "center",
-    backgroundColor: "#050505",
-    borderColor: "rgba(254, 253, 253, 0.10)",
-    borderRadius: radii.pill,
+    backgroundColor: CHIP_SURFACE,
+    borderColor: CHIP_BORDER,
+    borderRadius: 9999,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 34,
+    minHeight: 36,
+    paddingVertical: 7,
   },
   speedChipSelected: {
-    backgroundColor: "rgba(43, 126, 125, 0.16)",
-    borderColor: colors.accent,
+    backgroundColor: SELECTED_CHIP_FILL,
+    borderColor: SELECTED_CHIP_BORDER,
+    borderWidth: 1.5,
   },
   speedChipLabel: {
-    color: colors.textSecondary,
+    color: "rgba(254, 253, 253, 0.72)",
     fontSize: 13,
     fontWeight: "600",
   },
   speedChipLabelSelected: {
-    color: colors.accent,
+    color: SELECTED_NUMBER,
     fontWeight: "700",
   },
   sectionDivider: {
-    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
     height: 1,
     marginVertical: 14,
   },
@@ -383,11 +411,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 32,
+    minHeight: 34,
   },
   rowLabel: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: "600",
   },
   rowValue: {
@@ -395,26 +423,48 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: "600",
   },
+  rowValueActive: {
+    color: colors.accent,
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
   rowNote: {
     color: "rgba(254, 253, 253, 0.45)",
     fontSize: 12,
     lineHeight: 16,
-    marginTop: 4,
+    marginTop: 3,
   },
   badgeGroup: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 8,
+    gap: 6,
   },
   rowChevron: {
     color: colors.textSecondary,
     fontSize: 16,
     fontWeight: "700",
   },
-  upgradeActionText: {
-    color: colors.accent,
-    fontSize: 13,
+  upgradePill: {
+    alignItems: "center",
+    backgroundColor: "rgba(43, 126, 125, 0.12)",
+    borderColor: "rgba(43, 126, 125, 0.28)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  upgradePillText: {
+    color: "#2B7E7D",
+    fontSize: 12,
     fontWeight: "600",
+    letterSpacing: 0.1,
+  },
+  upgradePillChevron: {
+    color: "#2B7E7D",
+    fontSize: 13,
+    fontWeight: "700",
   },
   pressed: {
     opacity: 0.78,

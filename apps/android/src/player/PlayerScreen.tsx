@@ -21,7 +21,7 @@ import { EpisodeListSheet } from "./EpisodeListSheet";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerMoreSheet } from "./PlayerMoreSheet";
 import { SubtitleTrackSheet } from "./SubtitleTrackSheet";
-import { WalletAccessPaywall } from "../components/WalletAccessPaywall";
+import { EpisodeAccessSheet } from "../components/EpisodeAccessSheet";
 import { buildEpisodeShareMessage, buildShortFilmShareMessage } from "../lib/content-links";
 import {
   formatPlaybackSpeed,
@@ -1325,66 +1325,64 @@ export function PlayerScreen({
                   </View>
                 ) : null}
 
-                {controller.hasEnded && isPreviewMode ? (
+                {controller.hasEnded && isPreviewMode && !activeMicroDramaAccess ? (
                   <View pointerEvents="box-none" style={styles.previewEndedOverlay}>
                     <View pointerEvents="none" style={styles.previewEndedScrim} />
-                    {activeMicroDramaAccess ? (
-                      <WalletAccessPaywall
-                        microDramaAccess={activeMicroDramaAccess}
-                        onDismiss={handleBack}
-                        onSuccess={handleUnlockSuccess}
-                        variant="player"
-                      />
-                    ) : (
-                      <View style={styles.previewEndedContent}>
-                        <Text style={styles.previewEndedTitle}>Preview ended</Text>
-                        <Text style={styles.previewEndedBody}>
-                          Locked options are still available for this episode.
-                        </Text>
-                        <Pressable
-                          accessibilityLabel="See options"
-                          accessibilityRole="button"
-                          onPress={() => {
-                            if (onSeeOptions) {
-                              onSeeOptions();
-                              return;
-                            }
+                    <View style={styles.previewEndedContent}>
+                      <Text style={styles.previewEndedTitle}>Preview ended</Text>
+                      <Text style={styles.previewEndedBody}>
+                        Locked options are still available for this episode.
+                      </Text>
+                      <Pressable
+                        accessibilityLabel="See options"
+                        accessibilityRole="button"
+                        onPress={() => {
+                          if (onSeeOptions) {
+                            onSeeOptions();
+                            return;
+                          }
 
-                            handleBack();
-                          }}
-                          style={({ pressed }) => [styles.previewEndedButton, pressed && styles.pressed]}
-                        >
-                          <Text style={styles.previewEndedButtonText}>See Options</Text>
-                        </Pressable>
-                      </View>
-                    )}
+                          handleBack();
+                        }}
+                        style={({ pressed }) => [styles.previewEndedButton, pressed && styles.pressed]}
+                      >
+                        <Text style={styles.previewEndedButtonText}>See Options</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 ) : controller.hasEnded &&
+                  !isPreviewMode &&
                   !isAutoAdvancing &&
                   !shouldSuppressCompletedOverlay &&
                   context.type === "SERIES_EPISODE" ? (
                   <View pointerEvents="box-none" style={styles.endedOverlay}>
-                    <View pointerEvents="none" style={styles.endedTopScrim} />
-                    <View pointerEvents="none" style={styles.endedBottomScrim} />
-                    <View style={styles.endedContent}>
-                      <Text style={styles.endedTitle}>{getEndedTitle(context)}</Text>
-                      <Text style={styles.endedBody}>{getEndedBody(context)}</Text>
-                      <View style={styles.endedActions}>
+                    <View pointerEvents="none" style={styles.endedScrim} />
+                    <View style={styles.endedCard}>
+                      {/* Eyebrow */}
+                      <Text style={styles.endedCardEyebrow}>{getEndedEyebrow(context)}</Text>
+                      {/* Series title */}
+                      <Text numberOfLines={1} style={styles.endedCardTitle}>{context.seriesTitle}</Text>
+                      {/* Episode meta */}
+                      <Text style={styles.endedCardMeta}>{`Episode ${context.episodeNumber}`}</Text>
+                      {/* Body */}
+                      <Text style={styles.endedCardBody}>{getEndedBody(context)}</Text>
+                      {/* Actions */}
+                      <View style={styles.endedCardActions}>
                         <Pressable
                           accessibilityLabel="Replay current video"
                           accessibilityRole="button"
                           onPress={handleReplay}
-                          style={({ pressed }) => [styles.endedButton, pressed && styles.pressed]}
+                          style={({ pressed }) => [styles.endedCardButton, pressed && styles.pressed]}
                         >
-                          <Text style={styles.endedButtonText}>Replay</Text>
+                          <Text style={styles.endedCardButtonText}>Replay</Text>
                         </Pressable>
                         <Pressable
                           accessibilityLabel="Exit video player"
                           accessibilityRole="button"
                           onPress={handleBack}
-                          style={({ pressed }) => [styles.endedButton, pressed && styles.pressed]}
+                          style={({ pressed }) => [styles.endedCardButtonSecondary, pressed && styles.pressed]}
                         >
-                          <Text style={styles.endedButtonText}>Back</Text>
+                          <Text style={styles.endedCardButtonSecondaryText}>Back</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -1615,6 +1613,14 @@ export function PlayerScreen({
           )}
         </View>
       </View>
+
+      {controller.hasEnded && isPreviewMode && activeMicroDramaAccess ? (
+        <EpisodeAccessSheet
+          microDramaAccess={activeMicroDramaAccess}
+          onDismiss={handleBack}
+          onSuccess={handleUnlockSuccess}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1731,65 +1737,86 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingBottom: 92,
-    paddingHorizontal: 24,
+    paddingBottom: 28,
+    paddingHorizontal: 16,
   },
-  endedTopScrim: {
-    backgroundColor: "rgba(3, 5, 4, 0.24)",
-    height: "42%",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
+  endedScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(3, 5, 4, 0.78)",
   },
-  endedBottomScrim: {
-    backgroundColor: "rgba(3, 5, 4, 0.82)",
-    bottom: 0,
-    height: "58%",
-    left: 0,
-    position: "absolute",
-    right: 0,
-  },
-  endedContent: {
-    alignItems: "center",
-    gap: 8,
+  endedCard: {
+    backgroundColor: "#0C0F0E",
+    borderColor: "rgba(254, 253, 253, 0.12)",
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 18,
     width: "100%",
   },
-  endedTitle: {
+  endedCardEyebrow: {
+    color: "rgba(254, 253, 253, 0.45)",
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 1.2,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  endedCardTitle: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: "900",
-    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: -0.2,
   },
-  endedBody: {
+  endedCardMeta: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: "500",
     lineHeight: 18,
-    textAlign: "center",
+    marginTop: 1,
   },
-  endedActions: {
+  endedCardBody: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  endedCardActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10,
-    justifyContent: "center",
-    paddingTop: 4,
   },
-  endedButton: {
+  endedCardButton: {
     alignItems: "center",
-    backgroundColor: colors.ctaResting,
-    borderColor: colors.accent,
+    backgroundColor: colors.accent,
     borderRadius: radii.pill,
-    borderWidth: 1,
+    flex: 1,
     justifyContent: "center",
     minHeight: 40,
-    minWidth: 104,
     paddingHorizontal: 14,
   },
-  endedButtonText: {
+  endedCardButtonText: {
     color: colors.accentOnPrimary,
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase",
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+  },
+  endedCardButtonSecondary: {
+    alignItems: "center",
+    backgroundColor: "rgba(254, 253, 253, 0.06)",
+    borderColor: "rgba(254, 253, 253, 0.14)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: 14,
+  },
+  endedCardButtonSecondaryText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.1,
   },
   chaiButton: {
     alignItems: "center",
@@ -2003,4 +2030,24 @@ function getEndedBody(context: PlaybackContext) {
   }
 
   return "Replay this episode whenever you are ready.";
+}
+
+function getEndedEyebrow(context: PlaybackContext) {
+  if (context.type !== "SERIES_EPISODE") {
+    return "COMPLETE";
+  }
+
+  if (context.hasUnreleasedNextEpisode) {
+    return "COMING SOON";
+  }
+
+  if (context.hasLockedNextEpisode) {
+    return "NEXT EPISODE LOCKED";
+  }
+
+  if (!context.nextEpisode) {
+    return "SERIES COMPLETE";
+  }
+
+  return "EPISODE COMPLETE";
 }

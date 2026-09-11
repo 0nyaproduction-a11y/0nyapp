@@ -204,8 +204,13 @@ export function AccountScreen({ navigation }: Props) {
   if (!token || isSigningOut) {
     return (
       <Screen>
-        <View style={styles.guestHeader}>
-          <Text style={styles.guestStatus}>{t("profile.guest_account", "Guest Account")}</Text>
+        <View style={styles.accountStatusCard}>
+          <View style={styles.accountStatusHeader}>
+            <Text style={styles.accountStatusEyebrow}>ACCOUNT STATUS</Text>
+            <View style={styles.guestStatusBadge}>
+              <Text style={styles.guestStatusBadgeText}>Guest</Text>
+            </View>
+          </View>
           <Text style={styles.guestSubtitle}>
             {t(
               "profile.guest_subtitle",
@@ -259,7 +264,7 @@ export function AccountScreen({ navigation }: Props) {
 
       {me ? (
         <>
-          {/* 1. IDENTITY BLOCK */}
+          {/* 1. IDENTITY & ACCOUNT STATUS BLOCK */}
           <View style={styles.identityCard}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarInitial}>
@@ -270,18 +275,18 @@ export function AccountScreen({ navigation }: Props) {
               <Text numberOfLines={1} style={styles.email}>
                 {me.identifier}
               </Text>
-              {isPlus ? (
-                <View style={styles.plusStatusBadge}>
-                  <Text style={styles.plusBrandMini}>
-                    <Text style={{ color: "#955E61", fontWeight: "700" }}>PLUS</Text>
-                    <Text style={{ color: colors.textSecondary }}> · ACTIVE</Text>
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.freeStatusBadge}>
-                  <Text style={styles.freeStatusText}>FREE ACCOUNT</Text>
-                </View>
-              )}
+              <View style={styles.statusBadgeRow}>
+                <Text style={styles.statusLabelText}>Account Status:</Text>
+                {isPlus ? (
+                  <View style={styles.plusStatusBadge}>
+                    <Text style={styles.plusBrandMini}>Plus</Text>
+                  </View>
+                ) : (
+                  <View style={styles.freeStatusBadge}>
+                    <Text style={styles.freeStatusText}>Free</Text>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
@@ -585,17 +590,43 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 30,
   },
-  guestHeader: {
-    paddingTop: 0,
-    paddingBottom: 4,
-    gap: 6,
+  accountStatusCard: {
+    backgroundColor: surfaces.s1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.md,
+    borderWidth: borders.width,
+    padding: 16,
     marginBottom: spacing.md,
+    gap: 8,
   },
-  guestStatus: {
+  accountStatusHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  accountStatusEyebrow: {
     ...typography.micro,
-    color: colors.accent,
+    color: colors.textSecondary,
+    fontSize: 10,
+    letterSpacing: 1.1,
     textTransform: "uppercase",
-    letterSpacing: 1.2,
+  },
+  guestStatusBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    borderColor: "rgba(254, 253, 253, 0.22)",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  guestStatusBadgeText: {
+    ...typography.micro,
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   guestSubtitle: {
     ...typography.body,
@@ -665,6 +696,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+  statusBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 2,
+  },
+  statusLabelText: {
+    ...typography.micro,
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "500",
+  },
   plusStatusBadge: {
     alignSelf: "flex-start",
     backgroundColor: "rgba(149, 94, 97, 0.14)",
@@ -676,8 +719,10 @@ const styles = StyleSheet.create({
   },
   plusBrandMini: {
     ...typography.micro,
+    color: "#D08B8F",
     fontSize: 10,
-    letterSpacing: 0.4,
+    fontWeight: "700",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   freeStatusBadge: {

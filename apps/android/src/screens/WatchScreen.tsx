@@ -1,11 +1,12 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Screen } from "../components/Screen";
 import { ContentRatingSlate } from "../components/ContentRatingSlate";
 import { LoadingState, RecoveryState } from "../components/ui";
 import { getSeries } from "../lib/api";
-import { subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
+import { getConfirmedSeriesAccess, subscribeConfirmedSeriesAccess } from "../lib/confirmedSeriesAccess";
 import { loadWatchHistory } from "../lib/playbackHistory";
 import { perfEnd, perfMark, perfStart } from "../lib/perf";
 import { resolveEffectiveEpisodeClassification } from "../lib/classification";
@@ -19,7 +20,7 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import { getWatchEpisodeTransitionParams, getWatchRouteParams } from "../navigation/routeSerialization";
 import { PlayerScreen } from "../player/PlayerScreen";
-import { WalletAccessPaywall } from "../components/WalletAccessPaywall";
+import { EpisodeAccessSheet } from "../components/EpisodeAccessSheet";
 import { getPlaybackResumeOwner, loadTargetPlaybackHistory, type TargetHistoryState } from "../player/targetResume";
 import { usePlaybackSource } from "../player/usePlaybackSource";
 import type { PlaybackContext } from "../player/types";
@@ -317,6 +318,7 @@ function WatchTargetScreen({ navigation, route }: Props) {
     });
   }, [targetAccess, targetEpisode, targetSeries]);
 
+
   useEffect(() => {
     let isMounted = true;
 
@@ -441,6 +443,27 @@ function WatchTargetScreen({ navigation, route }: Props) {
   const playback = usePlaybackSource(context, session, {
     playbackMode: shouldUsePreview ? "preview" : "full",
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!targetSeries || !targetEpisode || (targetAccess && targetAccess.canWatch)) {
+        return;
+      }
+
+      const confirmed = getConfirmedSeriesAccess(targetSeries.slug);
+      if (!confirmed) {
+        return;
+      }
+
+      const confirmedAccess = confirmed.episodeAccess[String(targetEpisode.number)];
+      if (confirmedAccess?.canWatch) {
+        setTargetAccess(confirmedAccess);
+        setTargetEpisodeAccess(confirmed.episodeAccess);
+        setRetryNonce((v) => v + 1);
+        playback.refresh();
+      }
+    }, [playback, targetAccess, targetEpisode, targetSeries]),
+  );
 
   useEffect(() => {
     if (!targetSeries || !targetEpisode || !targetAccess || !playback.status) {
@@ -657,8 +680,8 @@ function WatchTargetScreen({ navigation, route }: Props) {
   // Shown instead of navigating to Wallet, keeping the user in the Watch stack.
   if (showInlinePaywall && targetEpisode && targetAccess && targetSeries && !targetAccess.canWatch) {
     return (
-      <Screen scroll={false}>
-        <WalletAccessPaywall
+      <View style={StyleSheet.absoluteFill}>
+        <EpisodeAccessSheet
           microDramaAccess={{
             access: targetAccess,
             episode: targetEpisode,
@@ -669,13 +692,20 @@ function WatchTargetScreen({ navigation, route }: Props) {
             seriesTitle: targetSeries.title,
           }}
           onDismiss={backToPrevious}
-          onSuccess={() => {
+          onSuccess={(confirmedEpisode) => {
             setShowInlinePaywall(false);
+            setTargetAccess({ canWatch: true, kind: "owned", label: "Owned" });
+            if (targetEpisode) {
+              setTargetEpisodeAccess((prev) => ({
+                ...prev,
+                [String(targetEpisode.number)]: { canWatch: true, kind: "owned", label: "Owned" },
+              }));
+            }
             setRetryNonce((v) => v + 1);
+            playback.refresh();
           }}
-          variant="card"
         />
-      </Screen>
+      </View>
     );
   }
 
@@ -795,17 +825,24 @@ function WatchTargetScreen({ navigation, route }: Props) {
 
     if (paywallAccess) {
       return (
-        <Screen scroll={false}>
-          <WalletAccessPaywall
+        <View style={StyleSheet.absoluteFill}>
+          <EpisodeAccessSheet
             microDramaAccess={paywallAccess}
             onDismiss={backToPrevious}
             onSuccess={() => {
               setResumeSeconds(0);
+              setTargetAccess({ canWatch: true, kind: "owned", label: "Owned" });
+              if (targetEpisode) {
+                setTargetEpisodeAccess((prev) => ({
+                  ...prev,
+                  [String(targetEpisode.number)]: { canWatch: true, kind: "owned", label: "Owned" },
+                }));
+              }
+              setRetryNonce((v) => v + 1);
               playback.refresh();
             }}
-            variant="card"
           />
-        </Screen>
+        </View>
       );
     }
   }
@@ -848,6 +885,14 @@ function WatchTargetScreen({ navigation, route }: Props) {
       onSeeOptions={openEpisodeAccessOptions}
       onRefreshSource={(currentTime) => {
         setResumeSeconds(currentTime);
+        setTargetAccess((prev) => (prev ? { ...prev, canWatch: true, kind: "owned", label: "Owned" } : prev));
+        if (targetEpisode) {
+          setTargetEpisodeAccess((prev) => ({
+            ...prev,
+            [String(targetEpisode.number)]: { canWatch: true, kind: "owned", label: "Owned" },
+          }));
+        }
+        setRetryNonce((v) => v + 1);
         playback.refresh();
       }}
       onAdvanceToNext={(nextEpisode) => {

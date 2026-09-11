@@ -30,7 +30,7 @@ export type WalletAccessPaywallProps = {
   microDramaAccess: MicroDramaAccessContext;
   onDismiss?: () => void;
   onSuccess?: (confirmedEpisode: ApiEpisode) => void;
-  variant?: "player" | "card";
+  variant?: "player" | "card" | "sheet";
 };
 
 /**
@@ -70,7 +70,7 @@ export function WalletAccessPaywall({
   const coinUnlockEnabled = Boolean(episode?.coinUnlockEnabled && episode.coinPrice > 0);
   const rewardedUnlockEnabled = Boolean(episode?.rewardedUnlockEnabled);
   const isPlusActive = me?.subscription.status === "active";
-  const plusAccessEnabled = Boolean(episode?.plusAccess && !isPlusActive);
+  const plusAccessEnabled = !isPlusActive && Boolean(episode?.plusAccess || coinUnlockEnabled || rewardedUnlockEnabled);
 
   const loadWallet = useCallback(async () => {
     if (!token) {
@@ -124,11 +124,9 @@ export function WalletAccessPaywall({
         }
         publishConfirmedSeriesAccess(refreshed, captureAccessRequest(token));
       } catch {
-        // Fallback to navigation handler
+        // Fallback to optimistic playable episode
       }
     }
-
-    if (!isCurrent()) return;
 
     if (onSuccess) {
       onSuccess(confirmedEpisode);
@@ -139,7 +137,7 @@ export function WalletAccessPaywall({
         resumeAtSeconds: microDramaAccess.resumeAtSeconds,
       });
     }
-  }, [isCurrent, microDramaAccess, navigation, onSuccess, token]);
+  }, [microDramaAccess, navigation, onSuccess, token]);
 
   const rewardedUnlock = useRewardedEpisodeUnlock({
     accessToken: token,
@@ -175,7 +173,20 @@ export function WalletAccessPaywall({
 
     try {
       const result = await purchaseEpisodeWithCoins(token, episode.id);
-      if (!isCurrent()) return;
+
+      if (
+        result.success ||
+        result.status === "already_owned" ||
+        result.status === "already_accessible" ||
+        result.status === "active_subscription"
+      ) {
+        const remainingBalance = result.remainingBalance;
+        if (remainingBalance !== null) {
+          setWallet((current) => (current ? { ...current, balance: remainingBalance } : current));
+        }
+        await handleSuccess();
+        return;
+      }
 
       if (result.status === "not_authenticated") {
         await navigateToSignIn(() => navigation.navigate("SignIn"), {
@@ -194,23 +205,8 @@ export function WalletAccessPaywall({
         return;
       }
 
-      if (
-        result.success ||
-        result.status === "already_owned" ||
-        result.status === "already_accessible" ||
-        result.status === "active_subscription"
-      ) {
-        const remainingBalance = result.remainingBalance;
-        if (remainingBalance !== null) {
-          setWallet((current) => (current ? { ...current, balance: remainingBalance } : current));
-        }
-        await handleSuccess();
-        return;
-      }
-
       setUnlockError("We couldn't complete this purchase right now.");
     } catch (unlockFailure) {
-      if (!isCurrent()) return;
       if (unlockFailure instanceof ApiError && unlockFailure.code === "not_authenticated") {
         await navigateToSignIn(() => navigation.navigate("SignIn"), {
           kind: "wallet",
@@ -221,9 +217,9 @@ export function WalletAccessPaywall({
 
       setUnlockError("We couldn't complete this purchase right now.");
     } finally {
-      if (isCurrent()) setIsUnlockingEpisode(false);
+      setIsUnlockingEpisode(false);
     }
-  }, [coinUnlockEnabled, episode, handleSuccess, isCurrent, microDramaAccess, navigation, token]);
+  }, [coinUnlockEnabled, episode, handleSuccess, microDramaAccess, navigation, token]);
 
   const handleOpenRewarded = useCallback(() => {
     if (!microDramaAccess) {
@@ -265,9 +261,19 @@ export function WalletAccessPaywall({
   const isCoinAffordable = !token || (wallet !== null && wallet.balance >= episode.coinPrice);
 
   const isPlayerVariant = variant === "player";
+  const isSheetVariant = variant === "sheet";
 
   return (
-    <View style={[styles.cardContainer, isPlayerVariant ? styles.cardContainerPlayer : styles.cardContainerCard]}>
+    <View
+      style={[
+        styles.cardContainer,
+        isPlayerVariant
+          ? styles.cardContainerPlayer
+          : isSheetVariant
+            ? styles.cardContainerSheet
+            : styles.cardContainerCard,
+      ]}
+    >
       {/* Header */}
       <View style={styles.headerBlock}>
         <Text style={styles.cardEyebrow}>EPISODE ACCESS</Text>
@@ -356,10 +362,10 @@ export function WalletAccessPaywall({
               <View style={styles.accessMethodTextCol}>
                 <Text style={styles.accessMethodTitle}>
                   {rewardedUnlock.rewardedPartial
-                    ? `Rewarded — Watch Ad (${rewardedUnlock.rewardedPartial.verifiedProgress}/${rewardedUnlock.rewardedPartial.requiredCompletions})`
+                    ? `Watch Ad (${rewardedUnlock.rewardedPartial.verifiedProgress}/${rewardedUnlock.rewardedPartial.requiredCompletions})`
                     : rewardedUnlock.requiredCount >= 2
-                      ? "Rewarded — Watch 2 Ads"
-                      : "Rewarded — Watch Ad"}
+                      ? "Watch 2 Ads"
+                      : "Watch Ad"}
                 </Text>
                 <Text style={styles.accessMethodSubtitle}>
                   {rewardedUnlock.rewardedPartial
@@ -415,34 +421,35 @@ export function WalletAccessPaywall({
           </Pressable>
         ) : null}
 
-        {/* 4. 0NYA PLUS (when eligible and not already subscriber) */}
+        {/* or divider — only between coin/rewarded and Plus rows */}
+        {(coinUnlockEnabled || rewardedUnlockEnabled) && plusAccessEnabled ? (
+          <View style={styles.orDivider}>
+            <View style={styles.orDividerLine} />
+            <Text style={styles.orDividerText}>or</Text>
+            <View style={styles.orDividerLine} />
+          </View>
+        ) : null}
+
+        {/* 4. 0NYA PLUS — subtle text-led row with brand colors */}
         {plusAccessEnabled ? (
           <Pressable
             accessibilityLabel="Unlock with 0nya Plus"
             accessibilityRole="button"
             onPress={handleOpenPlus}
             style={({ pressed }) => [
-              styles.accessMethodRow,
-              styles.plusMethodRow,
-              pressed && styles.accessMethodRowPressed,
+              styles.plusAltRow,
+              pressed && styles.plusAltRowPressed,
             ]}
           >
-            <View style={styles.accessMethodLeft}>
-              <View style={styles.plusBrandBadge}>
-                <Text style={styles.plusBrandBadge0}>0</Text>
-                <Text style={styles.plusBrandBadgePlus}>+</Text>
-              </View>
-              <View style={styles.accessMethodTextCol}>
-                <Text style={styles.accessMethodTitle}>0nya Plus — Unlimited Access</Text>
-                <Text style={styles.accessMethodSubtitle}>Included with unlimited membership</Text>
-              </View>
-            </View>
-            <View style={styles.seePlansCta}>
-              <Text style={styles.seePlansCtaText}>
-                {"See plans"}
-                <Text style={styles.seePlansChevron}>{" ›"}</Text>
+            <View style={styles.plusAltLeft}>
+              <Text style={styles.plusAltLabel}>
+                {"Unlock with "}
+                <Text style={styles.plusBrandZero}>0</Text>
+                <Text style={styles.plusBrandNya}>nya </Text>
+                <Text style={styles.plusBrandPlus}>Plus</Text>
               </Text>
             </View>
+            <Text style={styles.plusUpgradeCta}>Upgrade</Text>
           </Pressable>
         ) : null}
       </View>
@@ -463,15 +470,15 @@ export function WalletAccessPaywall({
         </Pressable>
       ) : null}
 
-      {/* 5. NOT NOW */}
+      {/* 5. MAYBE LATER */}
       {onDismiss ? (
         <Pressable
-          accessibilityLabel="Not now"
+          accessibilityLabel="Maybe later"
           accessibilityRole="button"
           onPress={onDismiss}
           style={({ pressed }) => [styles.notNowBtn, pressed && styles.notNowBtnPressed]}
         >
-          <Text style={styles.notNowText}>Not now</Text>
+          <Text style={styles.notNowText}>Maybe later</Text>
         </Pressable>
       ) : null}
     </View>
@@ -505,6 +512,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 15,
+  },
+  cardContainerSheet: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   headerBlock: {
     gap: 2,
@@ -631,26 +644,58 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 24,
   },
-  plusBrandBadge: {
+  orDivider: {
     alignItems: "center",
-    backgroundColor: "rgba(43, 126, 125, 0.14)",
-    borderColor: "rgba(43, 126, 125, 0.28)",
-    borderRadius: 7,
-    borderWidth: 1,
     flexDirection: "row",
-    height: 24,
-    justifyContent: "center",
-    paddingHorizontal: 5,
+    gap: 8,
+    marginVertical: 2,
   },
-  plusBrandBadge0: {
-    color: colors.accent,
-    fontSize: 11.5,
-    fontWeight: "800",
+  orDividerLine: {
+    backgroundColor: "rgba(254, 253, 253, 0.08)",
+    flex: 1,
+    height: 1,
   },
-  plusBrandBadgePlus: {
-    color: colors.text,
-    fontSize: 11.5,
+  orDividerText: {
+    color: "rgba(254, 253, 253, 0.28)",
+    fontSize: 11,
+    fontWeight: "400",
+    letterSpacing: 0.5,
+  },
+  plusAltRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+    paddingVertical: 6,
+  },
+  plusAltRowPressed: {
+    opacity: 0.65,
+  },
+  plusAltLeft: {
+    flex: 1,
+  },
+  plusAltLabel: {
+    color: "rgba(254, 253, 253, 0.72)",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  plusBrandZero: {
+    color: "#2B7E7D",
+    fontWeight: "700",
+  },
+  plusBrandNya: {
+    color: "#FEFDFD",
     fontWeight: "600",
+  },
+  plusBrandPlus: {
+    color: "#955E61",
+    fontWeight: "700",
+  },
+  plusUpgradeCta: {
+    color: "rgba(254, 253, 253, 0.65)",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.1,
   },
   primaryActionPill: {
     alignItems: "center",
@@ -703,22 +748,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  seePlansCta: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-  },
-  seePlansCtaText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  seePlansChevron: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "700",
-  },
   inlineError: {
     color: "#ff8d76",
     fontSize: 12,
@@ -746,15 +775,15 @@ const styles = StyleSheet.create({
   notNowBtn: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
-    marginTop: 8,
-    paddingVertical: 8,
+    minHeight: 38,
+    marginTop: 6,
+    paddingVertical: 6,
   },
   notNowBtnPressed: {
     opacity: 0.65,
   },
   notNowText: {
-    color: "rgba(254, 253, 253, 0.45)",
+    color: "rgba(254, 253, 253, 0.40)",
     fontSize: 13,
     fontWeight: "500",
     letterSpacing: 0.1,
