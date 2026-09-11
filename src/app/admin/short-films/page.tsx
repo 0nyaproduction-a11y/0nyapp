@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
-import { CmsEmptyState, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsFreshnessPanel, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { ShortFilmSearchInput, ShortFilmStatusSelect } from "@/components/cms/ShortFilmListControls";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listShortFilmsForAdmin } from "@/lib/cms/short-films";
@@ -47,6 +48,12 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
     status: params.status || "",
   });
 
+  // Real server-render/revalidation time for the freshness label. Updated on
+  // every revalidation (read-only reload, list actions); never fabricated.
+  // Server render time is intentionally not pure — it IS the refresh stamp.
+  // eslint-disable-next-line react-hooks/purity
+  const lastRefreshedMs = Date.now();
+
   const flashMessage = typeof params.flash === "string" ? params.flash : null;
   const errorMessage = typeof params.error === "string" ? params.error : null;
 
@@ -85,7 +92,7 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold">Short Films</h1>
-            <CmsStatusBadge status={shortFilmStatus} />
+            <CmsFreshnessPanel lastRefreshedMs={lastRefreshedMs} status={shortFilmStatus} />
           </div>
           <ButtonLink href={shortFilmNewPath}>New short film</ButtonLink>
         </div>
@@ -106,48 +113,12 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
         <div className="mt-8 grid gap-3 border border-bone/10 bg-bone/[0.03] p-4 sm:grid-cols-3">
           <label className="block space-y-1.5">
             <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">Search</span>
-            <input
-              type="text"
-              defaultValue={params.search || ""}
-              placeholder="Title or slug"
-              className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone placeholder:text-bone/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-              onChange={(e) => {
-                const value = e.target.value;
-                const url = new URL(window.location.href);
-                if (value) {
-                  url.searchParams.set("search", value);
-                } else {
-                  url.searchParams.delete("search");
-                }
-                url.searchParams.set("page", "1");
-                window.history.replaceState({}, "", url.toString());
-                window.location.reload();
-              }}
-            />
+            <ShortFilmSearchInput initialSearch={params.search || ""} />
           </label>
 
           <label className="block space-y-1.5">
             <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-bone/50">Status</span>
-            <select
-              value={params.status || "all"}
-              onChange={(e) => {
-                const value = e.target.value;
-                const url = new URL(window.location.href);
-                if (value && value !== "all") {
-                  url.searchParams.set("status", value);
-                } else {
-                  url.searchParams.delete("status");
-                }
-                url.searchParams.set("page", "1");
-                window.history.replaceState({}, "", url.toString());
-                window.location.reload();
-              }}
-              className="w-full border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <ShortFilmStatusSelect initialStatus={params.status || "all"} statusOptions={STATUS_OPTIONS} />
           </label>
 
           <div>

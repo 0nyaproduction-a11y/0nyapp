@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { CmsEmptyState, CmsStatusBadge, CmsSubmitButton, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsFreshnessPanel, CmsSubmitButton, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { BillingPageSizeSelect } from "@/components/cms/BillingPageSizeSelect";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listCoinProducts, reorderCoinProducts, updateCoinProductActive } from "@/lib/cms/billing";
@@ -32,6 +33,12 @@ export default async function AdminBillingPage({ searchParams }: AdminBillingPag
   const pageSize = PAGE_SIZE_OPTS.includes(Number(params.pageSize)) ? Number(params.pageSize) : DEFAULT_PAGE_SIZE;
   const { rows: products, totalCount } = await listCoinProducts({ page, pageSize });
   const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Real server-render/revalidation time for the freshness label. Updated on
+  // every revalidation (read-only reload, list actions); never fabricated.
+  // Server render time is intentionally not pure — it IS the refresh stamp.
+  // eslint-disable-next-line react-hooks/purity
+  const lastRefreshedMs = Date.now();
 
   const breadcrumbs = [
     { label: "Admin", href: "/admin" },
@@ -103,7 +110,7 @@ export default async function AdminBillingPage({ searchParams }: AdminBillingPag
               live in store metadata and are not editable here.
             </p>
           </div>
-          <CmsStatusBadge status={billingStatus} />
+          <CmsFreshnessPanel lastRefreshedMs={lastRefreshedMs} status={billingStatus} />
         </div>
 
         <div className="mt-8 grid gap-3">
@@ -115,20 +122,7 @@ export default async function AdminBillingPage({ searchParams }: AdminBillingPag
               </p>
             </div>
             <div>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  const params = new URLSearchParams();
-                  params.set("pageSize", e.target.value);
-                  params.set("page", "1");
-                  window.location.search = params.toString();
-                }}
-                className="border border-bone/15 bg-bone/[0.03] px-3 py-2 text-sm text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal"
-              >
-                {PAGE_SIZE_OPTS.map((size) => (
-                  <option key={size} value={size}>{size}/page</option>
-                ))}
-              </select>
+              <BillingPageSizeSelect pageSize={pageSize} options={PAGE_SIZE_OPTS} />
             </div>
           </div>
         </div>

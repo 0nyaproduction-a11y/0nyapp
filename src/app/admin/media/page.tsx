@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { MediaAdminClient } from "@/components/cms/MediaAdminClient";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
-import { CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { CmsFreshnessLabel, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   createMediaUploadIntent,
@@ -252,6 +252,13 @@ export default async function AdminMediaPage({ searchParams }: AdminMediaPagePro
   );
   const mediaStatus: CmsOperatorStatus = hasProblems ? "DEGRADED" : "HEALTHY";
 
+  // Real server-render/revalidation time for the freshness label. Updated on
+  // every revalidation (read-only reload in MediaAdminClient, media actions);
+  // never fabricated. Server render time is intentionally not pure — it IS
+  // the refresh stamp.
+  // eslint-disable-next-line react-hooks/purity
+  const lastRefreshedMs = Date.now();
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -259,7 +266,13 @@ export default async function AdminMediaPage({ searchParams }: AdminMediaPagePro
 
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold">Media</h1>
-          <CmsStatusBadge status={mediaStatus} showDescription />
+          <div className="flex items-center gap-3">
+            <CmsFreshnessLabel
+              lastRefreshedMs={lastRefreshedMs}
+              ariaLabel="Media list last refreshed"
+            />
+            <CmsStatusBadge status={mediaStatus} showDescription />
+          </div>
         </div>
 
         <MediaAdminClient

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
-import { CmsEmptyState, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsFreshnessPanel, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listSeriesForAdmin } from "@/lib/cms/series";
@@ -49,6 +49,12 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
     status: params.status || "",
   });
 
+  // Real server-render/revalidation time for the freshness label. Updated on
+  // every revalidation (read-only reload, list actions); never fabricated.
+  // Server render time is intentionally not pure — it IS the refresh stamp.
+  // eslint-disable-next-line react-hooks/purity
+  const lastRefreshedMs = Date.now();
+
   const flashMessage = typeof params.flash === "string" ? params.flash : null;
   const errorMessage = typeof params.error === "string" ? params.error : null;
 
@@ -77,7 +83,7 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
         <div className="mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold">Series</h1>
-            <CmsStatusBadge status={seriesStatus} />
+            <CmsFreshnessPanel lastRefreshedMs={lastRefreshedMs} status={seriesStatus} />
           </div>
           <ButtonLink href={seriesNewPath}>New series</ButtonLink>
         </div>

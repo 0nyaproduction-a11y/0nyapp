@@ -143,6 +143,11 @@ export function CmsFreshnessLabel({
       title={absolute}
       aria-label={ariaLabel ?? `${label} ${relative}`}
       className="font-mono text-[0.65rem] text-bone/50"
+      // The relative text depends on the client clock at hydration time, so
+      // the server and first client render can disagree by a second or two.
+      // The timestamp itself (dateTime/title/lastRefreshedMs) is deterministic;
+      // suppress only the hydration warning for that cosmetic difference.
+      suppressHydrationWarning
     >
       {label} {relative}
     </time>

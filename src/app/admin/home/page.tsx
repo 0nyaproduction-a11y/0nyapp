@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CmsAutoSubmitCheckbox } from "@/components/cms/CmsAutoSubmitCheckbox";
-import { CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
+import { CmsFreshnessLabel, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { HomeRowAccordion } from "@/components/cms/HomeRowAccordion";
 
 import { requireCmsAdmin } from "@/lib/cms/auth";
@@ -472,6 +472,12 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
   // Home page: HEALTHY when loaded, FAILED on error.
   const homeStatus: CmsOperatorStatus = errorMessage ? "FAILED" : "HEALTHY";
 
+  // Real server-render/revalidation time for the freshness label. Updated on
+  // every revalidation (row/spotlight actions, navigation); never fabricated.
+  // Server render time is intentionally not pure — it IS the refresh stamp.
+  // eslint-disable-next-line react-hooks/purity
+  const lastRefreshedMs = Date.now();
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -485,7 +491,13 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
               ← Back to admin
             </Link>
           </div>
-          <CmsStatusBadge status={homeStatus} />
+          <div className="flex items-center gap-3">
+            <CmsFreshnessLabel
+              lastRefreshedMs={lastRefreshedMs}
+              ariaLabel="Home composer last refreshed"
+            />
+            <CmsStatusBadge status={homeStatus} />
+          </div>
         </div>
 
         {flashMessage && (
