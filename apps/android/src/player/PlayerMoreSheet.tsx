@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CompactAccountStatus } from "../components/CompactAccountStatus";
 import { formatPlaybackSpeed, PLAYBACK_SPEED_OPTIONS } from "../lib/playbackSpeed";
 import { colors } from "../theme/tokens";
 
@@ -47,28 +48,6 @@ export function PlayerMoreSheet({
 }: PlayerMoreSheetProps) {
   const insets = useSafeAreaInsets();
 
-  // Account status badge directly next to title, identical to EpisodeListSheet
-  const { statusDotColor, statusLabel, statusTextColor } = useMemo(() => {
-    if (isPlus) {
-      return {
-        statusDotColor: "#B91825",
-        statusLabel: "Plus",
-        statusTextColor: "#FEFDFD",
-      };
-    }
-    if (isGuest) {
-      return {
-        statusDotColor: "rgba(254, 253, 253, 0.40)",
-        statusLabel: "Guest",
-        statusTextColor: "rgba(254, 253, 253, 0.72)",
-      };
-    }
-    return {
-      statusDotColor: "#2B7E7D",
-      statusLabel: "Free",
-      statusTextColor: "#2B7E7D",
-    };
-  }, [isGuest, isPlus]);
 
   return (
     <View pointerEvents="auto" style={styles.backdrop}>
@@ -82,16 +61,11 @@ export function PlayerMoreSheet({
       <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 14, 24) }]}>
         <View style={styles.handleBar} />
 
-        {/* Header: Title + Status Pill (left) · Circular Close (right) */}
+        {/* Header: Title + Status below (left) · Circular Close (right) */}
         <View style={styles.header}>
-          <View style={styles.headerTitleRow}>
+          <View style={styles.headerTitleBlock}>
             <Text style={styles.headerTitle}>Playback settings</Text>
-            <View style={styles.statusPill}>
-              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
-              <Text style={styles.statusPillText}>
-                {"Status - "}<Text style={[styles.statusPillValue, { color: statusTextColor }]}>{statusLabel}</Text>
-              </Text>
-            </View>
+            <CompactAccountStatus isGuest={isGuest} isPlus={isPlus} />
           </View>
 
           <View style={styles.headerSideRight}>
@@ -304,16 +278,15 @@ const styles = StyleSheet.create({
     width: 36,
   },
   header: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
-    height: 36,
+    height: 38,
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  headerTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
+  headerTitleBlock: {
+    flex: 1,
+    justifyContent: "center",
   },
   headerSideRight: {
     alignItems: "flex-end",
@@ -325,31 +298,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.2,
-  },
-  statusPill: {
-    alignItems: "center",
-    backgroundColor: "rgba(254, 253, 253, 0.05)",
-    borderColor: "rgba(254, 253, 253, 0.10)",
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statusDot: {
-    borderRadius: 999,
-    height: 5,
-    width: 5,
-  },
-  statusPillText: {
-    color: "rgba(254, 253, 253, 0.50)",
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.2,
-  },
-  statusPillValue: {
-    fontWeight: "700",
+    lineHeight: 21,
   },
   closeCircle: {
     alignItems: "center",

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CompactAccountStatus } from "../components/CompactAccountStatus";
 import { EpisodeAccessMarkers } from "../components/EpisodeAccessMarkers";
 import { EpisodeRangeSelector } from "../components/EpisodeRangeSelector";
 import { getEpisodeAccessDisplay } from "../lib/episodeAccessDisplay";
@@ -24,8 +25,8 @@ const CIRCLE_SIZE = 44;
 const SHEET_HORIZONTAL_PADDING = 16;
 const GRID_GAP_VERTICAL = 12;
 const SHEET_TOP_PADDING = 10;
-const HEADER_ROW_HEIGHT = 36;
-const HEADER_MARGIN_BOTTOM = 12;
+const HEADER_ROW_HEIGHT = 38;
+const HEADER_MARGIN_BOTTOM = 10;
 const DIVIDER_HEIGHT = 1;
 const DIVIDER_MARGIN_BOTTOM = 14;
 const RANGE_STRIP_HEIGHT = 44;
@@ -91,28 +92,6 @@ export function EpisodeListSheet({
     episodes,
   });
 
-  // Account status badge displayed directly next to Episodes title
-  const { statusDotColor, statusLabel, statusTextColor } = useMemo(() => {
-    if (isPlusUser) {
-      return {
-        statusDotColor: "#B91825",
-        statusLabel: "Plus",
-        statusTextColor: "#FEFDFD",
-      };
-    }
-    if (isGuest) {
-      return {
-        statusDotColor: "rgba(254, 253, 253, 0.40)",
-        statusLabel: "Guest",
-        statusTextColor: "rgba(254, 253, 253, 0.72)",
-      };
-    }
-    return {
-      statusDotColor: "#2B7E7D",
-      statusLabel: "Free",
-      statusTextColor: "#2B7E7D",
-    };
-  }, [isGuest, isPlusUser]);
 
   // Calculate gap so circles span from left corner to right corner with no empty corner dead space
   const horizontalGap = useMemo(() => {
@@ -152,22 +131,16 @@ export function EpisodeListSheet({
         {/* Grab handle indicator */}
         <View style={styles.handleBar} />
 
-        {/* Header — title + status badge next to it + close button */}
+        {/* Header — title + compact status below (left) · close button (top-right) */}
         <View style={styles.header}>
-          <View style={styles.headerTitleRow}>
+          <View style={styles.headerTitleBlock}>
             <Text style={styles.headerTitle}>
               {"Episodes"}
               {episodes.length > 0 ? (
                 <Text style={styles.headerCount}>{` (${episodes.length})`}</Text>
               ) : null}
             </Text>
-
-            <View style={styles.statusPill}>
-              <View style={[styles.statusDot, { backgroundColor: statusDotColor }]} />
-              <Text style={styles.statusPillText}>
-                {"Status - "}<Text style={[styles.statusPillValue, { color: statusTextColor }]}>{statusLabel}</Text>
-              </Text>
-            </View>
+            <CompactAccountStatus isGuest={isGuest} isPlus={isPlusUser} />
           </View>
 
           <View style={styles.headerSideRight}>
@@ -316,18 +289,16 @@ const styles = StyleSheet.create({
   },
   // ── Header ──────────────────────────────────────────────────
   header: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     height: HEADER_ROW_HEIGHT,
     justifyContent: "space-between",
     marginBottom: HEADER_MARGIN_BOTTOM,
     paddingHorizontal: SHEET_HORIZONTAL_PADDING,
   },
-  headerTitleRow: {
-    alignItems: "center",
+  headerTitleBlock: {
     flex: 1,
-    flexDirection: "row",
-    gap: 10,
+    justifyContent: "center",
   },
   headerSideRight: {
     alignItems: "flex-end",
@@ -339,37 +310,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: -0.2,
+    lineHeight: 21,
   },
   headerCount: {
     color: colors.textMuted,
     fontSize: 14,
     fontWeight: "500",
-  },
-  // ── Account status badge (next to Episodes title) ──────────
-  statusPill: {
-    alignItems: "center",
-    backgroundColor: "rgba(254, 253, 253, 0.05)",
-    borderColor: "rgba(254, 253, 253, 0.10)",
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statusDot: {
-    borderRadius: 999,
-    height: 5,
-    width: 5,
-  },
-  statusPillText: {
-    color: "rgba(254, 253, 253, 0.50)",
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.2,
-  },
-  statusPillValue: {
-    fontWeight: "700",
   },
   // ── Header divider ──────────────────────────────────────────
   headerDivider: {

@@ -116,6 +116,16 @@ export function PlusScreen({ navigation, route }: Props) {
     (purchasableProduct?.status === "available" &&
       Boolean(purchasableProduct.googleProductId && purchasableProduct.offerToken));
 
+  // True only when at least one Google Play offer is fully loaded and available.
+  // Used to gate the prelaunch UI path without touching purchase/entitlement logic.
+  const hasValidOffers =
+    billingService.isHarness ||
+    normalizedPlans.some(
+      (plan) =>
+        plan.purchasableProduct.status === "available" &&
+        Boolean(plan.purchasableProduct.googleProductId && plan.purchasableProduct.offerToken),
+    );
+
   async function handlePlusPurchase(scenario?: BillingHarnessScenario) {
     if (!token) {
       await handleSignIn();
@@ -173,6 +183,12 @@ export function PlusScreen({ navigation, route }: Props) {
     isPlus && me?.subscription.endsAt
       ? `Your Plus access is active until ${formatDate(me.subscription.endsAt)}.`
       : "Your Plus access is active.";
+
+  const ctaLabel = isPurchasing
+    ? "Processing..."
+    : hasValidOffers
+      ? "Continue with Plus"
+      : "Coming soon";
 
   return (
     <Screen>
@@ -265,6 +281,7 @@ export function PlusScreen({ navigation, route }: Props) {
           <View style={styles.planList}>
             {normalizedPlans.map((plan) => (
               <PlanRow
+                hasValidOffers={hasValidOffers}
                 isBillingLoading={isBillingLoading}
                 key={plan.cadence}
                 onPress={() => setSelectedCadence(plan.cadence)}
@@ -275,7 +292,7 @@ export function PlusScreen({ navigation, route }: Props) {
           </View>
 
           <Pressable
-            accessibilityLabel="Continue with Plus"
+            accessibilityLabel={ctaLabel}
             accessibilityRole="button"
             disabled={isPurchasing || !canPurchaseSelectedPlan}
             onPress={() => void handlePlusPurchase()}
@@ -291,23 +308,27 @@ export function PlusScreen({ navigation, route }: Props) {
                 (isPurchasing || !canPurchaseSelectedPlan) && styles.payButtonTextDisabled,
               ]}
             >
-              {isPurchasing ? "Processing..." : "Continue with Plus"}
+              {ctaLabel}
             </Text>
           </Pressable>
 
-          <View style={styles.renewalDisclosure}>
-            <Text style={styles.renewalDisclosureText}>
-              Auto-renews {selectedCadence} until cancelled.
-            </Text>
-            {selectedPlan.hasActiveReferralOffer ? (
+          {hasValidOffers && canPurchaseSelectedPlan ? (
+            <View style={styles.renewalDisclosure}>
               <Text style={styles.renewalDisclosureText}>
-                Referral introductory price applies for the first month; standard monthly store price applies after.
+                Auto-renews {selectedCadence} until cancelled.
               </Text>
-            ) : null}
-            <Text style={styles.renewalDisclosureText}>Cancel anytime in Google Play.</Text>
-          </View>
-
-          <Text style={styles.launchStatusText}>Payments are awaiting launch.</Text>
+              {selectedPlan.hasActiveReferralOffer ? (
+                <Text style={styles.renewalDisclosureText}>
+                  Referral introductory price applies for the first month; standard monthly store price applies after.
+                </Text>
+              ) : null}
+              <Text style={styles.renewalDisclosureText}>Cancel anytime in Google Play.</Text>
+            </View>
+          ) : (
+            <Text style={styles.launchStatusText}>
+              Plus subscriptions are coming soon.{"\n"}Payments will be available through Google Play.
+            </Text>
+          )}
         </View>
       )}
 
@@ -505,15 +526,28 @@ const glyphStyles = StyleSheet.create({
   },
 });
 
+/** Approved informational prelaunch prices — shown when Google Play offers are not yet loaded.
+ *  Live billing prices from Google Play override these when hasValidOffers is true. */
+const PRELAUNCH_PRICES: Record<string, string> = {
+  weekly: "₹49 / week",
+  monthly: "₹149 / month",
+  yearly: "₹999 / year",
+};
+
 type PlanRowProps = {
+  hasValidOffers: boolean;
   isBillingLoading: boolean;
   onPress: () => void;
   plan: NormalizedPlusPlan;
   selected: boolean;
 };
 
-function PlanRow({ isBillingLoading, onPress, plan, selected }: PlanRowProps) {
+function PlanRow({ hasValidOffers, isBillingLoading, onPress, plan, selected }: PlanRowProps) {
   const isMonthlyReferred = plan.hasActiveReferralOffer && Boolean(plan.referralOfferProduct);
+
+  // Selection state is independent of billing availability.
+  // hasValidOffers only gates purchase and CTA — not the row highlight.
+  const showSelectedStyle = selected;
 
   const renderPrice = () => {
     if (isBillingLoading) {
@@ -524,44 +558,56 @@ function PlanRow({ isBillingLoading, onPress, plan, selected }: PlanRowProps) {
       const referralPrice = plan.referralOfferProduct?.localizedPrice;
       const basePrice = plan.baseProduct.localizedPrice;
 
-      if (!referralPrice || plan.referralOfferProduct?.status === "unavailable") {
-        return <Text style={styles.planPriceUnavailable}>Unavailable</Text>;
+      // Live Google Play referral price is present — show it.
+      if (referralPrice && plan.referralOfferProduct?.status !== "unavailable") {
+        return (
+          <View style={styles.referralPriceBlock}>
+            <Text style={[styles.planPrice, showSelectedStyle && styles.planPriceSelected]}>
+              {`${referralPrice} first month`}
+            </Text>
+            {basePrice ? (
+              <Text style={styles.planPriceSub}>
+                {`then ${basePrice}/month`}
+              </Text>
+            ) : null}
+          </View>
+        );
       }
 
+      // Prelaunch: no live referral price yet — show informational prices.
       return (
         <View style={styles.referralPriceBlock}>
-          <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>
-            {`${referralPrice} first month`}
-          </Text>
-          {basePrice ? (
-            <Text style={styles.planPriceSub}>
-              {`then ${basePrice}/month`}
-            </Text>
-          ) : null}
+          <Text style={styles.planPrice}>{"₹99 first month"}</Text>
+          <Text style={styles.planPriceSub}>{"then ₹149/month"}</Text>
         </View>
       );
     }
 
     const price = plan.baseProduct.localizedPrice;
-    if (
-      !price ||
-      plan.baseProduct.status === "unavailable" ||
-      plan.baseProduct.status === "not_configured"
-    ) {
-      return <Text style={styles.planPriceUnavailable}>Unavailable</Text>;
+    const isLivePrice =
+      price &&
+      plan.baseProduct.status !== "unavailable" &&
+      plan.baseProduct.status !== "not_configured";
+
+    if (isLivePrice) {
+      const noun =
+        plan.cadence === "weekly"
+          ? "week"
+          : plan.cadence === "monthly"
+            ? "month"
+            : "year";
+
+      return (
+        <Text style={[styles.planPrice, showSelectedStyle && styles.planPriceSelected]}>
+          {`${price}/${noun}`}
+        </Text>
+      );
     }
 
-    const noun =
-      plan.cadence === "weekly"
-        ? "week"
-        : plan.cadence === "monthly"
-          ? "month"
-          : "year";
-
+    // Prelaunch: no live price — show approved informational price.
+    const prelunchPrice = PRELAUNCH_PRICES[plan.cadence];
     return (
-      <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>
-        {`${price}/${noun}`}
-      </Text>
+      <Text style={styles.planPrice}>{prelunchPrice ?? ""}</Text>
     );
   };
 
@@ -574,15 +620,15 @@ function PlanRow({ isBillingLoading, onPress, plan, selected }: PlanRowProps) {
       style={({ pressed }) => [
         styles.planRow,
         pressed && styles.planRowPressed,
-        selected && styles.planRowSelected,
+        showSelectedStyle && styles.planRowSelected,
       ]}
     >
       <View style={styles.planRowLeft}>
-        <View style={[styles.planRadio, selected && styles.planRadioSelected]}>
-          {selected ? <View style={styles.planRadioDot} /> : null}
+        <View style={[styles.planRadio, showSelectedStyle && styles.planRadioSelected]}>
+          {showSelectedStyle ? <View style={styles.planRadioDot} /> : null}
         </View>
         <View style={styles.planTitleBlock}>
-          <Text style={[styles.planName, selected && styles.planNameSelected]}>{plan.title}</Text>
+          <Text style={[styles.planName, showSelectedStyle && styles.planNameSelected]}>{plan.title}</Text>
           {isMonthlyReferred ? (
             <Text style={styles.referralWelcomeTagline}>A little welcome from 0nya</Text>
           ) : null}
@@ -626,9 +672,9 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   benefitsSection: {
-    gap: 8,
+    gap: 6,
     marginTop: 2,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   sectionEyebrow: {
     color: "rgba(254, 253, 253, 0.48)",
@@ -643,20 +689,20 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
+    paddingVertical: 7,
+    gap: 7,
   },
   benefitRow: {
     alignItems: "flex-start",
     flexDirection: "row",
-    gap: 11,
+    gap: 9,
   },
   benefitIconWrap: {
     alignItems: "center",
-    height: 22,
+    height: 20,
     justifyContent: "center",
     marginTop: 1,
-    width: 22,
+    width: 20,
   },
   benefitCopy: {
     flex: 1,
