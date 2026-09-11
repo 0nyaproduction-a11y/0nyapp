@@ -16,7 +16,14 @@ export function DirtyLink({ href, children, className, ...props }: DirtyLinkProp
   const handleClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (hasUnsavedChanges) {
       event.preventDefault();
-      const targetPath = typeof href === "string" ? href : href.pathname || "/";
+      // CMS-C08B-05: preserve full list context (query string) through the
+      // dirty guard so context is never dropped when the guard intercepts.
+      const targetPath =
+        typeof href === "string"
+          ? href
+          : href.pathname
+            ? `${href.pathname}${href.search ?? ""}`
+            : "/";
       attemptNavigation(targetPath);
     }
   };

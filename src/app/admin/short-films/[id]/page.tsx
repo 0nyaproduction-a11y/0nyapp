@@ -28,7 +28,7 @@ import {
   type ShortFilmFormState,
 } from "@/lib/cms/short-film-form";
 import { resolveMediaAssetState } from "@/lib/media";
-import { homeListPath, shortFilmEditPath, shortFilmListPath, shortFilmPath } from "@/lib/routes";
+import { homeListPath, shortFilmEditPath, shortFilmListPath, shortFilmListReturnHref, shortFilmPath } from "@/lib/routes";
 import {
   deleteShortFilm,
   getShortFilmDeletePreview,
@@ -57,12 +57,12 @@ function formatDate(value: string) {
 
 type AdminShortFilmEditPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ error?: string; flash?: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>;
 };
 
 export default async function AdminShortFilmEditPage({ params, searchParams }: AdminShortFilmEditPageProps) {
   const { id } = await params;
-  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string }>({}));
+  const query = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>({}));
   const context = await requireCmsAdmin(shortFilmEditPath(id));
 
   if (context.status === "forbidden") {
@@ -379,9 +379,20 @@ export default async function AdminShortFilmEditPage({ params, searchParams }: A
     redirect(buildFlashUrl(shortFilmListPath, result.cleanupWarnings.length > 0 ? "error" : "flash", message));
   }
 
+  // CMS-C08B-05: return breadcrumb preserves exact list state (page/pageSize/
+  // search/status) via the shared context helper, sanitized to the canonical
+  // list path. CmsBreadcrumb renders through DirtyLink so the C08B-01 guard
+  // still intercepts when the form is dirty. Deep-link/refresh safe.
+  const shortFilmsReturnHref = shortFilmListReturnHref({
+    page: query.page,
+    pageSize: query.pageSize,
+    search: query.search,
+    status: query.status,
+  });
+
   const breadcrumbs = [
     { label: "Admin", href: "/admin" },
-    { label: "Short Films", href: shortFilmListPath },
+    { label: "Short Films", href: shortFilmsReturnHref },
     { label: shortFilm.title, isCurrent: true },
   ];
 

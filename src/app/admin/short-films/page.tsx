@@ -5,10 +5,20 @@ import { ShortFilmSearchInput, ShortFilmStatusSelect } from "@/components/cms/Sh
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listShortFilmsForAdmin } from "@/lib/cms/short-films";
-import { shortFilmEditPath, shortFilmListPath, shortFilmNewPath, withListContext } from "@/lib/routes";
+import {
+  DEFAULT_SHORT_FILM_PAGE_SIZE,
+  SHORT_FILM_LIST_QUERY_KEYS,
+  SHORT_FILM_PAGE_SIZE_OPTIONS,
+  sanitizeAdminReturnTarget,
+  sanitizeShortFilmListQuery,
+  shortFilmEditPath,
+  shortFilmListPath,
+  shortFilmNewPath,
+  withListContext,
+} from "@/lib/routes";
 
 type AdminShortFilmsPageProps = {
-  searchParams?: Promise<{ error?: string; flash?: string; page?: string; search?: string; status?: string }>;
+  searchParams?: Promise<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -24,10 +34,8 @@ const STATUS_OPTIONS = [
   { label: "Archived", value: "archived" },
 ];
 
-const PAGE_SIZE = 25;
-
 export default async function AdminShortFilmsPage({ searchParams }: AdminShortFilmsPageProps) {
-  const params = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string; page?: string; search?: string; status?: string }>({}));
+  const params = await (searchParams ?? Promise.resolve<{ error?: string; flash?: string; page?: string; pageSize?: string; search?: string; status?: string }>({}));
   const context = await requireCmsAdmin(shortFilmNewPath);
 
   if (context.status === "forbidden") {
@@ -41,9 +49,16 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
     );
   }
 
+  // CMS-C08B-05: pageSize follows the billing pattern (25/50/100, default 25).
+  // Sanitize page/pageSize so malformed deep-links fall back to canonical.
+  const currentPage = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const pageSize = SHORT_FILM_PAGE_SIZE_OPTIONS.includes(Number(params.pageSize) as (typeof SHORT_FILM_PAGE_SIZE_OPTIONS)[number])
+    ? Number(params.pageSize)
+    : DEFAULT_SHORT_FILM_PAGE_SIZE;
+
   const data = await listShortFilmsForAdmin({
-    page: params.page ? parseInt(params.page, 10) : 1,
-    pageSize: PAGE_SIZE,
+    page: currentPage,
+    pageSize,
     search: params.search || "",
     status: params.status || "",
   });
@@ -57,29 +72,33 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
   const flashMessage = typeof params.flash === "string" ? params.flash : null;
   const errorMessage = typeof params.error === "string" ? params.error : null;
 
-  const totalPages = Math.ceil(data.totalCount / PAGE_SIZE);
+  const totalPages = Math.ceil(data.totalCount / pageSize);
 
   const breadcrumbs = [
     { label: "Admin", href: "/admin" },
     { label: "Short Films", isCurrent: true },
   ];
 
-  const listQuery = {
-    page: String(params.page ? parseInt(params.page, 10) : 1),
+  // CMS-C08B-05: reuse the existing context helper; sanitize so unknown or
+  // malformed params never leak into row links. Refresh/deep-link safe.
+  const listQuery = sanitizeShortFilmListQuery({
+    page: String(currentPage),
+    pageSize: String(pageSize),
     search: params.search || "",
     status: params.status || "",
-  };
+  });
 
   function buildShortFilmUrl(pageNum: number): string {
     const sp = new URLSearchParams();
     sp.set("page", String(pageNum));
+    sp.set("pageSize", String(pageSize));
     if (params.search) sp.set("search", params.search);
     if (params.status && params.status !== "all") sp.set("status", params.status);
-    return `${shortFilmListPath}?${sp.toString()}`;
+    return sanitizeAdminReturnTarget(`${shortFilmListPath}?${sp.toString()}`, shortFilmListPath, SHORT_FILM_LIST_QUERY_KEYS);
   }
 
-  const prevUrl = buildShortFilmUrl(parseInt(params.page ?? "1", 10) - 1);
-  const nextUrl = buildShortFilmUrl(parseInt(params.page ?? "1", 10) + 1);
+  const prevUrl = buildShortFilmUrl(currentPage - 1);
+  const nextUrl = buildShortFilmUrl(currentPage + 1);
 
   // Short-films list: HEALTHY when loaded, FAILED on error.
   const shortFilmStatus: CmsOperatorStatus = errorMessage ? "FAILED" : "HEALTHY";
@@ -161,7 +180,7 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-between gap-3">
             <p className="text-sm text-bone/60">
-              Page {(params.page ? parseInt(params.page, 10) : 1)} of {totalPages}
+              Page {currentPage} of {totalPages}
             </p>
             <div className="flex gap-2">
               <Link
