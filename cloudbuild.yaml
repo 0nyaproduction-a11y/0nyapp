@@ -1,15 +1,15 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07-deploy', '.']
+  args: ['build', '-t', 'asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07b-deploy', '.']
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07-deploy']
+  args: ['push', 'asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07b-deploy']
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
   args:
   - 'run'
   - 'deploy'
   - 'onya-qa-api'
-  - '--image=asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07-deploy'
+  - '--image=asia-south1-docker.pkg.dev/nya-app-c9823/cloud-run-source-deploy/onya-qa-api:c08b-07b-deploy'
   - '--region=asia-south1'
   - '--project=nya-app-c9823'
   - '--quiet'
