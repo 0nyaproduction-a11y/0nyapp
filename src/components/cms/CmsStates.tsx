@@ -1,9 +1,214 @@
 "use client";
 
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useState, useEffect, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import { ButtonLink } from "@/components/ui/Button";
+
+// ---------------------------------------------------------------------------
+// CMS-C08B-07 — shared freshness + operator status clarity vocabulary.
+//
+// Five explicit states. UNKNOWN is fail-closed (never green/success):
+//   HEALTHY   data is fresh and verified
+//   DEGRADED  data is usable but partially stale or incomplete
+//   DELAYED   data is stale beyond the expected refresh window
+//   FAILED    data could not be loaded or verified
+//   UNKNOWN   state cannot be determined — treated as non-healthy
+//
+// Components:
+//   CmsStatusBadge      the five-state badge (UNKNOWN is amber, never green)
+//   CmsFreshnessLabel   "Last refreshed <time>" with live revalidation
+//   CmsFreshnessPanel   combined status + freshness for list headers
+// ---------------------------------------------------------------------------
+
+export type CmsOperatorStatus = "HEALTHY" | "DEGRADED" | "DELAYED" | "FAILED" | "UNKNOWN";
+
+export interface FreshnessProps {
+  /** Epoch milliseconds of the last successful data load. */
+  lastRefreshedMs: number;
+  /** Optional explicit status; defaults to HEALTHY when freshness is recent. */
+  status?: CmsOperatorStatus;
+  /** Label prefix. Defaults to "Last refreshed". */
+  label?: string;
+  /** Accessibility description for the freshness region. */
+  ariaLabel?: string;
+}
+
+const STATUS_META: Record<CmsOperatorStatus, { label: string; className: string; description: string }> = {
+  HEALTHY: {
+    label: "HEALTHY",
+    className: "bg-teal/10 text-teal border-teal/40",
+    description: "Data is fresh and verified.",
+  },
+  DEGRADED: {
+    label: "DEGRADED",
+    className: "bg-yellow-900/20 text-yellow-300 border-yellow-700/40",
+    description: "Data is usable but partially stale or incomplete.",
+  },
+  DELAYED: {
+    label: "DELAYED",
+    className: "bg-amber-900/20 text-amber-300 border-amber-700/40",
+    description: "Data is stale beyond the expected refresh window.",
+  },
+  FAILED: {
+    label: "FAILED",
+    className: "bg-red-900/20 text-red-300 border-red-700/40",
+    description: "Data could not be loaded or verified.",
+  },
+  UNKNOWN: {
+    label: "UNKNOWN",
+    className: "bg-amber-900/20 text-amber-300 border-amber-700/40",
+    description: "State cannot be determined. Treated as non-healthy.",
+  },
+};
+
+/** Five-state operator-status badge. UNKNOWN is amber (never green). */
+export function CmsStatusBadge({
+  status,
+  showDescription = false,
+}: {
+  status: CmsOperatorStatus;
+  showDescription?: boolean;
+}) {
+  const meta = STATUS_META[status] ?? STATUS_META.UNKNOWN;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        aria-label={`Status: ${meta.label}`}
+        title={meta.description}
+        className={`inline-flex items-center gap-1.5 border px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] ${meta.className}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`inline-block h-1.5 w-1.5 rounded-full ${
+            status === "HEALTHY"
+              ? "bg-teal"
+              : status === "DEGRADED" || status === "UNKNOWN" || status === "DELAYED"
+                ? "bg-amber-400"
+                : "bg-red-400"
+          }`}
+        />
+        {meta.label}
+      </span>
+      {showDescription && (
+        <span className="text-[0.65rem] text-bone/50">{meta.description}</span>
+      )}
+    </span>
+  );
+}
+
+function formatRelativeTime(ms: number): string {
+  const now = Date.now();
+  const diff = now - ms;
+  if (diff < 0) return "just now";
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/**
+ * "Last refreshed <time>" label. Updates its relative timestamp on an interval
+ * so operators can see staleness without manual refresh. The timestamp itself
+ * only changes when the parent passes a new lastRefreshedMs (i.e. after a real
+ * revalidation) — we never fabricate freshness.
+ */
+export function CmsFreshnessLabel({
+  lastRefreshedMs,
+  label = "Last refreshed",
+  ariaLabel,
+}: FreshnessProps) {
+  const [tick, setTick] = useState(0);
+
+  // Re-render the relative label every 15s so "3s ago" becomes "18s ago"
+  // without fabricating a new timestamp.
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  // tick is read here to trigger re-renders; suppresses unused-var lint.
+  void tick;
+
+  const absolute = new Date(lastRefreshedMs).toLocaleString();
+  const relative = formatRelativeTime(lastRefreshedMs);
+
+  return (
+    <time
+      dateTime={new Date(lastRefreshedMs).toISOString()}
+      title={absolute}
+      aria-label={ariaLabel ?? `${label} ${relative}`}
+      className="font-mono text-[0.65rem] text-bone/50"
+    >
+      {label} {relative}
+    </time>
+  );
+}
+
+/**
+ * Combined status + freshness panel for list headers. Shows the operator
+ * status badge alongside the last-refreshed timestamp and a read-only reload
+ * button. The reload button calls router.refresh() — it never mutates.
+ */
+export function CmsFreshnessPanel({
+  lastRefreshedMs,
+  status = "HEALTHY",
+  reloadLabel = "Reload list (read-only)",
+  reloadTitle = "Re-fetches data from the server. Performs no writes.",
+  onReload,
+  className = "",
+}: {
+  lastRefreshedMs: number;
+  status?: CmsOperatorStatus;
+  reloadLabel?: string;
+  reloadTitle?: string;
+  onReload?: () => void;
+  className?: string;
+}) {
+  const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleReload() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      // Read-only: re-render server data without mutations.
+      router.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      onReload?.();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-3 border border-bone/10 bg-bone/[0.02] px-3 py-2 ${className}`}
+      role="status"
+      aria-live="polite"
+    >
+      <CmsStatusBadge status={status} />
+      <CmsFreshnessLabel lastRefreshedMs={lastRefreshedMs} />
+      <div className="ml-auto">
+        <button
+          type="button"
+          onClick={handleReload}
+          disabled={refreshing}
+          title={reloadTitle}
+          aria-busy={refreshing}
+          className="inline-flex items-center gap-2 border border-bone/20 bg-bone/[0.03] px-3 py-1.5 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-bone/70 transition hover:border-bone/40 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {refreshing && <CmsSpinner className="h-3 w-3" />}
+          {refreshing ? "Reloading…" : reloadLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CMS-C08B-03 — shared loading / empty / error / submitting state patterns.

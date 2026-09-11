@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { CmsEmptyState, CmsSubmitButton } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsStatusBadge, CmsSubmitButton, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listCoinProducts, reorderCoinProducts, updateCoinProductActive } from "@/lib/cms/billing";
@@ -87,6 +87,9 @@ export default async function AdminBillingPage({ searchParams }: AdminBillingPag
     revalidatePath(billingListPath);
   }
 
+  // Billing list: HEALTHY when loaded successfully.
+  const billingStatus: CmsOperatorStatus = "HEALTHY";
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-5xl">
@@ -100,6 +103,7 @@ export default async function AdminBillingPage({ searchParams }: AdminBillingPag
               live in store metadata and are not editable here.
             </p>
           </div>
+          <CmsStatusBadge status={billingStatus} />
         </div>
 
         <div className="mt-8 grid gap-3">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
-import { CmsEmptyState } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listSeriesForAdmin } from "@/lib/cms/series";
@@ -65,14 +65,19 @@ export default async function AdminSeriesListPage({ searchParams }: AdminSeriesL
     status: params.status || "",
   };
 
+  // Series list has no intrinsic health signal beyond load success.
+  // If an error message is present, show FAILED; otherwise HEALTHY.
+  const seriesStatus: CmsOperatorStatus = errorMessage ? "FAILED" : "HEALTHY";
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-4xl">
         <CmsBreadcrumb items={breadcrumbs} />
 
         <div className="mt-6 flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold">Series</h1>
+            <CmsStatusBadge status={seriesStatus} />
           </div>
           <ButtonLink href={seriesNewPath}>New series</ButtonLink>
         </div>

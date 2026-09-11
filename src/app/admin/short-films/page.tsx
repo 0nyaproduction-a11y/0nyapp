@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/Button";
-import { CmsEmptyState } from "@/components/cms/CmsStates";
+import { CmsEmptyState, CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import { listShortFilmsForAdmin } from "@/lib/cms/short-films";
@@ -74,14 +74,18 @@ export default async function AdminShortFilmsPage({ searchParams }: AdminShortFi
   const prevUrl = buildShortFilmUrl(parseInt(params.page ?? "1", 10) - 1);
   const nextUrl = buildShortFilmUrl(parseInt(params.page ?? "1", 10) + 1);
 
+  // Short-films list: HEALTHY when loaded, FAILED on error.
+  const shortFilmStatus: CmsOperatorStatus = errorMessage ? "FAILED" : "HEALTHY";
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-5xl">
         <CmsBreadcrumb items={breadcrumbs} />
 
         <div className="flex items-center justify-between gap-4">
-          <div>
+          <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold">Short Films</h1>
+            <CmsStatusBadge status={shortFilmStatus} />
           </div>
           <ButtonLink href={shortFilmNewPath}>New short film</ButtonLink>
         </div>

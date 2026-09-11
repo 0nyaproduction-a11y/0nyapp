@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { CmsSelect } from "@/components/cms/CmsSelect";
 import { CmsAutoSubmitCheckbox } from "@/components/cms/CmsAutoSubmitCheckbox";
+import { CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { HomeRowAccordion } from "@/components/cms/HomeRowAccordion";
 
 import { requireCmsAdmin } from "@/lib/cms/auth";
@@ -468,17 +469,23 @@ export default async function HomeAdminPage({ searchParams }: HomeAdminPageProps
   const spotlightItems = homeData.spotlight?.items ?? [];
   const isSpotlightEnabled = homeData.spotlight?.enabled ?? true;
 
+  // Home page: HEALTHY when loaded, FAILED on error.
+  const homeStatus: CmsOperatorStatus = errorMessage ? "FAILED" : "HEALTHY";
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
-        <div>
-          <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
-            0nya CMS
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold">Home Composer</h1>
-          <Link href="/admin" className="mt-1 inline-block text-sm text-teal">
-            ← Back to admin
-          </Link>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-bone/60">
+              0nya CMS
+            </p>
+            <h1 className="mt-2 text-2xl font-semibold">Home Composer</h1>
+            <Link href="/admin" className="mt-1 inline-block text-sm text-teal">
+              ← Back to admin
+            </Link>
+          </div>
+          <CmsStatusBadge status={homeStatus} />
         </div>
 
         {flashMessage && (

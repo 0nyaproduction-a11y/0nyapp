@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { MediaAdminClient } from "@/components/cms/MediaAdminClient";
 import { CmsBreadcrumb } from "@/components/cms/CmsBreadcrumb";
+import { CmsStatusBadge, type CmsOperatorStatus } from "@/components/cms/CmsStates";
 import { requireCmsAdmin } from "@/lib/cms/auth";
 import {
   createMediaUploadIntent,
@@ -244,13 +245,21 @@ export default async function AdminMediaPage({ searchParams }: AdminMediaPagePro
     { label: "Media", isCurrent: true },
   ];
 
+  // Derive operator status from the loaded data (no synthetic health).
+  // If any rows are in FAILED/MISSING classification, mark DEGRADED.
+  const hasProblems = result.rows.some(
+    (row) => row.classification === "FAILED" || row.classification === "MISSING",
+  );
+  const mediaStatus: CmsOperatorStatus = hasProblems ? "DEGRADED" : "HEALTHY";
+
   return (
     <main className="min-h-screen bg-deep px-4 py-10 text-bone">
       <div className="mx-auto max-w-6xl space-y-8">
         <CmsBreadcrumb items={breadcrumbs} />
 
-        <div>
-          <h1 className="mt-2 text-2xl font-semibold">Media</h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-semibold">Media</h1>
+          <CmsStatusBadge status={mediaStatus} showDescription />
         </div>
 
         <MediaAdminClient
