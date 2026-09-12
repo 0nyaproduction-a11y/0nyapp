@@ -1,0 +1,5 @@
+# Canonical redirects for 0nya public website
+# Dynamic consumer routes (/series/*, /short-films/*, /watch/*) are handled natively by the Netlify Next.js runtime.
+# Do NOT proxy public consumer HTML routes to QA Cloud Run backend.
+
+/short-film/*    /short-films/:splat    301

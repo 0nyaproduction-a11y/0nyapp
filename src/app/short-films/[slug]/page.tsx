@@ -22,9 +22,12 @@ function formatClassification(
     : contentRating;
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function ShortFilmPage({ params }: ShortFilmPageProps) {
   const { slug } = await params;
-  const shortFilm = await getShortFilmBySlug(slug);
+  const normalizedSlug = decodeURIComponent(slug).toLowerCase().trim();
+  const shortFilm = await getShortFilmBySlug(normalizedSlug);
 
   if (!shortFilm) {
     notFound();

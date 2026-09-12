@@ -23,6 +23,15 @@ const nextConfig: NextConfig = {
       NextConfig["images"]
     >["remotePatterns"],
   },
+  async redirects() {
+    return [
+      {
+        source: "/short-film/:slug",
+        destination: "/short-films/:slug",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

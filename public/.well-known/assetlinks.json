@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.onya.app",
+      "sha256_cert_fingerprints": [
+        "60:DA:32:D8:25:7B:E2:C5:0F:36:7A:02:41:3A:C8:DF:6A:45:95:C1:49:B8:E2:E2:E1:4E:3E:39:C3:08:FB:B6"
+      ]
+    }
+  }
+]
+

@@ -11,15 +11,12 @@ type SeriesPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export async function generateStaticParams() {
-  const publishedSeries = await getPublishedSeries();
-
-  return publishedSeries.map((series) => ({ slug: series.slug }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { slug } = await params;
-  const series = await getSeriesBySlug(slug);
+  const normalizedSlug = decodeURIComponent(slug).toLowerCase().trim();
+  const series = await getSeriesBySlug(normalizedSlug);
 
   if (!series) {
     notFound();

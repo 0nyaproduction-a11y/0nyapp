@@ -15,22 +15,15 @@ type WatchPageProps = {
   params: Promise<{ seriesSlug: string; episodeNumber: string }>;
 };
 
-export async function generateStaticParams() {
-  const publishedSeries = await getPublishedSeries();
-
-  return publishedSeries.flatMap((series) =>
-    series.episodes.map((episode) => ({
-      seriesSlug: series.slug,
-      episodeNumber: `${episode.number}`,
-    })),
-  );
-}
+export const dynamic = "force-dynamic";
 
 export default async function WatchPage({ params }: WatchPageProps) {
   const { seriesSlug, episodeNumber } = await params;
-  const parsedEpisodeNumber = Number(episodeNumber);
+  const normalizedSlug = decodeURIComponent(seriesSlug).toLowerCase().trim();
+  const rawEpisode = typeof episodeNumber === "string" ? episodeNumber.replace(/^(?:ep|episode)-?/i, "").trim() : "";
+  const parsedEpisodeNumber = Number.parseInt(rawEpisode, 10);
   const catalogResult = Number.isInteger(parsedEpisodeNumber)
-    ? await getEpisodeBySeriesSlugAndNumber(seriesSlug, parsedEpisodeNumber)
+    ? await getEpisodeBySeriesSlugAndNumber(normalizedSlug, parsedEpisodeNumber)
     : null;
   const series = catalogResult?.series;
   const episode = catalogResult?.episode;
