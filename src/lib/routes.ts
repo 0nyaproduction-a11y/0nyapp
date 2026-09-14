@@ -30,6 +30,7 @@ export const shortFilmListPath = "/admin/short-films";
 export const shortFilmNewPath = "/admin/short-films/new";
 export const billingListPath = "/admin/billing";
 export const homeListPath = "/admin/home";
+export const analyticsListPath = "/admin/analytics";
 
 export function withListContext(path: string, query?: Record<string, string>): string {
   if (!query) return path;
